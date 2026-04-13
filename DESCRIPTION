@@ -1,0 +1,23 @@
+Type: project
+Package: wisepocpac
+Title: Wise POC PAC - Heat Pump Optimization Dashboard
+Version: 0.1.0
+Description: Interactive R Shiny dashboard for simulating and optimizing
+    heat pump (PAC) control strategies with PV self-consumption,
+    battery storage, and dynamic/fixed electricity pricing.
+Authors@R: person("Wise", role = c("aut", "cre"))
+License: Proprietary
+Depends:
+    R (>= 4.1.0)
+Imports:
+    shiny,
+    bslib,
+    dplyr,
+    readr,
+    lubridate,
+    plotly,
+    DT
+Suggests:
+    testthat (>= 3.0.0),
+    renv
+Encoding: UTF-8
