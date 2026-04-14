@@ -931,12 +931,16 @@ sur 14 derniers jours    meilleur       ca continue"),
 
           accordion_panel("12. Comprendre les resultats", icon = icon("chart-pie"),
             tags$h6(style = sprintf("color:%s;margin:0 0 8px 0;", cl$opti), "Pourquoi l'optimiseur est meilleur"),
-            tags$p("L'optimiseur produit systematiquement un cout net inferieur ou egal au thermostat classique et au mode Smart. Voici pourquoi :"),
+            tags$p("L'optimiseur produit systematiquement un ", tags$strong("cout net inferieur"), " au thermostat classique. Le mecanisme principal :"),
             tags$ul(
-              tags$li(tags$strong("Moins de soutirage :"), " le thermostat classique chauffe la nuit (pas de PV, 100% reseau). L'optimiseur deplace la consommation PAC vers les heures de surplus PV (cout quasi nul)."),
-              tags$li(tags$strong("Moins d'injection :"), " en chauffant le ballon sur le surplus PV, l'optimiseur reduit l'injection. Chaque kWh autoconsomme evite un soutirage a 0.30 EUR et ne perd qu'une injection a 0.03 EUR — gain net de 0.27 EUR/kWh."),
-              tags$li(tags$strong("Meilleure autoconsommation :"), " l'optimiseur utilise le ballon comme batterie thermique de facon optimale, ce qui augmente mecaniquement le taux d'autoconsommation.")
+              tags$li(tags$strong("Moins de soutirage :"), " le thermostat classique chauffe la nuit (pas de PV, 100% reseau). L'optimiseur ne chauffe que quand c'est necessaire, au moment le moins cher."),
+              tags$li(tags$strong("Moins de consommation totale :"), " le thermostat surchauffe souvent le ballon (cycle 48-52 C en permanence). L'optimiseur ne chauffe que le strict necessaire, ce qui reduit les pertes thermiques et donc la consommation totale."),
+              tags$li(tags$strong("Autoconsommation vs cout :"), " l'optimiseur peut parfois injecter PLUS que le reel tout en coutant MOINS. C'est parce qu'il consomme moins au total (moins de pertes). Le taux d'autoconsommation n'est pas le bon indicateur — c'est le ", tags$strong("cout net"), " qui compte.")
             ),
+
+            tags$div(style = sprintf("background:%s;border:1px solid %s;border-radius:8px;padding:12px;margin:8px 0;", cl$bg_input, cl$grid),
+              tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$pv), "Pourquoi plus d'injection peut etre mieux"),
+              tags$p(style = "margin:0;font-size:.82rem;", "Exemple : le thermostat chauffe inutilement le ballon de 48 a 52 C en journee (autoconsommant du PV), puis le ballon perd cette chaleur la nuit en pertes. L'optimiseur ne chauffe pas inutilement — le surplus PV est injecte (faible revenu a 0.03 EUR/kWh) mais le soutirage nocturne est evite (grosse economie a 0.30 EUR/kWh). Le bilan net est meilleur malgre plus d'injection.")),
 
             tags$h6(style = sprintf("color:%s;margin:12px 0 8px 0;", cl$opti), "Contrat fixe vs dynamique"),
             tags$ul(
@@ -1387,23 +1391,27 @@ sur 14 derniers jours    meilleur       ca continue"),
     pv_autoconso_opti <- pv_tot - inj_opti
     conso_tot_opti <- pv_autoconso_opti + off_opti
 
-    cats <- c("PV autoconsomme", "PV injecte", "Soutirage reseau")
-    vals_reel <- c(pv_autoconso_reel, inj_reel, off_reel)
-    vals_opti <- c(pv_autoconso_opti, inj_opti, off_opti)
-    bar_colors <- c(cl$pv, cl$reel, cl$danger)
+    message(sprintf("[SANKEY] PV=%.0f | Reel: autoconso=%.0f inj=%.0f off=%.0f | Opti: autoconso=%.0f inj=%.0f off=%.0f",
+      pv_tot, pv_autoconso_reel, inj_reel, off_reel, pv_autoconso_opti, inj_opti, off_opti))
 
-    plot_ly() %>%
-      add_bars(y = c("Reel", "Reel", "Reel"), x = vals_reel, name = cats,
-        orientation = "h", marker = list(color = bar_colors),
-        text = paste0(round(vals_reel), " kWh"), textposition = "inside",
-        textfont = list(color = "white", size = 10, family = "JetBrains Mono"),
-        showlegend = TRUE) %>%
-      add_bars(y = c("Optimise", "Optimise", "Optimise"), x = vals_opti, name = cats,
-        orientation = "h", marker = list(color = bar_colors),
-        text = paste0(round(vals_opti), " kWh"), textposition = "inside",
-        textfont = list(color = "white", size = 10, family = "JetBrains Mono"),
-        showlegend = FALSE) %>%
-      layout(barmode = "stack") %>%
+    # Construire un dataframe pour des barres groupees par categorie
+    flow <- tibble(
+      scenario = rep(c("1. Reel", "2. Optimise"), each = 4),
+      categorie = rep(c("PV autoconsomme", "PV injecte", "Soutirage reseau", "Conso totale"), 2),
+      valeur = c(pv_autoconso_reel, inj_reel, off_reel, conso_tot_reel,
+                 pv_autoconso_opti, inj_opti, off_opti, conso_tot_opti),
+      couleur = rep(c(cl$pv, cl$reel, cl$danger, cl$text_muted), 2)
+    )
+
+    plot_ly(flow, y = ~categorie, x = ~valeur, color = ~scenario,
+      colors = c(cl$reel, cl$opti),
+      type = "bar", orientation = "h",
+      text = ~paste0(round(valeur), " kWh"),
+      textposition = "auto",
+      textfont = list(size = 10, family = "JetBrains Mono")) %>%
+      layout(barmode = "group", bargap = 0.3,
+        yaxis = list(categoryorder = "array",
+          categoryarray = c("Conso totale", "Soutirage reseau", "PV injecte", "PV autoconsomme"))) %>%
       pl_layout(xlab = "kWh", ylab = NULL)
   })
 
