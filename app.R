@@ -634,17 +634,14 @@ ui <- page_fillable(
       nav_panel(title = "Vue d'ensemble", icon = icon("chart-line"),
         explainer(
           tags$summary("Comprendre cette vue"),
-          tags$p("Cette vue donne une ", tags$strong("vision globale"), " de votre installation : flux d'energie, autoconsommation, autosuffisance, production et consommation."),
           tags$ul(
-            tags$li(tags$strong("Flux d'energie :"), " compare les sources et destinations de l'electricite entre le scenario reel et optimise. PV autoconsomme = la part du solaire consommee sur place."),
-            tags$li(tags$strong("Autoconsommation :"), " pourcentage du PV consomme sur place (vs injecte dans le reseau). Plus c'est haut, mieux c'est."),
-            tags$li(tags$strong("Autosuffisance :"), " pourcentage de la consommation couverte par le PV. Complementaire a l'autoconsommation."),
-            tags$li(tags$strong("Temperature ballon :"), " montre comment l'algo utilise le ballon comme batterie thermique."),
-            tags$li(tags$strong("COP journalier :"), " le Coefficient de Performance varie avec la temperature exterieure.")
+            tags$li(tags$strong("Flux d'energie :"), " compare les sources et destinations de l'electricite entre le scenario reel et optimise."),
+            tags$li(tags$strong("Autoconsommation :"), " pourcentage du PV consomme sur place. Plus c'est haut, mieux c'est."),
+            tags$li(tags$strong("Autosuffisance :"), " pourcentage de la consommation couverte par le PV.")
           )),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Flux d'energie — reel vs optimise"),
-            card_body(plotlyOutput("plot_sankey", height = "380px")))),
+            card_body(plotlyOutput("plot_sankey", height = "350px")))),
         layout_columns(col_widths = c(6, 6),
           card(full_screen = TRUE, card_header("Autoconsommation"),
             card_body(plotlyOutput("plot_donut_autoconso", height = "280px"))),
@@ -652,24 +649,14 @@ ui <- page_fillable(
             card_body(plotlyOutput("plot_donut_autosuff", height = "280px")))),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Production PV vs soutirage"),
-            card_body(plotlyOutput("plot_overview", height = "320px")))),
-        layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header("Temperature ballon"),
-            card_body(plotlyOutput("plot_temperature", height = "280px"))),
-          card(full_screen = TRUE, card_header("COP journalier"),
-            card_body(plotlyOutput("plot_cop", height = "280px")))),
-        conditionalPanel("input.batterie_active",
-          layout_columns(col_widths = 12,
-            card(full_screen = TRUE, card_header("Batterie — Etat de charge (SoC)"),
-              card_body(plotlyOutput("plot_batterie", height = "250px")))))),
+            card_body(plotlyOutput("plot_overview", height = "320px"))))),
       nav_panel(title = "Gains", icon = icon("piggy-bank"),
         explainer(
           tags$summary("Comprendre les gains"),
           tags$ul(
-            tags$li(tags$strong("Cout cumule :"), " deux courbes qui montent au fil du temps. L'ecart entre elles = votre gain total. Plus elles s'ecartent, plus l'optimisation est efficace."),
-            tags$li(tags$strong("Barres quotidiennes :"), " pour chaque jour, le cout reel et le cout optimise cote a cote."),
-            tags$li(tags$strong("Waterfall :"), " decompose le gain financier : soutirage evite, injection perdue, et gain de timing."),
-            tags$li(tags$strong("Pointes de soutirage :"), " compare les pics mensuels de soutirage reseau entre le reel et l'optimise (peak shaving).")
+            tags$li(tags$strong("Cout cumule :"), " deux courbes qui montent. L'ecart = votre gain total."),
+            tags$li(tags$strong("Barres quotidiennes :"), " cout reel vs optimise cote a cote par jour."),
+            tags$li(tags$strong("Waterfall :"), " decompose le gain : soutirage evite, injection perdue, timing.")
           )),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Cout cumule — reel vs optimise"),
@@ -679,23 +666,41 @@ ui <- page_fillable(
             card_body(plotlyOutput("plot_cout_quotidien", height = "300px"))),
           card(full_screen = TRUE, card_header("Waterfall — decomposition du gain"),
             card_body(plotlyOutput("plot_waterfall", height = "300px")))),
-        layout_columns(col_widths = c(6, 6),
+        layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Bilan mensuel"),
-            card_body(DTOutput("table_mensuel"))),
-          card(full_screen = TRUE, card_header("Pointes de soutirage mensuelles"),
-            card_body(plotlyOutput("plot_peak_shaving", height = "300px"))))),
+            card_body(DTOutput("table_mensuel"))))),
+      nav_panel(title = "PAC", icon = icon("temperature-half"),
+        explainer(
+          tags$summary("Comprendre le pilotage PAC"),
+          tags$ul(
+            tags$li(tags$strong("Temperature ballon :"), " montre comment l'algo utilise le ballon comme batterie thermique. Les pointilles = limites de confort."),
+            tags$li(tags$strong("COP :"), " le rendement de la PAC varie avec la temperature exterieure. En ete COP ~4.5, en hiver ~2.5."),
+            tags$li(tags$strong("Profil PAC :"), " compare quand la PAC tourne : thermostat classique (nuit) vs optimise (journee/PV)."),
+            tags$li(tags$strong("Batterie :"), " etat de charge si activee.")
+          )),
+        layout_columns(col_widths = c(6, 6),
+          card(full_screen = TRUE, card_header("Temperature ballon"),
+            card_body(plotlyOutput("plot_temperature", height = "280px"))),
+          card(full_screen = TRUE, card_header("COP journalier"),
+            card_body(plotlyOutput("plot_cop", height = "280px")))),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("Profil PAC — reel vs optimise"),
+            card_body(plotlyOutput("plot_profil_pac", height = "300px")))),
+        conditionalPanel("input.batterie_active",
+          layout_columns(col_widths = 12,
+            card(full_screen = TRUE, card_header("Batterie — Etat de charge (SoC)"),
+              card_body(plotlyOutput("plot_batterie", height = "250px")))))),
       nav_panel(title = "Profils", icon = icon("clock"),
         explainer(
           tags$summary("Comprendre les profils"),
           tags$ul(
-            tags$li(tags$strong("Profil journalier empile :"), " montre la decomposition moyenne de la consommation et production sur 24h. Permet de voir ou va l'energie a chaque heure."),
-            tags$li(tags$strong("Heatmap :"), " chaque cellule = 1 heure d'une journee. La couleur montre l'intensite de la variable choisie. Permet de reperer les patterns saisonniers et journaliers."),
-            tags$li(tags$strong("Injection par prix :"), " montre a quel prix l'injection a lieu — idealement, on injecte quand le prix est eleve."),
-            tags$li(tags$strong("Profil PAC :"), " compare le profil moyen de la PAC entre reel et optimise sur 24h.")
+            tags$li(tags$strong("Profil empile :"), " decomposition moyenne de l'energie sur 24h. Ou va chaque kWh a chaque heure."),
+            tags$li(tags$strong("Heatmap :"), " chaque cellule = 1 heure d'un jour. Repere les patterns saisonniers."),
+            tags$li(tags$strong("Injection vs prix :"), " a quel prix l'injection a lieu. Idealement on injecte quand c'est cher.")
           )),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Profil journalier moyen — empile"),
-            card_body(plotlyOutput("plot_stacked_profile", height = "380px")))),
+            card_body(plotlyOutput("plot_stacked_profile", height = "350px")))),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Heatmap — pattern journalier x saisonnier"),
             card_body(
@@ -705,12 +710,10 @@ ui <- page_fillable(
                   "PAC ON (optimise)" = "pac_on", "Temperature ballon" = "t_ballon",
                   "Prix spot" = "prix"), selected = "inj_evitee"),
                 tags$div()),
-              plotlyOutput("plot_heatmap", height = "380px")))),
-        layout_columns(col_widths = c(6, 6),
+              plotlyOutput("plot_heatmap", height = "350px")))),
+        layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Injection par tranche horaire et prix"),
-            card_body(plotlyOutput("plot_injection_prix", height = "300px"))),
-          card(full_screen = TRUE, card_header("Profil PAC — reel vs optimise"),
-            card_body(plotlyOutput("plot_profil_pac", height = "300px"))))),
+            card_body(plotlyOutput("plot_injection_prix", height = "300px"))))),
       nav_panel(title = "Dimensionnement", icon = icon("solar-panel"),
         explainer(
           tags$summary("Comprendre le dimensionnement"),
@@ -1456,33 +1459,6 @@ sur 14 derniers jours    meilleur       ca continue"),
   })
 
   # ---- GAINS : Pointes de soutirage mensuelles (peak shaving) ----
-  output$plot_peak_shaving <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim
-
-    peaks <- sim %>%
-      mutate(mois = floor_date(timestamp, "month"),
-             h = floor_date(timestamp, "hour")) %>%
-      group_by(mois, h) %>%
-      summarise(
-        off_reel_h = sum(offtake_kwh, na.rm = TRUE),
-        off_opti_h = sum(sim_offtake, na.rm = TRUE),
-        .groups = "drop"
-      ) %>%
-      group_by(mois) %>%
-      summarise(
-        peak_reel = max(off_reel_h, na.rm = TRUE),
-        peak_opti = max(off_opti_h, na.rm = TRUE),
-        .groups = "drop"
-      ) %>%
-      mutate(mois_label = format(mois, "%b %Y"))
-
-    plot_ly(peaks, x = ~mois_label) %>%
-      add_bars(y = ~peak_reel, name = "Reel", marker = list(color = cl$reel, opacity = 0.7)) %>%
-      add_bars(y = ~peak_opti, name = "Optimise", marker = list(color = cl$opti, opacity = 0.7)) %>%
-      layout(barmode = "group", bargap = 0.15) %>%
-      pl_layout(xlab = "Mois", ylab = "Pointe horaire (kWh)")
-  })
-
   # ---- PROFILS : Profil journalier moyen empile ----
   output$plot_stacked_profile <- renderPlotly({
     req(sim_result()); sim <- sim_result()$sim
