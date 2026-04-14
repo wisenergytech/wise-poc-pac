@@ -74,129 +74,6 @@ decider <- function(mode, params, t_actuelle, surplus_now, cop_now,
     if (t_simul < params$t_min) { qt_avant_t_min <- j; break }
   }
   
-  if (mode == "injection") {
-    # Surplus = PV couvre ENTIEREMENT la conso PAC (pas de soutirage residuel)
-    full_surplus <- surplus_now >= pac_conso_qt
-    # Surplus partiel = PV couvre une partie
-    partial_surplus <- surplus_now > 0 & !full_surplus
-
-    # === CAS 1 : Surplus PV total — chauffage "gratuit" ===
-    # Chauffer jusqu'a la consigne (pas au max !) pour limiter les pertes
-    # Au-dela de la consigne, on n'accepte que si le ballon va en avoir besoin bientot
-    if (full_surplus) {
-      if (t_actuelle < params$t_consigne)
-        return(list(pac_on = 1L, raison = "surplus_pv"))
-      # Au-dessus de la consigne : ne pre-chauffer que si besoin dans l'horizon
-      if (t_actuelle < params$t_max & qt_avant_t_min <= params$horizon_qt)
-        return(list(pac_on = 1L, raison = "surplus_pv_prechauffe"))
-      return(list(pac_on = 0L, raison = "ballon_suffisant"))
-    }
-
-    # === CAS 2 : Surplus partiel — NE PAS allumer ===
-    # Le complement viendrait du reseau, ce qui augmente le soutirage
-    # Mieux vaut laisser injecter le surplus partiel
-
-    # === CAS 3 : Pas de surplus — seulement si urgent ===
-    if (qt_avant_t_min <= 2)
-      return(list(pac_on = 1L, raison = "anticipation_confort"))
-
-    # Attendre du surplus futur si le ballon peut tenir
-    h_avant <- which(surplus_futur >= pac_conso_qt)
-    if (length(h_avant) > 0 & qt_avant_t_min > min(h_avant))
-      return(list(pac_on = 0L, raison = "attente_surplus_futur"))
-
-    # Dernier recours : chauffer sur reseau si confort menace
-    if (qt_avant_t_min <= 4 & t_actuelle < params$t_min + 2)
-      return(list(pac_on = 1L, raison = "anticipation_confort"))
-
-    return(list(pac_on = 0L, raison = "pas_de_surplus"))
-  }
-  
-  if (mode == "cost") {
-    # Meme garde-fou : ne chauffer que si le ballon va en avoir besoin
-    needs_heat <- t_actuelle < params$t_consigne | qt_avant_t_min <= params$horizon_qt
-
-    if (surplus_now >= pac_conso_qt) {
-      cout_ch <- pac_conso_qt * prix_injection_now
-    } else if (surplus_now > 0) {
-      cout_ch <- surplus_now * prix_injection_now + (pac_conso_qt - surplus_now) * prix_offtake_now
-    } else {
-      cout_ch <- pac_conso_qt * prix_offtake_now
-    }
-    kwh_th <- chaleur_pac
-    cout_kwh_th <- cout_ch / kwh_th
-    cout_f <- numeric(length(surplus_futur))
-    for (j in seq_along(surplus_futur)) {
-      s <- surplus_futur[j]; cj <- cop_futur[j]; kj <- pac_conso_qt * cj
-      if (s >= pac_conso_qt) cf <- pac_conso_qt * prix_injection_fut[j]
-      else if (s > 0) cf <- s * prix_injection_fut[j] + (pac_conso_qt - s) * prix_offtake_fut[j]
-      else cf <- pac_conso_qt * prix_offtake_fut[j]
-      cout_f[j] <- cf / kj
-    }
-
-    # Prix negatif : toujours autoconsommer (on paierait pour injecter)
-    if (prix_injection_now < 0 & surplus_now > pac_conso_qt * 0.2 & t_actuelle < params$t_max)
-      return(list(pac_on = 1L, raison = "eviter_injection_negative"))
-
-    if (!needs_heat)
-      return(list(pac_on = 0L, raison = "ballon_suffisant"))
-
-    # Soutirage pas cher : ne chauffer que si sous la consigne
-    med <- median(c(prix_offtake_now, prix_offtake_fut), na.rm = TRUE)
-    if (prix_offtake_now < med * 0.5 & t_actuelle < params$t_consigne)
-      return(list(pac_on = 1L, raison = "soutirage_pas_cher"))
-
-    # Cout optimal : ne chauffer que si besoin
-    if (cout_kwh_th <= quantile(cout_f, 0.3, na.rm = TRUE) & t_actuelle < params$t_max)
-      return(list(pac_on = 1L, raison = "cout_optimal"))
-
-    if (sum(cout_f < cout_kwh_th * 0.8, na.rm = TRUE) > 2 & qt_avant_t_min > 3)
-      return(list(pac_on = 0L, raison = "attente_moins_cher"))
-    if (qt_avant_t_min <= 2)
-      return(list(pac_on = 1L, raison = "anticipation_confort"))
-    return(list(pac_on = 0L, raison = "pas_rentable"))
-  }
-  
-  if (mode == "hybrid") {
-    needs_heat <- t_actuelle < params$t_consigne | qt_avant_t_min <= params$horizon_qt
-
-    # Prix negatif : toujours autoconsommer
-    if (prix_injection_now < 0 & surplus_now > pac_conso_qt * 0.2 & t_actuelle < params$t_max)
-      return(list(pac_on = 1L, raison = "eviter_injection_negative"))
-
-    if (!needs_heat)
-      return(list(pac_on = 0L, raison = "ballon_suffisant"))
-
-    score_inj <- 0
-    if (surplus_now > pac_conso_qt) score_inj <- 1
-    else if (surplus_now > pac_conso_qt * params$seuil_surplus_pct) score_inj <- 0.7
-    else if (surplus_now > 0) score_inj <- 0.3
-    sf <- surplus_futur * cop_futur
-    sn <- surplus_now * cop_now
-    if (sum(sf > sn * 1.2, na.rm = TRUE) < 2) score_inj <- min(1, score_inj + 0.2)
-
-    if (surplus_now >= pac_conso_qt) cn <- pac_conso_qt * prix_injection_now
-    else if (surplus_now > 0) cn <- surplus_now * prix_injection_now + (pac_conso_qt - surplus_now) * prix_offtake_now
-    else cn <- pac_conso_qt * prix_offtake_now
-    ckn <- cn / chaleur_pac
-    cf <- numeric(length(surplus_futur))
-    for (j in seq_along(surplus_futur)) {
-      s <- surplus_futur[j]; cj <- cop_futur[j]; kj <- pac_conso_qt * cj
-      if (s >= pac_conso_qt) cc <- pac_conso_qt * prix_injection_fut[j]
-      else if (s > 0) cc <- s * prix_injection_fut[j] + (pac_conso_qt - s) * prix_offtake_fut[j]
-      else cc <- pac_conso_qt * prix_offtake_fut[j]
-      cf[j] <- cc / kj
-    }
-    score_cost <- mean(cf >= ckn, na.rm = TRUE)
-    score_final <- poids_cout * score_cost + (1 - poids_cout) * score_inj
-
-    if (score_final >= 0.5 & t_actuelle < params$t_max)
-      return(list(pac_on = 1L, raison = paste0("hybrid_on_", round(score_final, 2))))
-    if (qt_avant_t_min <= 2)
-      return(list(pac_on = 1L, raison = "anticipation_confort"))
-    return(list(pac_on = 0L, raison = paste0("hybrid_off_", round(score_final, 2))))
-  }
-
   if (mode == "smart") {
     # ================================================================
     # Mode SMART — Decision basee sur la valeur nette
@@ -374,48 +251,6 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
   df %>% mutate(sim_t_ballon = sim_t, sim_pac_on = sim_on, sim_offtake = sim_off,
                 sim_intake = sim_inj, sim_cop = sim_cop, decision_raison = sim_raison,
                 batt_soc = sim_batt_soc, batt_flux = sim_batt_flux)
-}
-
-run_simulation_auto <- function(df, params) {
-  candidats <- c("optimizer", "smart", "injection", "cost", paste0("hybrid_", params$auto_poids_hybrides))
-  resultats <- list()
-  for (c in candidats) {
-    if (c == "optimizer") {
-      resultats[[c]] <- tryCatch(run_optimization_milp(df, params), error = function(e) run_simulation(df, params, "smart", 0.5))
-    } else {
-      parsed <- if (startsWith(c, "hybrid_")) list(mode = "hybrid", poids = as.numeric(sub("hybrid_", "", c)))
-      else list(mode = c, poids = params$poids_cout)
-      resultats[[c]] <- run_simulation(df, params, parsed$mode, parsed$poids)
-    }
-  }
-  n <- nrow(df); fenetre_qt <- params$auto_fenetre_jours * 96
-  mode_sel <- rep(candidats[1], n); best <- candidats[1]
-  replace_na_vec <- function(x) ifelse(is.na(x), 0, x)
-  couts_cum <- lapply(candidats, function(c) {
-    r <- resultats[[c]]
-    cumsum(replace_na_vec(r$sim_offtake * r$prix_offtake - r$sim_intake * r$prix_injection))
-  })
-  names(couts_cum) <- candidats
-  for (i in seq_len(n)) {
-    if (i > fenetre_qt && i %% 96 == 0) {
-      debut <- i - fenetre_qt
-      couts_fen <- sapply(candidats, function(c) couts_cum[[c]][i] - couts_cum[[c]][debut])
-      best <- candidats[which.min(couts_fen)]
-    }
-    mode_sel[i] <- best
-  }
-  sim_auto <- df
-  sim_auto$sim_t_ballon <- NA_real_; sim_auto$sim_pac_on <- NA_integer_
-  sim_auto$sim_offtake <- NA_real_; sim_auto$sim_intake <- NA_real_
-  sim_auto$sim_cop <- NA_real_; sim_auto$decision_raison <- NA_character_
-  sim_auto$mode_actif <- mode_sel
-  for (i in seq_len(n)) {
-    c <- mode_sel[i]; r <- resultats[[c]]
-    sim_auto$sim_t_ballon[i] <- r$sim_t_ballon[i]; sim_auto$sim_pac_on[i] <- r$sim_pac_on[i]
-    sim_auto$sim_offtake[i] <- r$sim_offtake[i]; sim_auto$sim_intake[i] <- r$sim_intake[i]
-    sim_auto$sim_cop[i] <- r$sim_cop[i]; sim_auto$decision_raison[i] <- r$decision_raison[i]
-  }
-  list(auto = sim_auto, candidats = resultats, modes = mode_sel)
 }
 
 generer_demo <- function(jours = 365) {
@@ -703,11 +538,8 @@ ui <- page_fillable(
         tags$div(class = "section-title", "Optimisation", tip("Deux approches : Rule-based (regles heuristiques, rapide) ou Optimiseur (MILP, trouve la solution mathematiquement optimale).")),
         radioButtons("approche", "Approche", choices = c("Rule-based" = "rulebased", "Optimiseur" = "optimiseur"), selected = "rulebased", inline = TRUE),
         conditionalPanel("input.approche=='rulebased'",
-          selectInput("mode_optim", "Mode", choices = c("Smart" = "smart", "Injection" = "injection", "Cout" = "cost", "Hybrid" = "hybrid", "Auto-adaptatif" = "auto"), selected = "smart"),
-          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-4px;margin-bottom:6px;", cl$text_muted),
-            HTML("<b>Smart</b> = valeur nette<br><b>Injection</b> = minimiser le surplus<br><b>Cout</b> = minimiser la facture<br><b>Hybrid</b> = compromis pondere<br><b>Auto</b> = teste et choisit")),
-          conditionalPanel("input.mode_optim=='hybrid'", sliderInput("poids_cout", "Poids cout", 0, 1, 0.6, step = 0.1)),
-          conditionalPanel("input.mode_optim=='auto'", sliderInput("auto_fenetre", "Fenetre eval (j)", 3, 30, 14, step = 1))),
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+            HTML("Mode <b>Smart</b> : decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP."))),
         conditionalPanel("input.approche=='optimiseur'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
             HTML("Resout un probleme d'optimisation mathematique (MILP) qui minimise le cout net en respectant toutes les contraintes physiques. Trouve la <b>solution optimale globale</b> sur tout l'horizon, jour par jour.")))),
@@ -803,14 +635,9 @@ ui <- page_fillable(
           tags$summary("Comprendre la comparaison"),
           tags$p("Compare le scenario ", tags$strong("reel"), " (ce qui s'est passe) avec le scenario ", tags$strong("optimise"), " (ce que l'algo aurait fait)."),
           tags$ul(
-            tags$li(tags$strong("Injection quotidienne :"), " les barres cyan representent l'injection evitee chaque jour. Plus la barre est haute, plus l'algo a ete efficace ce jour-la."),
-            tags$li(tags$strong("Mode auto :"), " en mode Auto-adaptatif, 5 strategies tournent en parallele. Le graphique en bandes montre laquelle est selectionnee au fil du temps. L'algo bascule automatiquement vers la plus performante."),
-            tags$li(tags$strong("Performance par candidat :"), " tableau comparatif des 5 strategies sur toute la periode. Permet de voir si un mode domine ou si c'est saisonnier.")
+            tags$li(tags$strong("Bilan quotidien :"), " les barres cyan representent l'injection evitee chaque jour. Plus la barre est haute, plus l'algo a ete efficace ce jour-la.")
           )),
-        layout_columns(col_widths = 12, card(full_screen = TRUE, card_header("Injection quotidienne"), card_body(plotlyOutput("plot_injection_compare", height = "320px")))),
-        layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header(textOutput("auto_title")), card_body(plotlyOutput("plot_auto_modes", height = "280px"))),
-          card(full_screen = TRUE, card_header("Performance par candidat"), card_body(DTOutput("table_candidats"))))),
+        layout_columns(col_widths = 12, card(full_screen = TRUE, card_header("Bilan quotidien"), card_body(plotlyOutput("plot_injection_compare", height = "320px"))))),
       nav_panel(title = "Insights", icon = icon("lightbulb"),
         explainer(
           tags$summary("Comprendre ces visualisations"),
@@ -855,7 +682,7 @@ ui <- page_fillable(
           tags$ul(
             tags$li(tags$strong("Scenarii PV :"), " compare automatiquement votre taille PV actuelle avec +/- 2 kWc. Le graphique montre le cout net annuel (barres) et le taux d'autoconsommation (ligne). Un PV plus grand produit plus mais injecte aussi plus — le point optimal depend de votre profil."),
             tags$li(tags$strong("Scenarii Batterie :"), " compare 5 tailles de batterie (0 a 20 kWh). Une batterie absorbe le surplus que le ballon ne peut plus stocker. Le cout diminue mais le retour sur investissement depend du prix de la batterie (non modelise ici)."),
-            tags$li(tags$strong("Automagic :"), " teste ", tags$code("210 combinaisons"), " (7 tailles PV x 5 batteries x 3 modes x 2 contrats) et identifie la meilleure. La heatmap permet de voir les zones de cout optimal et les rendements decroissants.")
+            tags$li(tags$strong("Automagic :"), " teste ", tags$code("140 combinaisons"), " (7 tailles PV x 5 batteries x 2 modes x 2 contrats) et identifie la meilleure. La heatmap permet de voir les zones de cout optimal et les rendements decroissants.")
           ),
           tags$p(tags$strong("Conseil :"), " regardez le tableau des top 30. Parfois la 2e meilleure config coute 5 EUR de plus mais necessite une batterie beaucoup plus petite — ce qui peut etre plus rentable vu le cout d'achat.")),
         conditionalPanel("output.has_automagic",
@@ -951,10 +778,8 @@ DONNEES CALCULEES
           ),
 
           accordion_panel("4. Modes d'optimisation", icon = icon("sliders"),
-            tags$h6(style = sprintf("color:%s;", cl$reel), "INJECTION"), tags$p("Allumer la PAC sur surplus PV. Simple, robuste."),
-            tags$h6(style = sprintf("color:%s;", cl$opti), "COUT"), tags$p("Raisonne en euros. Detecte prix negatifs et heures pas cheres."),
-            tags$h6(style = sprintf("color:%s;", cl$accent3), "HYBRID"), tags$p("Score injection + score cout, ponderes (slider)."),
-            tags$h6(style = sprintf("color:%s;", cl$success), "AUTO-ADAPTATIF"), tags$p("5 strategies en parallele. Bascule vers la meilleure sur N derniers jours. Detecte les erreurs de prevision par le resultat financier reel.")
+            tags$h6(style = sprintf("color:%s;", cl$success), "SMART (Rule-based)"), tags$p("Decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP. Tient compte des prix negatifs, de l'urgence confort et de l'anticipation de surplus futur."),
+            tags$h6(style = sprintf("color:%s;", cl$opti), "OPTIMIZER (MILP)"), tags$p("Resout un probleme d'optimisation mathematique (MILP) qui minimise le cout net en respectant toutes les contraintes physiques. Trouve la solution optimale globale sur tout l'horizon, jour par jour.")
           ),
 
           accordion_panel("5. Types de decisions", icon = icon("code-branch"),
@@ -1063,8 +888,7 @@ sur 14 derniers jours    meilleur       ca continue"),
       batt_rendement = input$batt_rendement / 100,
       batt_soc_min = input$batt_soc_range[1] / 100,
       batt_soc_max = input$batt_soc_range[2] / 100,
-      poids_cout = input$poids_cout, auto_fenetre_jours = input$auto_fenetre,
-      auto_poids_hybrides = c(0.3, 0.5, 0.7))
+      poids_cout = 0.5)
   })
   
   raw_data <- reactive({
@@ -1135,18 +959,10 @@ sur 14 derniers jours    meilleur       ca continue"),
         list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer")
       } else {
         setProgress(0.3, detail = "Simulation en cours...")
-        mode <- input$mode_optim
-        if (mode == "auto") {
-          res <- run_simulation_auto(df_prep, p)
-          setProgress(1, detail = "Termine!")
-          list(sim = res$auto, candidats = res$candidats, modes = res$modes, df = df_prep, params = p, mode = "auto")
-        } else {
-          poids <- if (mode == "hybrid") input$poids_cout else 0.5
-          sim <- run_simulation(df_prep, p, mode, poids)
-          sim$mode_actif <- mode
-          setProgress(1, detail = "Termine!")
-          list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = mode)
-        }
+        sim <- run_simulation(df_prep, p, "smart", 0.5)
+        sim$mode_actif <- "smart"
+        setProgress(1, detail = "Termine!")
+        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "smart")
       }
     })
   })
@@ -1167,7 +983,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     req(sim_result()); res <- sim_result(); sim <- res$sim; n <- nrow(sim)
     p <- if (!is.null(res$params)) res$params else params_r()
     jours <- as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days"))
-    ml <- c(injection = "INJ", cost = "COUT", hybrid = "HYB", auto = "AUTO", smart = "SMART", optimizer = "OPTIM")
+    ml <- c(smart = "SMART", optimizer = "OPTIM")
     batt <- if (p$batterie_active) paste0(p$batt_kwh, "kWh/", p$batt_kw, "kW") else "non"
     contrat <- if (p$type_contrat == "fixe") paste0("fixe ", p$prix_fixe_offtake, "/", p$prix_fixe_injection) else "spot"
     tags$div(id = "status_bar", HTML(sprintf(
@@ -1262,7 +1078,6 @@ sur 14 derniers jours    meilleur       ca continue"),
         grepl("surplus_pv", decision_raison) ~ "Surplus PV", grepl("eviter_inj", decision_raison) ~ "Inj. neg. evitee",
         grepl("soutirage_pas_cher", decision_raison) ~ "Soutirage pas cher", grepl("cout_optimal", decision_raison) ~ "Cout optimal",
         grepl("anticipation", decision_raison) ~ "Anticipation confort", grepl("attente", decision_raison) ~ "Attente meilleur",
-        grepl("hybrid_on", decision_raison) ~ "Hybrid ON", grepl("hybrid_off", decision_raison) ~ "Hybrid OFF",
         grepl("pas_de_surplus|pas_rentable", decision_raison) ~ "Pas d'action", TRUE ~ "Autre")) %>%
       count(cat) %>% arrange(desc(n))
     cols <- c(cl$success, cl$opti, cl$pv, cl$accent3, cl$reel, cl$danger, cl$text_muted, "#6366f1", "#ec4899", "#14b8a6", "#f59e0b", "#8b5cf6")
@@ -1290,31 +1105,6 @@ sur 14 derniers jours    meilleur       ca continue"),
       add_trace(y = ~r, type = "scatter", mode = "lines", name = "Reel", line = list(color = cl$reel, width = 1)) %>%
       add_trace(y = ~o, type = "scatter", mode = "lines", name = "Optimise", line = list(color = cl$opti, width = 1.5)) %>%
       add_bars(y = ~e, name = "Evite", marker = list(color = "rgba(34,211,238,0.2)")) %>% pl_layout(ylab = "kWh/jour")
-  })
-  
-  output$auto_title <- renderText({ if (sim_result()$mode == "auto") "Mode selectionne au fil du temps" else "Mode fixe (activez Auto)" })
-  
-  output$plot_auto_modes <- renderPlotly({
-    req(sim_result()); res <- sim_result()
-    if (res$mode != "auto" || is.null(res$sim$mode_actif))
-      return(plot_ly() %>% add_annotations(text = "Activez le mode Auto", x = .5, y = .5, showarrow = FALSE, font = list(color = cl$text_muted)) %>% pl_layout())
-    dm <- res$sim %>% mutate(jour = as.Date(timestamp)) %>% group_by(jour) %>% summarise(mode = names(which.max(table(mode_actif))), .groups = "drop")
-    mc <- c(optimizer = "#10b981", smart = cl$success, injection = cl$reel, cost = cl$opti, `hybrid_0.3` = "#a78bfa", `hybrid_0.5` = "#818cf8", `hybrid_0.7` = "#6366f1")
-    plot_ly(dm, x = ~jour, y = 1, color = ~mode, colors = mc, type = "bar") %>% layout(barmode = "stack", bargap = 0) %>% pl_layout() %>% layout(yaxis = list(visible = FALSE))
-  })
-  
-  output$table_candidats <- renderDT({
-    req(sim_result()); res <- sim_result()
-    if (is.null(res$candidats)) return(datatable(tibble(Info = "Activez Auto"), options = list(dom = "t")))
-    comp <- bind_rows(lapply(names(res$candidats), function(c) {
-      r <- res$candidats[[c]]
-      tibble(Mode = c, `Inj (kWh)` = round(sum(r$sim_intake, na.rm = TRUE)),
-        `Offt (kWh)` = round(sum(r$sim_offtake, na.rm = TRUE)),
-        `Cout (EUR)` = round(sum(r$sim_offtake * r$prix_offtake - r$sim_intake * r$prix_injection, na.rm = TRUE)),
-        `AC (%)` = round((1 - sum(r$sim_intake, na.rm = TRUE) / max(sum(r$pv_kwh, na.rm = TRUE), 1)) * 100, 1))
-    }))
-    datatable(comp, rownames = FALSE, options = list(dom = "t", pageLength = 10), class = "compact") %>%
-      formatStyle("Cout (EUR)", backgroundColor = styleInterval(median(comp$`Cout (EUR)`), c("rgba(34,211,238,0.15)", "rgba(249,115,113,0.15)")))
   })
   
   # ---- INSIGHTS : Heatmap ----
@@ -1517,7 +1307,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     # Grille de recherche
     pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
     batt_range <- c(0, 5, 10, 15, 20)
-    modes      <- c("optimizer", "smart", "injection", "cost", "hybrid")
+    modes      <- c("smart", "optimizer")
     contrats   <- c("fixe", "dynamique")
     
     total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
@@ -1556,10 +1346,8 @@ sur 14 derniers jours    meilleur       ca continue"),
               setProgress(k / total, detail = sprintf("%d/%d — PV %dkWc Batt %dkWh %s %s",
                 k, total, pv_kwc, bkwh, m, ct))
               
-              poids <- if (m == "hybrid") 0.5 else 0.5
-              
               tryCatch({
-                sim <- if (m == "optimizer") run_optimization_milp(df_prep, p_sim) else run_simulation(df_prep, p_sim, m, poids)
+                sim <- if (m == "optimizer") run_optimization_milp(df_prep, p_sim) else run_simulation(df_prep, p_sim, "smart", 0.5)
                 
                 pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
                 inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
@@ -1642,7 +1430,11 @@ sur 14 derniers jours    meilleur       ca continue"),
     updateSliderInput(session, "pv_kwc", value = best$PV_kWc)
     updateCheckboxInput(session, "batterie_active", value = best$Batterie_kWh > 0)
     updateNumericInput(session, "batt_kwh", value = best$Batterie_kWh)
-    updateSelectInput(session, "mode_optim", selected = best$Mode)
+    if (best$Mode == "optimizer") {
+      updateRadioButtons(session, "approche", selected = "optimiseur")
+    } else {
+      updateRadioButtons(session, "approche", selected = "rulebased")
+    }
     updateRadioButtons(session, "type_contrat", selected = best$Contrat)
     
     showNotification("Configuration appliquee! Lancez la simulation pour voir les details.", type = "message")
@@ -1692,16 +1484,14 @@ sur 14 derniers jours    meilleur       ca continue"),
   output$plot_dim_pv <- renderPlotly({
     req(sim_result()); res <- sim_result(); p <- if (!is.null(res$params)) res$params else params_r()
     df_base <- res$df
-    mode <- res$mode; if (mode == "auto") mode <- "cost"
-    poids <- p$poids_cout
 
     kwc_ref <- p$pv_kwc
     kwc_range <- seq(max(1, kwc_ref - 2), kwc_ref + 2, by = 1)
-    
+
     scenarii <- bind_rows(lapply(kwc_range, function(kwc) {
       p_sc <- p; p_sc$pv_kwc <- kwc; p_sc$pv_kwc_ref <- p$pv_kwc  # already scaled in res$df
       df_sc <- df_base %>% mutate(pv_kwh = pv_kwh * kwc / kwc_ref)
-      sim_sc <- run_simulation(df_sc, p_sc, mode, poids)
+      sim_sc <- run_simulation(df_sc, p_sc, "smart", 0.5)
       tibble(
         kWc = kwc,
         `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
@@ -1738,16 +1528,14 @@ sur 14 derniers jours    meilleur       ca continue"),
     req(sim_result()); res <- sim_result(); p <- if (!is.null(res$params)) res$params else params_r()
     if (!p$batterie_active) return(plot_ly() %>% pl_layout())
     df_base <- res$df
-    mode <- res$mode; if (mode == "auto") mode <- "cost"
-    poids <- p$poids_cout
-    
+
     cap_range <- c(0, 5, 10, 15, 20)
-    
+
     scenarii <- bind_rows(lapply(cap_range, function(cap) {
       p_sc <- p
       p_sc$batterie_active <- cap > 0
       p_sc$batt_kwh <- cap
-      sim_sc <- run_simulation(df_base, p_sc, mode, poids)
+      sim_sc <- run_simulation(df_base, p_sc, "smart", 0.5)
       tibble(
         `Batterie (kWh)` = cap,
         `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
