@@ -8,6 +8,7 @@
 library(ompr)
 library(ompr.roi)
 library(ROI.plugin.glpk)
+library(ROI.plugin.highs)
 
 # -----------------------------------------------------------------------------
 # Resoudre un jour (96 quarts d'heure)
@@ -162,7 +163,7 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
   # Resoudre
   # ----------------------------------------------------------
   result <- tryCatch(
-    solve_model(model, with_ROI(solver = "glpk", verbose = FALSE)),
+    solve_model(model, with_ROI(solver = "highs", verbose = FALSE)),
     error = function(e) {
       message("[Optimizer] Erreur solveur : ", e$message)
       return(NULL)

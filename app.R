@@ -18,6 +18,7 @@ library(xml2)
 library(ompr)
 library(ompr.roi)
 library(ROI.plugin.glpk)
+library(ROI.plugin.highs)
 
 # Charger les modules
 source("R/belpex.R", local = TRUE)
