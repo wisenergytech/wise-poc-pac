@@ -463,6 +463,32 @@ pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL) {
     hoverlabel = list(font = list(family = "JetBrains Mono", size = 11)))
 }
 
+# Auto-aggregate based on period length
+auto_aggregate <- function(df, timestamp_col = "timestamp") {
+  period_days <- as.numeric(difftime(max(df[[timestamp_col]], na.rm=TRUE), min(df[[timestamp_col]], na.rm=TRUE), units="days"))
+  if (period_days <= 7) {
+    list(data = df, level = "15 min", label = "Quart-horaire")
+  } else if (period_days <= 30) {
+    agg <- df %>% mutate(.h = floor_date(!!sym(timestamp_col), "hour")) %>%
+      group_by(.h) %>%
+      summarise(across(where(is.numeric), ~mean(.x, na.rm=TRUE)), .groups="drop") %>%
+      rename(!!timestamp_col := .h)
+    list(data = agg, level = "hour", label = "Horaire")
+  } else if (period_days <= 90) {
+    agg <- df %>% mutate(.d = floor_date(!!sym(timestamp_col), "day")) %>%
+      group_by(.d) %>%
+      summarise(across(where(is.numeric), ~sum(.x, na.rm=TRUE)), .groups="drop") %>%
+      rename(!!timestamp_col := .d)
+    list(data = agg, level = "day", label = "Journalier")
+  } else {
+    agg <- df %>% mutate(.w = floor_date(!!sym(timestamp_col), "week")) %>%
+      group_by(.w) %>%
+      summarise(across(where(is.numeric), ~sum(.x, na.rm=TRUE)), .groups="drop") %>%
+      rename(!!timestamp_col := .w)
+    list(data = agg, level = "week", label = "Hebdomadaire")
+  }
+}
+
 # =============================================================================
 # HELPERS PEDAGOGIQUES
 # =============================================================================
@@ -608,39 +634,42 @@ ui <- page_fillable(
       nav_panel(title = "Vue d'ensemble", icon = icon("chart-line"),
         explainer(
           tags$summary("Comprendre cette vue"),
-          tags$p("Cette vue compare le fonctionnement ", tags$strong("reel"), " de votre installation (courbes orange) avec le fonctionnement ", tags$strong("optimise"), " par l'algorithme (courbes cyan)."),
+          tags$p("Cette vue donne une ", tags$strong("vision globale"), " de votre installation : flux d'energie, autoconsommation, autosuffisance, production et consommation."),
           tags$ul(
-            tags$li(tags$strong("Production PV vs injection :"), " la courbe jaune montre votre production solaire quotidienne. L'ecart entre l'injection reelle (pointilles) et optimisee (trait plein) represente l'energie que l'algo aurait permis d'autoconsommer."),
-            tags$li(tags$strong("Temperature ballon :"), " montre comment l'algo utilise le ballon comme batterie thermique — il chauffe quand le PV est disponible et laisse descendre quand il ne l'est pas, tout en respectant les limites."),
-            tags$li(tags$strong("COP journalier :"), " le Coefficient de Performance varie avec la temperature exterieure. En ete (COP ~4-5), chaque kWh electrique produit plus de chaleur qu'en hiver (COP ~2-3).")
+            tags$li(tags$strong("Flux d'energie :"), " compare les sources et destinations de l'electricite entre le scenario reel et optimise. PV autoconsomme = la part du solaire consommee sur place."),
+            tags$li(tags$strong("Autoconsommation :"), " pourcentage du PV consomme sur place (vs injecte dans le reseau). Plus c'est haut, mieux c'est."),
+            tags$li(tags$strong("Autosuffisance :"), " pourcentage de la consommation couverte par le PV. Complementaire a l'autoconsommation."),
+            tags$li(tags$strong("Temperature ballon :"), " montre comment l'algo utilise le ballon comme batterie thermique."),
+            tags$li(tags$strong("COP journalier :"), " le Coefficient de Performance varie avec la temperature exterieure.")
           )),
-        layout_columns(col_widths = 12, card(full_screen = TRUE, card_header("Production PV vs injection"), card_body(plotlyOutput("plot_overview", height = "320px")))),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("Flux d'energie — reel vs optimise"),
+            card_body(plotlyOutput("plot_sankey", height = "380px")))),
         layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header("Temperature ballon"), card_body(plotlyOutput("plot_temperature", height = "280px"))),
-          card(full_screen = TRUE, card_header("COP journalier"), card_body(plotlyOutput("plot_cop", height = "280px")))),
+          card(full_screen = TRUE, card_header("Autoconsommation"),
+            card_body(plotlyOutput("plot_donut_autoconso", height = "280px"))),
+          card(full_screen = TRUE, card_header("Autosuffisance"),
+            card_body(plotlyOutput("plot_donut_autosuff", height = "280px")))),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("Production PV vs soutirage"),
+            card_body(plotlyOutput("plot_overview", height = "320px")))),
+        layout_columns(col_widths = c(6, 6),
+          card(full_screen = TRUE, card_header("Temperature ballon"),
+            card_body(plotlyOutput("plot_temperature", height = "280px"))),
+          card(full_screen = TRUE, card_header("COP journalier"),
+            card_body(plotlyOutput("plot_cop", height = "280px")))),
         conditionalPanel("input.batterie_active",
           layout_columns(col_widths = 12,
-            card(full_screen = TRUE, card_header("Batterie — Etat de charge (SoC)"), card_body(plotlyOutput("plot_batterie", height = "250px")))))),
-      nav_panel(title = "Analyse", icon = icon("magnifying-glass"),
-        explainer(
-          tags$summary("Comprendre cette analyse"),
-          tags$p("Cet onglet decompose le ", tags$strong("comportement de l'algorithme"), " pour comprendre ses decisions."),
-          tags$ul(
-            tags$li(tags$strong("Profil journalier :"), " moyenne sur mai-aout (periode de forte production PV). Permet de voir si la PAC tourne bien pendant les heures d'ensoleillement plutot que le soir."),
-            tags$li(tags$strong("Repartition des decisions :"), " pourquoi l'algo allume ou eteint la PAC a chaque quart d'heure. 'Surplus PV' = le soleil produit plus que la maison ne consomme. 'Attente meilleur' = l'algo anticipe un meilleur moment."),
-            tags$li(tags$strong("Prix spot et PAC ON :"), " les points cyan montrent a quel prix l'algo fait tourner la PAC. Idealement, la PAC tourne quand le prix est bas (beaucoup de renouvelable sur le reseau).")
-          )),
-        layout_columns(col_widths = 12, card(full_screen = TRUE, card_header("Profil journalier moyen (mai-aout)"), card_body(plotlyOutput("plot_profil", height = "320px")))),
-        layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header("Repartition des decisions"), card_body(plotlyOutput("plot_decisions", height = "300px"))),
-          card(full_screen = TRUE, card_header("Prix spot et PAC ON"), card_body(plotlyOutput("plot_prix_pac", height = "300px"))))),
+            card(full_screen = TRUE, card_header("Batterie — Etat de charge (SoC)"),
+              card_body(plotlyOutput("plot_batterie", height = "250px")))))),
       nav_panel(title = "Gains", icon = icon("piggy-bank"),
         explainer(
           tags$summary("Comprendre les gains"),
           tags$ul(
             tags$li(tags$strong("Cout cumule :"), " deux courbes qui montent au fil du temps. L'ecart entre elles = votre gain total. Plus elles s'ecartent, plus l'optimisation est efficace."),
-            tags$li(tags$strong("Barres quotidiennes :"), " pour chaque jour, le cout reel et le cout optimise cote a cote. Les jours ou la barre cyan est plus courte = l'optimisation a fait economiser."),
-            tags$li(tags$strong("Profil journalier :"), " montre comment la PAC est decalee des heures sans PV (thermostat classique) vers les heures avec PV (optimise).")
+            tags$li(tags$strong("Barres quotidiennes :"), " pour chaque jour, le cout reel et le cout optimise cote a cote."),
+            tags$li(tags$strong("Waterfall :"), " decompose le gain financier : soutirage evite, injection perdue, et gain de timing."),
+            tags$li(tags$strong("Pointes de soutirage :"), " compare les pics mensuels de soutirage reseau entre le reel et l'optimise (peak shaving).")
           )),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Cout cumule — reel vs optimise"),
@@ -648,21 +677,25 @@ ui <- page_fillable(
         layout_columns(col_widths = c(6, 6),
           card(full_screen = TRUE, card_header("Cout quotidien — reel vs optimise"),
             card_body(plotlyOutput("plot_cout_quotidien", height = "300px"))),
-          card(full_screen = TRUE, card_header("Profil PAC — reel vs optimise"),
-            card_body(plotlyOutput("plot_profil_pac", height = "300px")))),
+          card(full_screen = TRUE, card_header("Waterfall — decomposition du gain"),
+            card_body(plotlyOutput("plot_waterfall", height = "300px")))),
         layout_columns(col_widths = c(6, 6),
           card(full_screen = TRUE, card_header("Bilan mensuel"),
             card_body(DTOutput("table_mensuel"))),
-          card(full_screen = TRUE, card_header("Waterfall — decomposition du gain"),
-            card_body(plotlyOutput("plot_waterfall", height = "300px"))))),
-      nav_panel(title = "Insights", icon = icon("lightbulb"),
+          card(full_screen = TRUE, card_header("Pointes de soutirage mensuelles"),
+            card_body(plotlyOutput("plot_peak_shaving", height = "300px"))))),
+      nav_panel(title = "Profils", icon = icon("clock"),
         explainer(
-          tags$summary("Comprendre ces visualisations"),
+          tags$summary("Comprendre les profils"),
           tags$ul(
+            tags$li(tags$strong("Profil journalier empile :"), " montre la decomposition moyenne de la consommation et production sur 24h. Permet de voir ou va l'energie a chaque heure."),
             tags$li(tags$strong("Heatmap :"), " chaque cellule = 1 heure d'une journee. La couleur montre l'intensite de la variable choisie. Permet de reperer les patterns saisonniers et journaliers."),
-            tags$li(tags$strong("Load shifting :"), " superpose le profil moyen reel et optimise. Montre comment la PAC est decalee des heures sans PV vers les heures avec PV."),
-            tags$li(tags$strong("Waterfall :"), " decompose le gain financier : soutirage evite, injection perdue, et gain de timing (contrat dynamique).")
+            tags$li(tags$strong("Injection par prix :"), " montre a quel prix l'injection a lieu — idealement, on injecte quand le prix est eleve."),
+            tags$li(tags$strong("Profil PAC :"), " compare le profil moyen de la PAC entre reel et optimise sur 24h.")
           )),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("Profil journalier moyen — empile"),
+            card_body(plotlyOutput("plot_stacked_profile", height = "380px")))),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Heatmap — pattern journalier x saisonnier"),
             card_body(
@@ -674,10 +707,10 @@ ui <- page_fillable(
                 tags$div()),
               plotlyOutput("plot_heatmap", height = "380px")))),
         layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header("Load shifting — profil journalier moyen"),
-            card_body(plotlyOutput("plot_loadshift", height = "320px"))),
-          card(full_screen = TRUE, card_header("Waterfall — decomposition des economies"),
-            card_body(plotlyOutput("plot_waterfall", height = "320px"))))),
+          card(full_screen = TRUE, card_header("Injection par tranche horaire et prix"),
+            card_body(plotlyOutput("plot_injection_prix", height = "300px"))),
+          card(full_screen = TRUE, card_header("Profil PAC — reel vs optimise"),
+            card_body(plotlyOutput("plot_profil_pac", height = "300px"))))),
       nav_panel(title = "Dimensionnement", icon = icon("solar-panel"),
         explainer(
           tags$summary("Comprendre le dimensionnement"),
@@ -1073,12 +1106,14 @@ sur 14 derniers jours    meilleur       ca continue"),
   
   output$plot_overview <- renderPlotly({
     req(sim_result()); sim <- sim_result()$sim
-    d <- sim %>% mutate(jour = as.Date(timestamp)) %>% group_by(jour) %>%
+    agg <- auto_aggregate(sim)
+    d <- agg$data %>% mutate(jour = as.Date(timestamp)) %>% group_by(jour) %>%
       summarise(pv = sum(pv_kwh, na.rm = TRUE), ir = sum(intake_kwh, na.rm = TRUE), io = sum(sim_intake, na.rm = TRUE), .groups = "drop")
     plot_ly(d, x = ~jour) %>%
       add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV", line = list(color = cl$pv, width = 1), fill = "tozeroy", fillcolor = "rgba(251,191,36,0.1)") %>%
       add_trace(y = ~ir, type = "scatter", mode = "lines", name = "Injection reelle", line = list(color = cl$reel, width = 1.5, dash = "dot")) %>%
-      add_trace(y = ~io, type = "scatter", mode = "lines", name = "Injection optimisee", line = list(color = cl$opti, width = 1.5)) %>% pl_layout(ylab = "kWh/jour")
+      add_trace(y = ~io, type = "scatter", mode = "lines", name = "Injection optimisee", line = list(color = cl$opti, width = 1.5)) %>%
+      pl_layout(title = paste0("Agregation: ", agg$label), ylab = "kWh/jour")
   })
   
   output$plot_temperature <- renderPlotly({
@@ -1099,50 +1134,13 @@ sur 14 derniers jours    meilleur       ca continue"),
     plot_ly(d, x = ~jour, y = ~cop, type = "scatter", mode = "lines", line = list(color = cl$pac, width = 1.5), fill = "tozeroy", fillcolor = "rgba(52,211,153,0.08)") %>% pl_layout(ylab = "COP")
   })
   
-  output$plot_profil <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim; p <- params_r()
-    pr <- sim %>% filter(month(timestamp) %in% 5:8) %>% mutate(h = hour(timestamp) + minute(timestamp)/60) %>%
-      group_by(h) %>% summarise(pv = mean(pv_kwh, na.rm = TRUE), pac = mean(sim_pac_on * p$p_pac_kw * p$dt_h, na.rm = TRUE),
-        ir = mean(intake_kwh, na.rm = TRUE), io = mean(sim_intake, na.rm = TRUE), .groups = "drop")
-    plot_ly(pr, x = ~h) %>%
-      add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV", fill = "tozeroy", fillcolor = "rgba(251,191,36,0.15)", line = list(color = cl$pv, width = 1)) %>%
-      add_trace(y = ~pac, type = "scatter", mode = "lines", name = "PAC optimisee", line = list(color = cl$pac, width = 2)) %>%
-      add_trace(y = ~ir, type = "scatter", mode = "lines", name = "Injection reelle", line = list(color = cl$reel, width = 1.5, dash = "dot")) %>%
-      add_trace(y = ~io, type = "scatter", mode = "lines", name = "Injection optimisee", line = list(color = cl$opti, width = 1.5)) %>%
-      pl_layout(xlab = "Heure", ylab = "kWh/qt")
-  })
-  
-  output$plot_decisions <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim
-    dec <- sim %>% filter(!is.na(decision_raison)) %>%
-      mutate(cat = case_when(
-        grepl("urgence", decision_raison) ~ "Urgence confort", grepl("ballon_plein", decision_raison) ~ "Ballon plein",
-        grepl("surplus_pv", decision_raison) ~ "Surplus PV", grepl("eviter_inj", decision_raison) ~ "Inj. neg. evitee",
-        grepl("soutirage_pas_cher", decision_raison) ~ "Soutirage pas cher", grepl("cout_optimal", decision_raison) ~ "Cout optimal",
-        grepl("anticipation", decision_raison) ~ "Anticipation confort", grepl("attente", decision_raison) ~ "Attente meilleur",
-        grepl("pas_de_surplus|pas_rentable", decision_raison) ~ "Pas d'action", TRUE ~ "Autre")) %>%
-      count(cat) %>% arrange(desc(n))
-    cols <- c(cl$success, cl$opti, cl$pv, cl$accent3, cl$reel, cl$danger, cl$text_muted, "#6366f1", "#ec4899", "#14b8a6", "#f59e0b", "#8b5cf6")
-    plot_ly(dec, labels = ~cat, values = ~n, type = "pie", textposition = "inside", textinfo = "label+percent",
-      textfont = list(size = 10, family = "JetBrains Mono"),
-      marker = list(colors = cols[1:nrow(dec)], line = list(color = cl$bg_dark, width = 2)), hole = 0.45) %>% pl_layout()
-  })
-  
-  output$plot_prix_pac <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim
-    s <- sim %>% filter(month(timestamp) == 7) %>% slice(1:(7*96))
-    if (nrow(s) < 96) s <- tail(sim, 7*96)
-    po <- s %>% filter(sim_pac_on == 1)
-    plot_ly(s, x = ~timestamp) %>%
-      add_trace(y = ~prix_eur_kwh*100, type = "scatter", mode = "lines", name = "Prix spot", line = list(color = cl$prix, width = 1)) %>%
-      add_markers(data = po, x = ~timestamp, y = ~prix_eur_kwh*100, name = "PAC ON", marker = list(color = cl$opti, size = 4, opacity = 0.6)) %>%
-      pl_layout(ylab = "cEUR/kWh")
-  })
+  # (plot_profil, plot_decisions, plot_prix_pac removed — content redistributed to other tabs)
   
   # ---- GAINS : Cout cumule reel vs optimise ----
   output$plot_cout_cumule <- renderPlotly({
     req(sim_result()); sim <- sim_result()$sim
-    d <- sim %>%
+    agg <- auto_aggregate(sim)
+    d <- agg$data %>%
       mutate(
         cout_reel_qt = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
         cout_opti_qt = sim_offtake * prix_offtake - sim_intake * prix_injection
@@ -1151,7 +1149,7 @@ sur 14 derniers jours    meilleur       ca continue"),
         cum_reel = cumsum(ifelse(is.na(cout_reel_qt), 0, cout_reel_qt)),
         cum_opti = cumsum(ifelse(is.na(cout_opti_qt), 0, cout_opti_qt))
       )
-    # Sous-echantillonner pour performance (1 point par heure)
+    # Sous-echantillonner for performance
     d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
       group_by(h) %>% slice_tail(n = 1) %>% ungroup()
     plot_ly(d_h, x = ~timestamp) %>%
@@ -1159,7 +1157,7 @@ sur 14 derniers jours    meilleur       ca continue"),
         line = list(color = cl$reel, width = 2), fill = "tozeroy", fillcolor = "rgba(249,115,22,0.08)") %>%
       add_trace(y = ~cum_opti, type = "scatter", mode = "lines", name = "Cout optimise",
         line = list(color = cl$opti, width = 2), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.08)") %>%
-      pl_layout(ylab = "EUR cumule")
+      pl_layout(title = paste0("Agregation: ", agg$label), ylab = "EUR cumule")
   })
 
   # ---- GAINS : Cout quotidien barres cote a cote ----
@@ -1252,33 +1250,9 @@ sur 14 derniers jours    meilleur       ca continue"),
       pl_layout(xlab = "Heure", ylab = NULL)
   })
 
-  # ---- INSIGHTS : Load shifting ----
-  output$plot_loadshift <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim; p <- if (!is.null(sim_result()$params)) sim_result()$params else params_r()
-    pac_qt <- p$p_pac_kw * p$dt_h
+  # (plot_loadshift removed — replaced by plot_stacked_profile in Profils tab)
 
-    ls <- sim %>%
-      mutate(h = hour(timestamp) + minute(timestamp) / 60) %>%
-      group_by(h) %>%
-      summarise(
-        pac_reel = mean(ifelse(offtake_kwh > pac_qt * 0.5, pac_qt, 0), na.rm = TRUE),
-        pac_opti = mean(sim_pac_on * pac_qt, na.rm = TRUE),
-        pv = mean(pv_kwh, na.rm = TRUE),
-        .groups = "drop"
-      )
-
-    plot_ly(ls, x = ~h) %>%
-      add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV moyen",
-        fill = "tozeroy", fillcolor = "rgba(251,191,36,0.1)",
-        line = list(color = cl$pv, width = 1)) %>%
-      add_trace(y = ~pac_reel, type = "scatter", mode = "lines", name = "PAC reel",
-        line = list(color = cl$reel, width = 2, dash = "dot")) %>%
-      add_trace(y = ~pac_opti, type = "scatter", mode = "lines", name = "PAC optimise",
-        line = list(color = cl$opti, width = 2)) %>%
-      pl_layout(xlab = "Heure", ylab = "kWh moyen/qt")
-  })
-
-  # ---- INSIGHTS : Waterfall ----
+  # ---- GAINS : Waterfall ----
   output$plot_waterfall <- renderPlotly({
     req(sim_result()); sim <- sim_result()$sim
 
@@ -1341,14 +1315,17 @@ sur 14 derniers jours    meilleur       ca continue"),
   output$plot_zoom <- renderPlotly({
     req(sim_result(), input$date_range); sim <- sim_result()$sim; p <- params_r()
     d1 <- as.POSIXct(input$date_range[1], tz = "Europe/Brussels"); d2 <- as.POSIXct(input$date_range[2], tz = "Europe/Brussels") + days(1)
-    ch <- sim %>% filter(timestamp >= d1, timestamp < d2)
-    if (nrow(ch) == 0) return(plot_ly() %>% pl_layout(title = "Pas de donnees"))
+    ch_raw <- sim %>% filter(timestamp >= d1, timestamp < d2)
+    if (nrow(ch_raw) == 0) return(plot_ly() %>% pl_layout(title = "Pas de donnees"))
+    agg <- auto_aggregate(ch_raw)
+    ch <- agg$data
     v <- input$zoom_var
-    if (v == "intake") plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~intake_kwh, name = "Reel", type = "scatter", mode = "lines", line = list(color = cl$reel, width = 1)) %>% add_trace(y = ~sim_intake, name = "Optimise", type = "scatter", mode = "lines", line = list(color = cl$opti, width = 1.5)) %>% pl_layout(ylab = "Injection (kWh)")
-    else if (v == "offtake") plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~offtake_kwh, name = "Reel", type = "scatter", mode = "lines", line = list(color = cl$reel, width = 1)) %>% add_trace(y = ~sim_offtake, name = "Optimise", type = "scatter", mode = "lines", line = list(color = cl$opti, width = 1.5)) %>% pl_layout(ylab = "Soutirage (kWh)")
-    else if (v == "temp") plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~t_ballon, name = "Reel", type = "scatter", mode = "lines", line = list(color = cl$reel, width = 1)) %>% add_trace(y = ~sim_t_ballon, name = "Optimise", type = "scatter", mode = "lines", line = list(color = cl$opti, width = 1.5)) %>% add_segments(x = min(ch$timestamp), xend = max(ch$timestamp), y = p$t_min, yend = p$t_min, showlegend = FALSE, line = list(color = cl$text_muted, dash = "dash", width = .8)) %>% add_segments(x = min(ch$timestamp), xend = max(ch$timestamp), y = p$t_max, yend = p$t_max, showlegend = FALSE, line = list(color = cl$text_muted, dash = "dash", width = .8)) %>% pl_layout(ylab = "C")
-    else if (v == "pv_pac") { po <- ch %>% filter(sim_pac_on == 1); plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~pv_kwh, name = "PV", type = "scatter", mode = "lines", fill = "tozeroy", fillcolor = "rgba(251,191,36,0.1)", line = list(color = cl$pv, width = 1)) %>% add_markers(data = po, x = ~timestamp, y = ~(p$p_pac_kw * p$dt_h), name = "PAC ON", marker = list(color = cl$pac, size = 3, opacity = .5)) %>% pl_layout(ylab = "kWh") }
-    else if (v == "prix") { po <- ch %>% filter(sim_pac_on == 1); plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~prix_eur_kwh*100, name = "Spot", type = "scatter", mode = "lines", line = list(color = cl$prix, width = 1)) %>% add_markers(data = po, x = ~timestamp, y = ~prix_eur_kwh*100, name = "PAC ON", marker = list(color = cl$opti, size = 4, opacity = .5)) %>% add_segments(x = min(ch$timestamp), xend = max(ch$timestamp), y = 0, yend = 0, showlegend = FALSE, line = list(color = cl$danger, dash = "dot", width = .8)) %>% pl_layout(ylab = "cEUR/kWh") }
+    zoom_title <- paste0("Agregation: ", agg$label)
+    if (v == "intake") plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~intake_kwh, name = "Reel", type = "scatter", mode = "lines", line = list(color = cl$reel, width = 1)) %>% add_trace(y = ~sim_intake, name = "Optimise", type = "scatter", mode = "lines", line = list(color = cl$opti, width = 1.5)) %>% pl_layout(title = zoom_title, ylab = "Injection (kWh)")
+    else if (v == "offtake") plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~offtake_kwh, name = "Reel", type = "scatter", mode = "lines", line = list(color = cl$reel, width = 1)) %>% add_trace(y = ~sim_offtake, name = "Optimise", type = "scatter", mode = "lines", line = list(color = cl$opti, width = 1.5)) %>% pl_layout(title = zoom_title, ylab = "Soutirage (kWh)")
+    else if (v == "temp") plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~t_ballon, name = "Reel", type = "scatter", mode = "lines", line = list(color = cl$reel, width = 1)) %>% add_trace(y = ~sim_t_ballon, name = "Optimise", type = "scatter", mode = "lines", line = list(color = cl$opti, width = 1.5)) %>% add_segments(x = min(ch$timestamp), xend = max(ch$timestamp), y = p$t_min, yend = p$t_min, showlegend = FALSE, line = list(color = cl$text_muted, dash = "dash", width = .8)) %>% add_segments(x = min(ch$timestamp), xend = max(ch$timestamp), y = p$t_max, yend = p$t_max, showlegend = FALSE, line = list(color = cl$text_muted, dash = "dash", width = .8)) %>% pl_layout(title = zoom_title, ylab = "C")
+    else if (v == "pv_pac") { po <- ch %>% filter(sim_pac_on == 1); plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~pv_kwh, name = "PV", type = "scatter", mode = "lines", fill = "tozeroy", fillcolor = "rgba(251,191,36,0.1)", line = list(color = cl$pv, width = 1)) %>% add_markers(data = po, x = ~timestamp, y = ~(p$p_pac_kw * p$dt_h), name = "PAC ON", marker = list(color = cl$pac, size = 3, opacity = .5)) %>% pl_layout(title = zoom_title, ylab = "kWh") }
+    else if (v == "prix") { po <- ch %>% filter(sim_pac_on == 1); plot_ly(ch, x = ~timestamp) %>% add_trace(y = ~prix_eur_kwh*100, name = "Spot", type = "scatter", mode = "lines", line = list(color = cl$prix, width = 1)) %>% add_markers(data = po, x = ~timestamp, y = ~prix_eur_kwh*100, name = "PAC ON", marker = list(color = cl$opti, size = 4, opacity = .5)) %>% add_segments(x = min(ch$timestamp), xend = max(ch$timestamp), y = 0, yend = 0, showlegend = FALSE, line = list(color = cl$danger, dash = "dot", width = .8)) %>% pl_layout(title = zoom_title, ylab = "cEUR/kWh") }
   })
   
   # ---- Batterie SoC ----
@@ -1372,6 +1349,196 @@ sur 14 derniers jours    meilleur       ca continue"),
       pl_layout(ylab = "SoC (%)")
   })
   
+  # ---- VUE D'ENSEMBLE : Flux d'energie (horizontal stacked bars) ----
+  output$plot_sankey <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+
+    pv_tot <- sum(sim$pv_kwh, na.rm = TRUE)
+    inj_reel <- sum(sim$intake_kwh, na.rm = TRUE)
+    off_reel <- sum(sim$offtake_kwh, na.rm = TRUE)
+    pv_autoconso_reel <- pv_tot - inj_reel
+    conso_tot_reel <- pv_autoconso_reel + off_reel
+
+    inj_opti <- sum(sim$sim_intake, na.rm = TRUE)
+    off_opti <- sum(sim$sim_offtake, na.rm = TRUE)
+    pv_autoconso_opti <- pv_tot - inj_opti
+    conso_tot_opti <- pv_autoconso_opti + off_opti
+
+    cats <- c("PV autoconsomme", "PV injecte", "Soutirage reseau")
+    vals_reel <- c(pv_autoconso_reel, inj_reel, off_reel)
+    vals_opti <- c(pv_autoconso_opti, inj_opti, off_opti)
+    bar_colors <- c(cl$pv, cl$reel, cl$danger)
+
+    plot_ly() %>%
+      add_bars(y = c("Reel", "Reel", "Reel"), x = vals_reel, name = cats,
+        orientation = "h", marker = list(color = bar_colors),
+        text = paste0(round(vals_reel), " kWh"), textposition = "inside",
+        textfont = list(color = "white", size = 10, family = "JetBrains Mono"),
+        showlegend = TRUE) %>%
+      add_bars(y = c("Optimise", "Optimise", "Optimise"), x = vals_opti, name = cats,
+        orientation = "h", marker = list(color = bar_colors),
+        text = paste0(round(vals_opti), " kWh"), textposition = "inside",
+        textfont = list(color = "white", size = 10, family = "JetBrains Mono"),
+        showlegend = FALSE) %>%
+      layout(barmode = "stack") %>%
+      pl_layout(xlab = "kWh", ylab = NULL)
+  })
+
+  # ---- VUE D'ENSEMBLE : Donut autoconsommation ----
+  output$plot_donut_autoconso <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+    pv_tot <- sum(sim$pv_kwh, na.rm = TRUE)
+    inj_reel <- sum(sim$intake_kwh, na.rm = TRUE)
+    inj_opti <- sum(sim$sim_intake, na.rm = TRUE)
+    ac_reel <- round((1 - inj_reel / max(pv_tot, 1)) * 100, 1)
+    ac_opti <- round((1 - inj_opti / max(pv_tot, 1)) * 100, 1)
+
+    p1 <- plot_ly(labels = c("Autoconso", "Injecte"), values = c(ac_reel, 100 - ac_reel),
+      type = "pie", hole = 0.5, domain = list(x = c(0, 0.45)),
+      marker = list(colors = c(cl$success, cl$reel)),
+      textinfo = "percent", textfont = list(size = 11, family = "JetBrains Mono"),
+      name = "Reel") %>%
+      add_pie(labels = c("Autoconso", "Injecte"), values = c(ac_opti, 100 - ac_opti),
+        hole = 0.5, domain = list(x = c(0.55, 1)),
+        marker = list(colors = c(cl$success, cl$opti)),
+        textinfo = "percent", textfont = list(size = 11, family = "JetBrains Mono"),
+        name = "Optimise") %>%
+      layout(
+        annotations = list(
+          list(text = paste0("Reel\n", ac_reel, "%"), x = 0.18, y = 0.5, showarrow = FALSE,
+            font = list(color = cl$text, size = 12, family = "JetBrains Mono")),
+          list(text = paste0("Optimise\n", ac_opti, "%"), x = 0.82, y = 0.5, showarrow = FALSE,
+            font = list(color = cl$text, size = 12, family = "JetBrains Mono"))
+        ),
+        showlegend = FALSE
+      ) %>%
+      pl_layout()
+    p1
+  })
+
+  # ---- VUE D'ENSEMBLE : Donut autosuffisance ----
+  output$plot_donut_autosuff <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+    pv_tot <- sum(sim$pv_kwh, na.rm = TRUE)
+    inj_reel <- sum(sim$intake_kwh, na.rm = TRUE)
+    off_reel <- sum(sim$offtake_kwh, na.rm = TRUE)
+    inj_opti <- sum(sim$sim_intake, na.rm = TRUE)
+    off_opti <- sum(sim$sim_offtake, na.rm = TRUE)
+
+    pv_autoconso_reel <- pv_tot - inj_reel
+    conso_tot_reel <- pv_autoconso_reel + off_reel
+    as_reel <- round(pv_autoconso_reel / max(conso_tot_reel, 1) * 100, 1)
+
+    pv_autoconso_opti <- pv_tot - inj_opti
+    conso_tot_opti <- pv_autoconso_opti + off_opti
+    as_opti <- round(pv_autoconso_opti / max(conso_tot_opti, 1) * 100, 1)
+
+    plot_ly(labels = c("PV", "Reseau"), values = c(as_reel, 100 - as_reel),
+      type = "pie", hole = 0.5, domain = list(x = c(0, 0.45)),
+      marker = list(colors = c(cl$success, cl$danger)),
+      textinfo = "percent", textfont = list(size = 11, family = "JetBrains Mono"),
+      name = "Reel") %>%
+      add_pie(labels = c("PV", "Reseau"), values = c(as_opti, 100 - as_opti),
+        hole = 0.5, domain = list(x = c(0.55, 1)),
+        marker = list(colors = c(cl$success, cl$opti)),
+        textinfo = "percent", textfont = list(size = 11, family = "JetBrains Mono"),
+        name = "Optimise") %>%
+      layout(
+        annotations = list(
+          list(text = paste0("Reel\n", as_reel, "%"), x = 0.18, y = 0.5, showarrow = FALSE,
+            font = list(color = cl$text, size = 12, family = "JetBrains Mono")),
+          list(text = paste0("Optimise\n", as_opti, "%"), x = 0.82, y = 0.5, showarrow = FALSE,
+            font = list(color = cl$text, size = 12, family = "JetBrains Mono"))
+        ),
+        showlegend = FALSE
+      ) %>%
+      pl_layout()
+  })
+
+  # ---- GAINS : Pointes de soutirage mensuelles (peak shaving) ----
+  output$plot_peak_shaving <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+
+    peaks <- sim %>%
+      mutate(mois = floor_date(timestamp, "month"),
+             h = floor_date(timestamp, "hour")) %>%
+      group_by(mois, h) %>%
+      summarise(
+        off_reel_h = sum(offtake_kwh, na.rm = TRUE),
+        off_opti_h = sum(sim_offtake, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      group_by(mois) %>%
+      summarise(
+        peak_reel = max(off_reel_h, na.rm = TRUE),
+        peak_opti = max(off_opti_h, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(mois_label = format(mois, "%b %Y"))
+
+    plot_ly(peaks, x = ~mois_label) %>%
+      add_bars(y = ~peak_reel, name = "Reel", marker = list(color = cl$reel, opacity = 0.7)) %>%
+      add_bars(y = ~peak_opti, name = "Optimise", marker = list(color = cl$opti, opacity = 0.7)) %>%
+      layout(barmode = "group", bargap = 0.15) %>%
+      pl_layout(xlab = "Mois", ylab = "Pointe horaire (kWh)")
+  })
+
+  # ---- PROFILS : Profil journalier moyen empile ----
+  output$plot_stacked_profile <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+    p <- if (!is.null(sim_result()$params)) sim_result()$params else params_r()
+    pac_qt <- p$p_pac_kw * p$dt_h
+
+    pr <- sim %>%
+      mutate(h = hour(timestamp) + minute(timestamp) / 60) %>%
+      group_by(h) %>%
+      summarise(
+        conso_base = mean(conso_hors_pac, na.rm = TRUE),
+        pac_opti = mean(sim_pac_on * pac_qt, na.rm = TRUE),
+        injection = mean(sim_intake, na.rm = TRUE),
+        soutirage = -mean(sim_offtake, na.rm = TRUE),
+        pv = mean(pv_kwh, na.rm = TRUE),
+        .groups = "drop"
+      )
+
+    plot_ly(pr, x = ~h) %>%
+      add_trace(y = ~conso_base, type = "scatter", mode = "lines", name = "Conso base",
+        fill = "tozeroy", fillcolor = "rgba(148,163,184,0.3)",
+        line = list(color = cl$text_muted, width = 1)) %>%
+      add_trace(y = ~(conso_base + pac_opti), type = "scatter", mode = "lines", name = "PAC optimise",
+        fill = "tonexty", fillcolor = "rgba(34,211,238,0.3)",
+        line = list(color = cl$opti, width = 1)) %>%
+      add_trace(y = ~injection, type = "scatter", mode = "lines", name = "Injection",
+        fill = "tozeroy", fillcolor = "rgba(249,115,22,0.2)",
+        line = list(color = cl$reel, width = 1)) %>%
+      add_trace(y = ~soutirage, type = "scatter", mode = "lines", name = "Soutirage",
+        fill = "tozeroy", fillcolor = "rgba(248,113,113,0.2)",
+        line = list(color = cl$danger, width = 1)) %>%
+      add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV",
+        line = list(color = cl$pv, width = 2.5)) %>%
+      pl_layout(xlab = "Heure", ylab = "kWh moyen/qt")
+  })
+
+  # ---- PROFILS : Injection par tranche horaire et prix ----
+  output$plot_injection_prix <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+
+    inj_data <- sim %>%
+      filter(sim_intake > 0) %>%
+      mutate(h = hour(timestamp)) %>%
+      select(h, sim_intake, prix_injection)
+
+    if (nrow(inj_data) == 0) return(plot_ly() %>% pl_layout(title = "Pas d'injection"))
+
+    plot_ly(inj_data, x = ~prix_injection * 100, y = ~sim_intake,
+      type = "scatter", mode = "markers",
+      color = ~factor(h), colors = "Viridis",
+      marker = list(size = 4, opacity = 0.4),
+      text = ~paste0(h, "h — ", round(sim_intake, 3), " kWh\n", round(prix_injection * 100, 1), " cEUR/kWh"),
+      hoverinfo = "text") %>%
+      pl_layout(xlab = "Prix injection (cEUR/kWh)", ylab = "Injection (kWh)")
+  })
+
   # ---- AUTOMAGIC : grid search ----
   automagic_results <- reactiveVal(NULL)
   
