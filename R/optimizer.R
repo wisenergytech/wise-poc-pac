@@ -25,8 +25,14 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
   conso <- day_data$conso_hors_pac
   prix_off <- day_data$prix_offtake
   prix_inj <- day_data$prix_injection
-  perte <- rep(params$perte_kwh_par_qt, n)
   ecs <- day_data$soutirage_estime_kwh
+
+  # Coefficient de perte proportionnel (meme modele que la demo)
+  # perte = k_perte * (T_ballon - T_ambiante) * dt
+  # Comme T_ballon est une variable, on integre ca dans la contrainte thermique
+  # perte_coeff * dt = 0.004 * 0.25 = 0.001 (kWh par degre d'ecart par qt)
+  k_perte <- 0.004 * params$dt_h  # coherent avec generer_demo()
+  t_ambiante <- 20
 
   has_batt <- params$batterie_active
   batt_pw <- if (has_batt) params$batt_kw * params$dt_h else 0
@@ -44,15 +50,22 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
 
     # Variables de decision
     add_variable(pac_on[t], t = 1:n, type = "binary") |>
-    add_variable(t_bal[t], t = 1:n, lb = params$t_min, ub = params$t_max) |>
+    # Bornes larges sur T pour eviter l'infaisabilite (les vrais limites sont dans les penalites)
+    add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
+    add_variable(t_viol_low[t], t = 1:n, lb = 0) |>   # violation sous T_min
+    add_variable(t_viol_high[t], t = 1:n, lb = 0) |>   # violation au-dessus T_max
     add_variable(offt[t], t = 1:n, lb = 0) |>
     add_variable(inj[t], t = 1:n, lb = 0) |>
 
-    # Objectif : minimiser le cout net
+    # Objectif : minimiser cout net + penalites pour violations temperature
     set_objective(
-      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
+      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t] + t_viol_low[t] * 10 + t_viol_high[t] * 10, t = 1:n),
       sense = "min"
     ) |>
+
+    # Contraintes souples sur temperature
+    add_constraint(t_bal[t] + t_viol_low[t] >= params$t_min, t = 1:n) |>
+    add_constraint(t_bal[t] - t_viol_high[t] <= params$t_max, t = 1:n) |>
 
     # C1: Bilan energetique nodal (sans batterie d'abord)
     # pv + offtake = conso + pac_elec + injection  (+ charge - discharge si batterie)
@@ -61,14 +74,15 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
       t = 1:n
     ) |>
 
-    # C2: Dynamique thermique - t=1
+    # C2: Dynamique thermique avec pertes proportionnelles a T
+    # T(t) = T(t-1) + (pac*chaleur - k*(T(t-1)-Tamb) - ecs) / cap
+    # Linearise: T(t)*cap = T(t-1)*(cap - k_perte) + pac_on*chaleur + k_perte*Tamb - ecs
     add_constraint(
-      t_bal[1] == t_init + (pac_on[1] * chaleur_pac[1] - perte[1] - ecs[1]) / cap
+      t_bal[1] * cap == t_init * (cap - k_perte) + pac_on[1] * chaleur_pac[1] + k_perte * t_ambiante - ecs[1]
     ) |>
 
-    # C2: Dynamique thermique - t=2..n
     add_constraint(
-      t_bal[t] == t_bal[t - 1] + (pac_on[t] * chaleur_pac[t] - perte[t] - ecs[t]) / cap,
+      t_bal[t] * cap == t_bal[t - 1] * (cap - k_perte) + pac_on[t] * chaleur_pac[t] + k_perte * t_ambiante - ecs[t],
       t = 2:n
     )
 
@@ -95,7 +109,9 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
     # Reconstruisons proprement.
     model <- MIPModel() |>
       add_variable(pac_on[t], t = 1:n, type = "binary") |>
-      add_variable(t_bal[t], t = 1:n, lb = params$t_min, ub = params$t_max) |>
+      add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
+      add_variable(t_viol_low[t], t = 1:n, lb = 0) |>
+      add_variable(t_viol_high[t], t = 1:n, lb = 0) |>
       add_variable(offt[t], t = 1:n, lb = 0) |>
       add_variable(inj[t], t = 1:n, lb = 0) |>
       add_variable(chrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
@@ -103,11 +119,15 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
       add_variable(soc[t], t = 1:n, lb = soc_min, ub = soc_max) |>
       add_variable(batt_ch[t], t = 1:n, type = "binary") |>
 
-      # Objectif
+      # Objectif avec penalites temperature
       set_objective(
-        sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
+        sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t] + t_viol_low[t] * 10 + t_viol_high[t] * 10, t = 1:n),
         sense = "min"
       ) |>
+
+      # Contraintes souples temperature
+      add_constraint(t_bal[t] + t_viol_low[t] >= params$t_min, t = 1:n) |>
+      add_constraint(t_bal[t] - t_viol_high[t] <= params$t_max, t = 1:n) |>
 
       # Bilan energetique avec batterie
       add_constraint(
@@ -115,12 +135,12 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
         t = 1:n
       ) |>
 
-      # Dynamique thermique
+      # Dynamique thermique (pertes proportionnelles a T)
       add_constraint(
-        t_bal[1] == t_init + (pac_on[1] * chaleur_pac[1] - perte[1] - ecs[1]) / cap
+        t_bal[1] * cap == t_init * (cap - k_perte) + pac_on[1] * chaleur_pac[1] + k_perte * t_ambiante - ecs[1]
       ) |>
       add_constraint(
-        t_bal[t] == t_bal[t - 1] + (pac_on[t] * chaleur_pac[t] - perte[t] - ecs[t]) / cap,
+        t_bal[t] * cap == t_bal[t - 1] * (cap - k_perte) + pac_on[t] * chaleur_pac[t] + k_perte * t_ambiante - ecs[t],
         t = 2:n
       ) |>
 
@@ -149,7 +169,8 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
     }
   )
 
-  if (is.null(result) || result$status != 0) {
+  if (is.null(result) || result$status != "success") {
+    message(sprintf("[Optimizer] Status: %s", if(!is.null(result)) result$status else "NULL"))
     return(NULL)  # infeasible ou erreur
   }
 
@@ -208,6 +229,26 @@ run_optimization_milp <- function(df, params) {
     day_data <- df[day_mask, ]
 
     if (nrow(day_data) == 0) next
+
+    # Jours incomplets (<96 qt) : fallback direct (le solveur ne peut pas optimiser)
+    if (nrow(day_data) < 90) {
+      message(sprintf("[Optimizer] Jour %s incomplet (%d qt), fallback smart", jours[d], nrow(day_data)))
+      day_sim <- run_simulation(day_data, params, "smart", 0.5)
+      day_result <- tibble(
+        sim_pac_on = day_sim$sim_pac_on,
+        sim_t_ballon = day_sim$sim_t_ballon,
+        sim_offtake = day_sim$sim_offtake,
+        sim_intake = day_sim$sim_intake,
+        sim_cop = day_sim$sim_cop,
+        decision_raison = "optimizer_fallback",
+        batt_soc = day_sim$batt_soc,
+        batt_flux = day_sim$batt_flux
+      )
+      all_results[[d]] <- day_result
+      t_init <- tail(day_result$sim_t_ballon, 1)
+      if (params$batterie_active) soc_init <- tail(day_result$batt_soc, 1) * params$batt_kwh
+      next
+    }
 
     # Resoudre le jour
     day_result <- solve_one_day(day_data, params, t_init, soc_init)
