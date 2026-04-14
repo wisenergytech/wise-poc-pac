@@ -1532,8 +1532,10 @@ sur 14 derniers jours    meilleur       ca continue"),
 
     plot_ly(inj_data, x = ~prix_injection * 100, y = ~sim_intake,
       type = "scatter", mode = "markers",
-      color = ~factor(h), colors = "Viridis",
-      marker = list(size = 4, opacity = 0.4),
+      marker = list(size = 4, opacity = 0.5, color = ~h,
+        colorscale = "Viridis", showscale = TRUE,
+        colorbar = list(title = list(text = "Heure", font = list(color = cl$text_muted, size = 9)),
+          tickfont = list(color = cl$text_muted, size = 9))),
       text = ~paste0(h, "h — ", round(sim_intake, 3), " kWh\n", round(prix_injection * 100, 1), " cEUR/kWh"),
       hoverinfo = "text") %>%
       pl_layout(xlab = "Prix injection (cEUR/kWh)", ylab = "Injection (kWh)")
