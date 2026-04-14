@@ -1,141 +1,116 @@
 # =============================================================================
-# Module Optimizer — MILP optimization using ompr + GLPK
+# Module Optimizer — MILP optimization using ompr + HiGHS
 # =============================================================================
-# Resout jour par jour un probleme MILP qui minimise le cout net
+# Resout par blocs glissants un probleme MILP qui minimise le cout net
 # en respectant les contraintes physiques (PAC, ballon, batterie).
+# Le confort est assure par une contrainte de temperature en fin de bloc.
 # =============================================================================
 
 library(ompr)
 library(ompr.roi)
-library(ROI.plugin.glpk)
 library(ROI.plugin.highs)
 
 # -----------------------------------------------------------------------------
-# Resoudre un jour (96 quarts d'heure)
+# Resoudre un bloc de N quarts d'heure
 # -----------------------------------------------------------------------------
-solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
-  n <- nrow(day_data)  # should be 96
+solve_block <- function(block_data, params, t_init, soc_init = NULL) {
+  n <- nrow(block_data)
+  if (n < 2) return(NULL)
 
   # Precalculs
-  pac_qt <- params$p_pac_kw * params$dt_h  # kWh elec par qt
-  cop <- calc_cop(day_data$t_ext, params$cop_nominal, params$t_ref_cop)
-  chaleur_pac <- pac_qt * cop  # kWh thermique par qt
+  pac_qt <- params$p_pac_kw * params$dt_h
+  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop)
+  chaleur_pac <- pac_qt * cop
   cap <- params$capacite_kwh_par_degre
 
-  pv <- day_data$pv_kwh
-  conso <- day_data$conso_hors_pac
-  prix_off <- day_data$prix_offtake
-  prix_inj <- day_data$prix_injection
-  ecs <- day_data$soutirage_estime_kwh
+  pv <- block_data$pv_kwh
+  conso <- block_data$conso_hors_pac
+  prix_off <- block_data$prix_offtake
+  prix_inj <- block_data$prix_injection
+  ecs <- block_data$soutirage_estime_kwh
 
-  # Coefficient de perte proportionnel (meme modele que la demo)
-  # perte = k_perte * (T_ballon - T_ambiante) * dt
-  # Comme T_ballon est une variable, on integre ca dans la contrainte thermique
-  # perte_coeff * dt = 0.004 * 0.25 = 0.001 (kWh par degre d'ecart par qt)
-  k_perte <- 0.004 * params$dt_h  # coherent avec generer_demo()
-  t_ambiante <- 20
+  # Pertes proportionnelles a T (coherent avec generer_demo)
+  k_perte <- 0.004 * params$dt_h
+  t_amb <- 20
 
   has_batt <- params$batterie_active
   batt_pw <- if (has_batt) params$batt_kw * params$dt_h else 0
   batt_eff <- if (has_batt) sqrt(params$batt_rendement) else 1
-  soc_min <- if (has_batt) params$batt_soc_min * params$batt_kwh else 0
-  soc_max <- if (has_batt) params$batt_soc_max * params$batt_kwh else 0
-
-  # Big-M pour linearisation
-  M_elec <- max(pv) + params$p_pac_kw + 50  # borne sup flux electrique
+  soc_min_kwh <- if (has_batt) params$batt_soc_min * params$batt_kwh else 0
+  soc_max_kwh <- if (has_batt) params$batt_soc_max * params$batt_kwh else 0
 
   # ----------------------------------------------------------
-  # Formulation MILP
+  # Construction du modele MILP
   # ----------------------------------------------------------
   model <- MIPModel() |>
-
-    # Variables de decision
     add_variable(pac_on[t], t = 1:n, type = "binary") |>
-    # Bornes physiques larges (memes conditions que le rule-based)
-    # Les gros tirages ECS peuvent faire descendre T temporairement — c'est tolere
+    # Bornes physiques larges intra-bloc (les gros tirages ECS font descendre T)
     add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
     add_variable(offt[t], t = 1:n, lb = 0) |>
-    add_variable(inj[t], t = 1:n, lb = 0) |>
+    add_variable(inj[t], t = 1:n, lb = 0)
 
-    # Objectif : minimiser le cout net UNIQUEMENT (pas de penalite temperature)
-    # Meme critere que le mode Smart pour une comparaison equitable
-    set_objective(
-      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
-      sense = "min"
-    ) |>
-
-    # C1: Bilan energetique nodal (sans batterie d'abord)
-    # pv + offtake = conso + pac_elec + injection  (+ charge - discharge si batterie)
-    add_constraint(
-      pv[t] + offt[t] == conso[t] + pac_on[t] * pac_qt + inj[t],
-      t = 1:n
-    ) |>
-
-    # C2: Dynamique thermique avec pertes proportionnelles a T
-    # T(t) = T(t-1) + (pac*chaleur - k*(T(t-1)-Tamb) - ecs) / cap
-    # Linearise: T(t)*cap = T(t-1)*(cap - k_perte) + pac_on*chaleur + k_perte*Tamb - ecs
-    add_constraint(
-      t_bal[1] * cap == t_init * (cap - k_perte) + pac_on[1] * chaleur_pac[1] + k_perte * t_ambiante - ecs[1]
-    ) |>
-
-    add_constraint(
-      t_bal[t] * cap == t_bal[t - 1] * (cap - k_perte) + pac_on[t] * chaleur_pac[t] + k_perte * t_ambiante - ecs[t],
-      t = 2:n
-    )
-
-  # ----------------------------------------------------------
-  # Variables et contraintes batterie (si activee)
-  # ----------------------------------------------------------
+  # Ajouter variables batterie si active
   if (has_batt) {
     model <- model |>
       add_variable(chrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
       add_variable(dischrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
-      add_variable(soc[t], t = 1:n, lb = soc_min, ub = soc_max) |>
-      add_variable(batt_ch[t], t = 1:n, type = "binary") |>
+      add_variable(soc[t], t = 1:n, lb = soc_min_kwh, ub = soc_max_kwh) |>
+      add_variable(batt_ch[t], t = 1:n, type = "binary")
+  }
 
-      # Modifier le bilan energetique : ajouter batterie
-      # On doit le reformuler car ompr ne supporte pas la modification de contraintes
-      # => On supprime les contraintes C1 et les re-ajoute avec batterie
-      # En fait, on ne peut pas supprimer. On ajoute des contraintes correctives.
-      # Approche : annuler C1 et refaire. Pas possible avec ompr.
-      # Solution : construire le modele avec batterie des le depart.
-      # => Refactoring : on reconstruit le modele.
-      identity()
+  # ----------------------------------------------------------
+  # Objectif : minimiser le cout net
+  # ----------------------------------------------------------
+  model <- model |>
+    set_objective(
+      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
+      sense = "min"
+    )
 
-    # Le modele doit etre reconstruit avec batterie dans le bilan.
-    # Reconstruisons proprement.
-    model <- MIPModel() |>
-      add_variable(pac_on[t], t = 1:n, type = "binary") |>
-      add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
-      add_variable(offt[t], t = 1:n, lb = 0) |>
-      add_variable(inj[t], t = 1:n, lb = 0) |>
-      add_variable(chrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
-      add_variable(dischrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
-      add_variable(soc[t], t = 1:n, lb = soc_min, ub = soc_max) |>
-      add_variable(batt_ch[t], t = 1:n, type = "binary") |>
-
-      # Objectif : cout net uniquement (pas de penalite temperature)
-      set_objective(
-        sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
-        sense = "min"
-      ) |>
-
-      # Bilan energetique avec batterie
+  # ----------------------------------------------------------
+  # Contraintes : bilan energetique nodal
+  # ----------------------------------------------------------
+  if (has_batt) {
+    model <- model |>
       add_constraint(
         pv[t] + offt[t] + dischrg[t] * batt_eff == conso[t] + pac_on[t] * pac_qt + chrg[t] + inj[t],
         t = 1:n
-      ) |>
-
-      # Dynamique thermique (pertes proportionnelles a T)
+      )
+  } else {
+    model <- model |>
       add_constraint(
-        t_bal[1] * cap == t_init * (cap - k_perte) + pac_on[1] * chaleur_pac[1] + k_perte * t_ambiante - ecs[1]
-      ) |>
-      add_constraint(
-        t_bal[t] * cap == t_bal[t - 1] * (cap - k_perte) + pac_on[t] * chaleur_pac[t] + k_perte * t_ambiante - ecs[t],
-        t = 2:n
-      ) |>
+        pv[t] + offt[t] == conso[t] + pac_on[t] * pac_qt + inj[t],
+        t = 1:n
+      )
+  }
 
-      # SOC dynamique
+  # ----------------------------------------------------------
+  # Contraintes : dynamique thermique
+  # T(t)*cap = T(t-1)*(cap - k_perte) + pac*chaleur + k*Tamb - ecs
+  # ----------------------------------------------------------
+  model <- model |>
+    add_constraint(
+      t_bal[1] * cap == t_init * (cap - k_perte) + pac_on[1] * chaleur_pac[1] + k_perte * t_amb - ecs[1]
+    ) |>
+    add_constraint(
+      t_bal[t] * cap == t_bal[t - 1] * (cap - k_perte) + pac_on[t] * chaleur_pac[t] + k_perte * t_amb - ecs[t],
+      t = 2:n
+    )
+
+  # ----------------------------------------------------------
+  # Contrainte confort : T en fin de bloc doit etre viable
+  # Le ballon peut descendre temporairement (gros tirage ECS)
+  # mais doit revenir dans la plage de confort en fin de bloc
+  # ----------------------------------------------------------
+  model <- model |>
+    add_constraint(t_bal[n] >= params$t_min) |>
+    add_constraint(t_bal[n] <= params$t_max)
+
+  # ----------------------------------------------------------
+  # Contraintes batterie
+  # ----------------------------------------------------------
+  if (has_batt) {
+    model <- model |>
       add_constraint(
         soc[1] == soc_init + chrg[1] * batt_eff - dischrg[1] / batt_eff
       ) |>
@@ -143,8 +118,6 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
         soc[t] == soc[t - 1] + chrg[t] * batt_eff - dischrg[t] / batt_eff,
         t = 2:n
       ) |>
-
-      # Anti-simultaneite charge/decharge
       add_constraint(chrg[t] <= batt_pw * batt_ch[t], t = 1:n) |>
       add_constraint(dischrg[t] <= batt_pw * (1 - batt_ch[t]), t = 1:n)
   }
@@ -161,8 +134,8 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
   )
 
   if (is.null(result) || result$status != "success") {
-    message(sprintf("[Optimizer] Status: %s", if(!is.null(result)) result$status else "NULL"))
-    return(NULL)  # infeasible ou erreur
+    message(sprintf("[Optimizer] Status: %s", if (!is.null(result)) result$status else "NULL"))
+    return(NULL)
   }
 
   # ----------------------------------------------------------
@@ -196,15 +169,17 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
 }
 
 # -----------------------------------------------------------------------------
-# Optimiser toute la periode, jour par jour
+# Optimiser toute la periode, bloc par bloc
 # -----------------------------------------------------------------------------
 run_optimization_milp <- function(df, params) {
   n <- nrow(df)
-  jours <- unique(as.Date(df$timestamp))
-  n_jours <- length(jours)
+
+  # Taille des blocs en quarts d'heure
+  bloc_qt <- params$optim_bloc_h * 4  # ex: 4h * 4 = 16 qt
+  n_blocs <- ceiling(n / bloc_qt)
 
   # Resultats accumules
-  all_results <- vector("list", n_jours)
+  all_results <- vector("list", n_blocs)
 
   # Conditions initiales
   t_init <- df$t_ballon[1]
@@ -214,72 +189,65 @@ run_optimization_milp <- function(df, params) {
     0
   }
 
-  for (d in seq_along(jours)) {
-    # Extraire les donnees du jour
-    day_mask <- as.Date(df$timestamp) == jours[d]
-    day_data <- df[day_mask, ]
+  for (b in seq_len(n_blocs)) {
+    # Indices du bloc
+    i_start <- (b - 1) * bloc_qt + 1
+    i_end <- min(b * bloc_qt, n)
+    block_data <- df[i_start:i_end, ]
 
-    if (nrow(day_data) == 0) next
-
-    # Jours incomplets (<96 qt) : fallback direct (le solveur ne peut pas optimiser)
-    if (nrow(day_data) < 90) {
-      message(sprintf("[Optimizer] Jour %s incomplet (%d qt), fallback smart", jours[d], nrow(day_data)))
-      day_sim <- run_simulation(day_data, params, "smart", 0.5)
-      day_result <- tibble(
-        sim_pac_on = day_sim$sim_pac_on,
-        sim_t_ballon = day_sim$sim_t_ballon,
-        sim_offtake = day_sim$sim_offtake,
-        sim_intake = day_sim$sim_intake,
-        sim_cop = day_sim$sim_cop,
+    if (nrow(block_data) < 2) {
+      # Bloc trop petit : fallback smart
+      block_sim <- run_simulation(block_data, params, "smart", 0.5)
+      block_result <- tibble(
+        sim_pac_on = block_sim$sim_pac_on,
+        sim_t_ballon = block_sim$sim_t_ballon,
+        sim_offtake = block_sim$sim_offtake,
+        sim_intake = block_sim$sim_intake,
+        sim_cop = block_sim$sim_cop,
         decision_raison = "optimizer_fallback",
-        batt_soc = day_sim$batt_soc,
-        batt_flux = day_sim$batt_flux
+        batt_soc = block_sim$batt_soc,
+        batt_flux = block_sim$batt_flux
       )
-      all_results[[d]] <- day_result
-      t_init <- tail(day_result$sim_t_ballon, 1)
-      if (params$batterie_active) soc_init <- tail(day_result$batt_soc, 1) * params$batt_kwh
-      next
+    } else {
+      # Resoudre le bloc
+      block_result <- solve_block(block_data, params, t_init, soc_init)
+
+      if (is.null(block_result)) {
+        # Fallback smart
+        message(sprintf("[Optimizer] Bloc %d infaisable, fallback smart", b))
+        block_sim <- run_simulation(block_data, params, "smart", 0.5)
+        block_result <- tibble(
+          sim_pac_on = block_sim$sim_pac_on,
+          sim_t_ballon = block_sim$sim_t_ballon,
+          sim_offtake = block_sim$sim_offtake,
+          sim_intake = block_sim$sim_intake,
+          sim_cop = block_sim$sim_cop,
+          decision_raison = "optimizer_fallback",
+          batt_soc = block_sim$batt_soc,
+          batt_flux = block_sim$batt_flux
+        )
+      }
     }
 
-    # Resoudre le jour
-    day_result <- solve_one_day(day_data, params, t_init, soc_init)
+    all_results[[b]] <- block_result
 
-    if (is.null(day_result)) {
-      # Fallback : mode smart rule-based pour ce jour
-      message(sprintf("[Optimizer] Jour %s infaisable, fallback smart", jours[d]))
-      day_sim <- run_simulation(day_data, params, "smart", 0.5)
-      day_result <- tibble(
-        sim_pac_on = day_sim$sim_pac_on,
-        sim_t_ballon = day_sim$sim_t_ballon,
-        sim_offtake = day_sim$sim_offtake,
-        sim_intake = day_sim$sim_intake,
-        sim_cop = day_sim$sim_cop,
-        decision_raison = "optimizer_fallback",
-        batt_soc = day_sim$batt_soc,
-        batt_flux = day_sim$batt_flux
-      )
-    }
-
-    all_results[[d]] <- day_result
-
-    # Chainer les conditions initiales
-    t_init <- tail(day_result$sim_t_ballon, 1)
+    # Chainer les conditions initiales pour le bloc suivant
+    t_init <- tail(block_result$sim_t_ballon, 1)
     if (params$batterie_active) {
-      soc_init <- tail(day_result$batt_soc, 1) * params$batt_kwh
+      soc_init <- tail(block_result$batt_soc, 1) * params$batt_kwh
     }
 
-    # Progression (si appele depuis Shiny)
+    # Progression
     if (exists("setProgress", mode = "function")) {
-      try(setProgress(d / n_jours, detail = sprintf("Jour %d/%d", d, n_jours)), silent = TRUE)
+      try(setProgress(b / n_blocs, detail = sprintf("Bloc %d/%d", b, n_blocs)), silent = TRUE)
     }
   }
 
-  # Assembler les resultats
+  # Assembler
   results_df <- bind_rows(all_results)
 
   if (nrow(results_df) != n) {
-    # Padding si jours incomplets
-    message(sprintf("[Optimizer] %d lignes vs %d attendues — padding", nrow(results_df), n))
+    message(sprintf("[Optimizer] %d lignes vs %d attendues", nrow(results_df), n))
     if (nrow(results_df) < n) {
       padding <- tibble(
         sim_pac_on = rep(0L, n - nrow(results_df)),
@@ -297,7 +265,6 @@ run_optimization_milp <- function(df, params) {
     }
   }
 
-  # Fusionner avec le df original
   df %>% mutate(
     sim_t_ballon = results_df$sim_t_ballon,
     sim_pac_on = results_df$sim_pac_on,

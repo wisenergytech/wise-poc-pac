@@ -542,7 +542,11 @@ ui <- page_fillable(
             HTML("Mode <b>Smart</b> : decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP."))),
         conditionalPanel("input.approche=='optimiseur'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-            HTML("Resout un probleme d'optimisation mathematique (MILP) qui minimise le cout net en respectant toutes les contraintes physiques. Trouve la <b>solution optimale globale</b> sur tout l'horizon, jour par jour.")))),
+            HTML("Resout un probleme d'optimisation mathematique (MILP) qui minimise le cout net en respectant les contraintes physiques. Trouve la <b>solution optimale</b> bloc par bloc.")),
+          sliderInput("optim_bloc_h", tags$span("Horizon bloc", tip("Taille du bloc d'optimisation en heures. Plus court = plus rapide mais moins de vision. Plus long = meilleur resultat mais plus lent. 4h est un bon compromis : assez pour voir les tendances de prix et de PV, assez court pour resoudre en <1s.")),
+            1, 24, 4, step = 1, post = "h"),
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+            HTML("4h = rapide (~1s/bloc) | 12h = equilibre | 24h = optimal mais lent")))),
       tags$div(class = "sidebar-section",
         tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques electriques de votre PAC. Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
         numericInput("p_pac_kw", "Puissance (kW)", 2, min = 0.5, max = 10, step = 0.5),
@@ -888,7 +892,8 @@ sur 14 derniers jours    meilleur       ca continue"),
       batt_rendement = input$batt_rendement / 100,
       batt_soc_min = input$batt_soc_range[1] / 100,
       batt_soc_max = input$batt_soc_range[2] / 100,
-      poids_cout = 0.5)
+      poids_cout = 0.5,
+      optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 4)
   })
   
   raw_data <- reactive({
