@@ -47,6 +47,51 @@
       "Maintainer": "Garrick Aden-Buie <garrick@posit.co>",
       "Repository": "https://packagemanager.posit.co/cran/latest"
     },
+    "Matrix": {
+      "Package": "Matrix",
+      "Version": "1.7-4",
+      "Source": "Repository",
+      "VersionNote": "do also bump src/version.h, inst/include/Matrix/version.h",
+      "Date": "2025-08-27",
+      "Priority": "recommended",
+      "Title": "Sparse and Dense Matrix Classes and Methods",
+      "Description": "A rich hierarchy of sparse and dense matrix classes, including general, symmetric, triangular, and diagonal matrices with numeric, logical, or pattern entries.  Efficient methods for operating on such matrices, often wrapping the 'BLAS', 'LAPACK', and 'SuiteSparse' libraries.",
+      "License": "GPL (>= 2) | file LICENCE",
+      "URL": "https://Matrix.R-forge.R-project.org",
+      "BugReports": "https://R-forge.R-project.org/tracker/?atid=294&group_id=61",
+      "Contact": "Matrix-authors@R-project.org",
+      "Authors@R": "c(person(\"Douglas\", \"Bates\", role = \"aut\", comment = c(ORCID = \"0000-0001-8316-9503\")), person(\"Martin\", \"Maechler\", role = c(\"aut\", \"cre\"), email = \"mmaechler+Matrix@gmail.com\", comment = c(ORCID = \"0000-0002-8685-9910\")), person(\"Mikael\", \"Jagan\", role = \"aut\", comment = c(ORCID = \"0000-0002-3542-2938\")), person(\"Timothy A.\", \"Davis\", role = \"ctb\", comment = c(ORCID = \"0000-0001-7614-6899\", \"SuiteSparse libraries\", \"collaborators listed in dir(system.file(\\\"doc\\\", \\\"SuiteSparse\\\", package=\\\"Matrix\\\"), pattern=\\\"License\\\", full.names=TRUE, recursive=TRUE)\")), person(\"George\", \"Karypis\", role = \"ctb\", comment = c(ORCID = \"0000-0003-2753-1437\", \"METIS library\", \"Copyright: Regents of the University of Minnesota\")), person(\"Jason\", \"Riedy\", role = \"ctb\", comment = c(ORCID = \"0000-0002-4345-4200\", \"GNU Octave's condest() and onenormest()\", \"Copyright: Regents of the University of California\")), person(\"Jens\", \"Oehlschlägel\", role = \"ctb\", comment = \"initial nearPD()\"), person(\"R Core Team\", role = \"ctb\", comment = c(ROR = \"02zz1nj61\", \"base R's matrix implementation\")))",
+      "Depends": [
+        "R (>= 4.4)",
+        "methods"
+      ],
+      "Imports": [
+        "grDevices",
+        "graphics",
+        "grid",
+        "lattice",
+        "stats",
+        "utils"
+      ],
+      "Suggests": [
+        "MASS",
+        "datasets",
+        "sfsmisc",
+        "tools"
+      ],
+      "Enhances": [
+        "SparseM",
+        "graph"
+      ],
+      "LazyData": "no",
+      "LazyDataNote": "not possible, since we use data/*.R and our S4 classes",
+      "BuildResaveData": "no",
+      "Encoding": "UTF-8",
+      "NeedsCompilation": "yes",
+      "Author": "Douglas Bates [aut] (ORCID: <https://orcid.org/0000-0001-8316-9503>), Martin Maechler [aut, cre] (ORCID: <https://orcid.org/0000-0002-8685-9910>), Mikael Jagan [aut] (ORCID: <https://orcid.org/0000-0002-3542-2938>), Timothy A. Davis [ctb] (ORCID: <https://orcid.org/0000-0001-7614-6899>, SuiteSparse libraries, collaborators listed in dir(system.file(\"doc\", \"SuiteSparse\", package=\"Matrix\"), pattern=\"License\", full.names=TRUE, recursive=TRUE)), George Karypis [ctb] (ORCID: <https://orcid.org/0000-0003-2753-1437>, METIS library, Copyright: Regents of the University of Minnesota), Jason Riedy [ctb] (ORCID: <https://orcid.org/0000-0002-4345-4200>, GNU Octave's condest() and onenormest(), Copyright: Regents of the University of California), Jens Oehlschlägel [ctb] (initial nearPD()), R Core Team [ctb] (ROR: <https://ror.org/02zz1nj61>, base R's matrix implementation)",
+      "Maintainer": "Martin Maechler <mmaechler+Matrix@gmail.com>",
+      "Repository": "CRAN"
+    },
     "R6": {
       "Package": "R6",
       "Version": "2.6.1",
@@ -90,6 +135,54 @@
       "NeedsCompilation": "no",
       "Repository": "CRAN"
     },
+    "ROI": {
+      "Package": "ROI",
+      "Version": "1.0-2",
+      "Source": "Repository",
+      "Title": "R Optimization Infrastructure",
+      "Authors@R": "c( person(\"Kurt\", \"Hornik\", role = \"aut\", email = \"Kurt.Hornik@R-project.org\", comment = c(ORCID = \"0000-0003-4198-9911\")), person(\"David\", \"Meyer\", role = \"aut\"), person(\"Florian\", \"Schwendinger\", role = \"aut\", email = \"FlorianSchwendinger@gmx.at\", comment = c(ORCID = \"0000-0002-3983-9773\")), person(\"Stefan\", \"Theussl\", role = c(\"aut\", \"cre\"), email = \"Stefan.Theussl@R-Project.org\", comment = c(ORCID = \"0000-0002-6523-4620\")), person(\"Diethelm\", \"Wuertz\", role = \"ctb\") )",
+      "Description": "The R Optimization Infrastructure ('ROI') <doi:10.18637/jss.v094.i15> is a sophisticated framework for handling optimization problems in R. Additional information can be found on the 'ROI' homepage <https://roi.r-forge.r-project.org/>.",
+      "Depends": [
+        "R (>= 2.10)"
+      ],
+      "Imports": [
+        "methods",
+        "registry (>= 0.5)",
+        "slam",
+        "utils",
+        "checkmate"
+      ],
+      "Suggests": [
+        "numDeriv"
+      ],
+      "License": "GPL-3",
+      "Encoding": "UTF-8",
+      "URL": "https://roi.r-forge.r-project.org/, https://r-forge.r-project.org/projects/roi/",
+      "RoxygenNote": "7.3.3",
+      "NeedsCompilation": "no",
+      "Author": "Kurt Hornik [aut] (ORCID: <https://orcid.org/0000-0003-4198-9911>), David Meyer [aut], Florian Schwendinger [aut] (ORCID: <https://orcid.org/0000-0002-3983-9773>), Stefan Theussl [aut, cre] (ORCID: <https://orcid.org/0000-0002-6523-4620>), Diethelm Wuertz [ctb]",
+      "Maintainer": "Stefan Theussl <Stefan.Theussl@R-Project.org>",
+      "Repository": "CRAN"
+    },
+    "ROI.plugin.glpk": {
+      "Package": "ROI.plugin.glpk",
+      "Version": "1.0-0",
+      "Source": "Repository",
+      "Title": "'ROI' Plug-in 'GLPK'",
+      "Authors@R": "c(person(\"Stefan\", \"Theussl\", role = c(\"aut\", \"cre\"), email = \"Stefan.Theussl@R-Project.org\"))",
+      "Description": "Enhances the 'R' Optimization Infrastructure ('ROI') package by registering the free 'GLPK' solver. It allows for solving mixed integer linear programming ('MILP') problems as well as all variants/combinations of 'LP', 'IP'.",
+      "Imports": [
+        "methods",
+        "ROI (>= 0.3-0)",
+        "Rglpk (>= 0.6-2)"
+      ],
+      "License": "GPL-3",
+      "URL": "http://roi.r-forge.r-project.org/, https://r-forge.r-project.org/projects/roi/",
+      "NeedsCompilation": "no",
+      "Author": "Stefan Theussl [aut, cre]",
+      "Maintainer": "Stefan Theussl <Stefan.Theussl@R-Project.org>",
+      "Repository": "CRAN"
+    },
     "Rcpp": {
       "Package": "Rcpp",
       "Version": "1.1.1",
@@ -121,6 +214,24 @@
       "NeedsCompilation": "yes",
       "Author": "Dirk Eddelbuettel [aut, cre] (ORCID: <https://orcid.org/0000-0001-6419-907X>), Romain Francois [aut] (ORCID: <https://orcid.org/0000-0002-2444-4226>), JJ Allaire [aut] (ORCID: <https://orcid.org/0000-0003-0174-9868>), Kevin Ushey [aut] (ORCID: <https://orcid.org/0000-0003-2880-7407>), Qiang Kou [aut] (ORCID: <https://orcid.org/0000-0001-6786-5453>), Nathan Russell [aut], Iñaki Ucar [aut] (ORCID: <https://orcid.org/0000-0001-6403-5550>), Doug Bates [aut] (ORCID: <https://orcid.org/0000-0001-8316-9503>), John Chambers [aut]",
       "Maintainer": "Dirk Eddelbuettel <edd@debian.org>",
+      "Repository": "CRAN"
+    },
+    "Rglpk": {
+      "Package": "Rglpk",
+      "Version": "0.6-5.1",
+      "Source": "Repository",
+      "Title": "R/GNU Linear Programming Kit Interface",
+      "Description": "R interface to the GNU Linear Programming Kit. 'GLPK' is open source software for solving large-scale linear programming (LP), mixed integer linear programming ('MILP') and other related problems.",
+      "Authors@R": "c(person(\"Stefan\", \"Theussl\", role = c(\"aut\", \"cre\"), email = \"Stefan.Theussl@R-project.org\", comment = c(ORCID = \"0000-0002-6523-4620\")), person(\"Kurt\", \"Hornik\", role = \"aut\", comment = c(ORCID = \"0000-0003-4198-9911\")), person(\"Christian\", \"Buchta\", role = \"ctb\"), person(\"Florian\", \"Schwendinger\", role = \"ctb\", comment = c(ORCID = \"0000-0002-3983-9773\")), person(\"Heinrich\", \"Schuchardt\", role = \"ctb\"))",
+      "Depends": [
+        "slam (>= 0.1-9)"
+      ],
+      "SystemRequirements": "GLPK library package (e.g., libglpk-dev on Debian/Ubuntu)",
+      "License": "GPL-2 | GPL-3",
+      "URL": "https://R-Forge.R-project.org/projects/rglp/, https://www.gnu.org/software/glpk/",
+      "NeedsCompilation": "yes",
+      "Author": "Stefan Theussl [aut, cre] (<https://orcid.org/0000-0002-6523-4620>), Kurt Hornik [aut] (<https://orcid.org/0000-0003-4198-9911>), Christian Buchta [ctb], Florian Schwendinger [ctb] (<https://orcid.org/0000-0002-3983-9773>), Heinrich Schuchardt [ctb]",
+      "Maintainer": "Stefan Theussl <Stefan.Theussl@R-project.org>",
       "Repository": "CRAN"
     },
     "S7": {
@@ -186,6 +297,28 @@
       "Author": "Jeroen Ooms [aut, cre] (<https://orcid.org/0000-0002-4035-0289>)",
       "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
       "Repository": "RSPM"
+    },
+    "backports": {
+      "Package": "backports",
+      "Version": "1.5.1",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Reimplementations of Functions Introduced Since R-3.0.0",
+      "Authors@R": "c( person(\"Michel\", \"Lang\", NULL, \"michellang@gmail.com\", role = c(\"cre\", \"aut\"), comment = c(ORCID = \"0000-0001-9754-0393\")), person(\"Duncan\", \"Murdoch\", NULL, \"murdoch.duncan@gmail.com\", role = c(\"aut\")), person(\"R Core Team\", role = \"aut\"))",
+      "Maintainer": "Michel Lang <michellang@gmail.com>",
+      "Description": "Functions introduced or changed since R v3.0.0 are re-implemented in this package. The backports are conditionally exported in order to let R resolve the function name to either the implemented backport, or the respective base version, if available. Package developers can make use of new functions or arguments by selectively importing specific backports to support older installations.",
+      "URL": "https://github.com/r-lib/backports",
+      "BugReports": "https://github.com/r-lib/backports/issues",
+      "License": "GPL-2 | GPL-3",
+      "NeedsCompilation": "yes",
+      "ByteCompile": "yes",
+      "Depends": [
+        "R (>= 3.0.0)"
+      ],
+      "Encoding": "UTF-8",
+      "RoxygenNote": "7.3.3",
+      "Author": "Michel Lang [cre, aut] (ORCID: <https://orcid.org/0000-0001-9754-0393>), Duncan Murdoch [aut], R Core Team [aut]",
+      "Repository": "CRAN"
     },
     "base64enc": {
       "Package": "base64enc",
@@ -360,6 +493,49 @@
       "NeedsCompilation": "yes",
       "Author": "Winston Chang [aut, cre], Posit Software, PBC [cph, fnd]",
       "Maintainer": "Winston Chang <winston@posit.co>",
+      "Repository": "CRAN"
+    },
+    "checkmate": {
+      "Package": "checkmate",
+      "Version": "2.3.4",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Fast and Versatile Argument Checks",
+      "Description": "Tests and assertions to perform frequent argument checks. A substantial part of the package was written in C to minimize any worries about execution time overhead.",
+      "Authors@R": "c( person(\"Michel\", \"Lang\", NULL, \"michellang@gmail.com\", role = c(\"cre\", \"aut\"), comment = c(ORCID = \"0000-0001-9754-0393\")), person(\"Bernd\", \"Bischl\", NULL, \"bernd_bischl@gmx.net\", role = \"ctb\"), person(\"Dénes\", \"Tóth\", NULL, \"toth.denes@kogentum.hu\", role = \"ctb\", comment = c(ORCID = \"0000-0003-4262-3217\")) )",
+      "URL": "https://mllg.github.io/checkmate/, https://github.com/mllg/checkmate",
+      "URLNote": "https://github.com/mllg/checkmate",
+      "BugReports": "https://github.com/mllg/checkmate/issues",
+      "NeedsCompilation": "yes",
+      "ByteCompile": "yes",
+      "Encoding": "UTF-8",
+      "Depends": [
+        "R (>= 3.0.0)"
+      ],
+      "Imports": [
+        "backports (>= 1.1.0)",
+        "utils"
+      ],
+      "Suggests": [
+        "R6",
+        "fastmatch",
+        "data.table (>= 1.9.8)",
+        "devtools",
+        "ggplot2",
+        "knitr",
+        "magrittr",
+        "microbenchmark",
+        "rmarkdown",
+        "testthat (>= 3.0.4)",
+        "tinytest (>= 1.1.0)",
+        "tibble"
+      ],
+      "License": "BSD_3_clause + file LICENSE",
+      "VignetteBuilder": "knitr",
+      "RoxygenNote": "7.3.3",
+      "Collate": "'AssertCollection.R' 'allMissing.R' 'anyInfinite.R' 'anyMissing.R' 'anyNaN.R' 'asInteger.R' 'assert.R' 'helper.R' 'makeExpectation.R' 'makeTest.R' 'makeAssertion.R' 'checkAccess.R' 'checkArray.R' 'checkAtomic.R' 'checkAtomicVector.R' 'checkCharacter.R' 'checkChoice.R' 'checkClass.R' 'checkComplex.R' 'checkCount.R' 'checkDataFrame.R' 'checkDataTable.R' 'checkDate.R' 'checkDirectoryExists.R' 'checkDisjunct.R' 'checkDouble.R' 'checkEnvironment.R' 'checkFALSE.R' 'checkFactor.R' 'checkFileExists.R' 'checkFlag.R' 'checkFormula.R' 'checkFunction.R' 'checkInt.R' 'checkInteger.R' 'checkIntegerish.R' 'checkList.R' 'checkLogical.R' 'checkMatrix.R' 'checkMultiClass.R' 'checkNamed.R' 'checkNames.R' 'checkNull.R' 'checkNumber.R' 'checkNumeric.R' 'checkOS.R' 'checkPOSIXct.R' 'checkPathForOutput.R' 'checkPermutation.R' 'checkR6.R' 'checkRaw.R' 'checkScalar.R' 'checkScalarNA.R' 'checkSetEqual.R' 'checkString.R' 'checkSubset.R' 'checkTRUE.R' 'checkTibble.R' 'checkVector.R' 'coalesce.R' 'isIntegerish.R' 'matchArg.R' 'qassert.R' 'qassertr.R' 'vname.R' 'wfwl.R' 'zzz.R'",
+      "Author": "Michel Lang [cre, aut] (ORCID: <https://orcid.org/0000-0001-9754-0393>), Bernd Bischl [ctb], Dénes Tóth [ctb] (ORCID: <https://orcid.org/0000-0003-4262-3217>)",
+      "Maintainer": "Michel Lang <michellang@gmail.com>",
       "Repository": "CRAN"
     },
     "cli": {
@@ -1514,6 +1690,45 @@
       "Maintainer": "Charlie Gao <charlie.gao@posit.co>",
       "Repository": "CRAN"
     },
+    "lattice": {
+      "Package": "lattice",
+      "Version": "0.22-5",
+      "Source": "Repository",
+      "Date": "2023-10-23",
+      "Priority": "recommended",
+      "Title": "Trellis Graphics for R",
+      "Authors@R": "c(person(\"Deepayan\", \"Sarkar\", role = c(\"aut\", \"cre\"), email = \"deepayan.sarkar@r-project.org\", comment = c(ORCID = \"0000-0003-4107-1553\")), person(\"Felix\", \"Andrews\", role = \"ctb\"), person(\"Kevin\", \"Wright\", role = \"ctb\", comment = \"documentation\"), person(\"Neil\", \"Klepeis\", role = \"ctb\"), person(\"Johan\", \"Larsson\", role = \"ctb\", comment = \"miscellaneous improvements\"), person(\"Zhijian (Jason)\", \"Wen\", role = \"cph\", comment = \"filled contour code\"), person(\"Paul\", \"Murrell\", role = \"ctb\", email = \"paul@stat.auckland.ac.nz\"), person(\"Stefan\", \"Eng\", role = \"ctb\", comment = \"violin plot improvements\"), person(\"Achim\", \"Zeileis\", role = \"ctb\", comment = \"modern colors\"), person(\"Alexandre\", \"Courtiol\", role = \"ctb\", comment = \"generics for larrows, lpolygon, lrect and lsegments\") )",
+      "Description": "A powerful and elegant high-level data visualization system inspired by Trellis graphics, with an emphasis on multivariate data. Lattice is sufficient for typical graphics needs, and is also flexible enough to handle most nonstandard requirements. See ?Lattice for an introduction.",
+      "Depends": [
+        "R (>= 4.0.0)"
+      ],
+      "Suggests": [
+        "KernSmooth",
+        "MASS",
+        "latticeExtra",
+        "colorspace"
+      ],
+      "Imports": [
+        "grid",
+        "grDevices",
+        "graphics",
+        "stats",
+        "utils"
+      ],
+      "Enhances": [
+        "chron",
+        "zoo"
+      ],
+      "LazyLoad": "yes",
+      "LazyData": "yes",
+      "License": "GPL (>= 2)",
+      "URL": "https://lattice.r-forge.r-project.org/",
+      "BugReports": "https://github.com/deepayan/lattice/issues",
+      "NeedsCompilation": "yes",
+      "Author": "Deepayan Sarkar [aut, cre] (<https://orcid.org/0000-0003-4107-1553>), Felix Andrews [ctb], Kevin Wright [ctb] (documentation), Neil Klepeis [ctb], Johan Larsson [ctb] (miscellaneous improvements), Zhijian (Jason) Wen [cph] (filled contour code), Paul Murrell [ctb], Stefan Eng [ctb] (violin plot improvements), Achim Zeileis [ctb] (modern colors), Alexandre Courtiol [ctb] (generics for larrows, lpolygon, lrect and lsegments)",
+      "Maintainer": "Deepayan Sarkar <deepayan.sarkar@r-project.org>",
+      "Repository": "CRAN"
+    },
     "lazyeval": {
       "Package": "lazyeval",
       "Version": "0.2.3",
@@ -1580,6 +1795,30 @@
       "NeedsCompilation": "no",
       "Author": "Lionel Henry [aut, cre], Hadley Wickham [aut] (ORCID: <https://orcid.org/0000-0003-4757-117X>), Posit Software, PBC [cph, fnd]",
       "Maintainer": "Lionel Henry <lionel@posit.co>",
+      "Repository": "CRAN"
+    },
+    "listcomp": {
+      "Package": "listcomp",
+      "Version": "0.4.1",
+      "Source": "Repository",
+      "Title": "List Comprehensions",
+      "Authors@R": "person(given = \"Dirk\", family = \"Schumacher\", role = c(\"aut\", \"cre\", \"cph\"), email = \"mail@dirk-schumacher.net\")",
+      "Description": "An implementation of list comprehensions as purely syntactic sugar with a minor runtime overhead. It constructs nested for-loops and executes the byte-compiled loops to collect the results.",
+      "License": "MIT + file LICENSE",
+      "Encoding": "UTF-8",
+      "RoxygenNote": "7.1.2",
+      "Suggests": [
+        "testthat"
+      ],
+      "Imports": [
+        "rlang",
+        "compiler"
+      ],
+      "URL": "https://github.com/dirkschumacher/listcomp",
+      "BugReports": "https://github.com/dirkschumacher/listcomp/issues",
+      "NeedsCompilation": "no",
+      "Author": "Dirk Schumacher [aut, cre, cph]",
+      "Maintainer": "Dirk Schumacher <mail@dirk-schumacher.net>",
       "Repository": "CRAN"
     },
     "lubridate": {
@@ -1708,6 +1947,77 @@
       "NeedsCompilation": "yes",
       "Author": "Yihui Xie [aut, cre] (<https://orcid.org/0000-0003-0645-5666>, https://yihui.org), Jeffrey Horner [ctb], Beilei Bian [ctb]",
       "Maintainer": "Yihui Xie <xie@yihui.name>",
+      "Repository": "CRAN"
+    },
+    "ompr": {
+      "Package": "ompr",
+      "Version": "1.0.4",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Model and Solve Mixed Integer Linear Programs",
+      "Authors@R": "person(\"Dirk\", \"Schumacher\", email = \"mail@dirk-schumacher.net\", role = c(\"aut\", \"cre\"))",
+      "Description": "Model mixed integer linear programs in an algebraic way directly in R. The model is solver-independent and thus offers the possibility to solve a model with different solvers. It currently only supports linear constraints and objective functions. See the 'ompr' website <https://dirkschumacher.github.io/ompr/> for more information, documentation and examples.",
+      "License": "MIT + file LICENSE",
+      "RoxygenNote": "7.2.3",
+      "Encoding": "UTF-8",
+      "URL": "https://github.com/dirkschumacher/ompr",
+      "BugReports": "https://github.com/dirkschumacher/ompr/issues",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "Imports": [
+        "lazyeval",
+        "rlang (>= 0.2.0)",
+        "listcomp (>= 0.4.0)",
+        "methods",
+        "data.table",
+        "Matrix",
+        "fastmap"
+      ],
+      "Suggests": [
+        "covr",
+        "magrittr",
+        "testthat"
+      ],
+      "ByteCompile": "Yes",
+      "Collate": "'abstract-model-impl.R' 'helper.R' 'linear-optimization-model-impl.R' 'linear-optimization-model-linear-constraints.R' 'linear-optimization-model-linear-functions.R' 'model-api.R' 'milp-impl.R' 'milp-linearopt-variables.R' 'ompr-package.R' 'solution-api.R' 'solution-impl.R'",
+      "NeedsCompilation": "no",
+      "Author": "Dirk Schumacher [aut, cre]",
+      "Maintainer": "Dirk Schumacher <mail@dirk-schumacher.net>",
+      "Repository": "CRAN"
+    },
+    "ompr.roi": {
+      "Package": "ompr.roi",
+      "Version": "1.0.2",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "A Solver for 'ompr' that Uses the R Optimization Infrastructure ('ROI')",
+      "Authors@R": "person(\"Dirk\", \"Schumacher\", email = \"mail@dirk-schumacher.net\", role = c(\"aut\", \"cre\"))",
+      "Description": "A solver for 'ompr' based on the R Optimization Infrastructure ('ROI'). The package makes all solvers in 'ROI' available to solve 'ompr' models. Please see the 'ompr' website <https://dirkschumacher.github.io/ompr/> and package docs for more information and examples on how to use it.",
+      "License": "MIT + file LICENSE",
+      "RoxygenNote": "7.2.3",
+      "Encoding": "UTF-8",
+      "URL": "https://github.com/dirkschumacher/ompr.roi",
+      "BugReports": "https://github.com/dirkschumacher/ompr.roi/issues",
+      "Depends": [
+        "R (>= 3.5.0)"
+      ],
+      "Imports": [
+        "ROI (>= 0.3.0)",
+        "slam",
+        "methods",
+        "Matrix",
+        "ompr (>= 1.0.1)"
+      ],
+      "Suggests": [
+        "testthat",
+        "magrittr",
+        "ROI.plugin.glpk"
+      ],
+      "ByteCompile": "Yes",
+      "NeedsCompilation": "no",
+      "Author": "Dirk Schumacher [aut, cre]",
+      "Maintainer": "Dirk Schumacher <mail@dirk-schumacher.net>",
       "Repository": "CRAN"
     },
     "openssl": {
@@ -2180,6 +2490,25 @@
       "Maintainer": "Jennifer Bryan <jenny@posit.co>",
       "Repository": "CRAN"
     },
+    "registry": {
+      "Package": "registry",
+      "Version": "0.5-1",
+      "Source": "Repository",
+      "Type": "Package",
+      "Title": "Infrastructure for R Package Registries",
+      "Author": "David Meyer",
+      "Maintainer": "David Meyer <David.Meyer@R-project.org>",
+      "Description": "Provides a generic infrastructure for creating and using registries.",
+      "Depends": [
+        "R (>= 2.6.0)"
+      ],
+      "Imports": [
+        "utils"
+      ],
+      "License": "GPL-2",
+      "NeedsCompilation": "no",
+      "Repository": "CRAN"
+    },
     "renv": {
       "Package": "renv",
       "Version": "1.1.5",
@@ -2491,6 +2820,30 @@
       "NeedsCompilation": "no",
       "Author": "Winston Chang [aut] (ORCID: <https://orcid.org/0000-0002-1576-2126>), Joe Cheng [aut], JJ Allaire [aut], Carson Sievert [aut, cre] (ORCID: <https://orcid.org/0000-0002-4958-2844>), Barret Schloerke [aut] (ORCID: <https://orcid.org/0000-0001-9986-114X>), Garrick Aden-Buie [aut] (ORCID: <https://orcid.org/0000-0002-7111-0077>), Yihui Xie [aut], Jeff Allen [aut], Jonathan McPherson [aut], Alan Dipert [aut], Barbara Borges [aut], Posit Software, PBC [cph, fnd] (ROR: <https://ror.org/03wc8by49>), jQuery Foundation [cph] (jQuery library and jQuery UI library), jQuery contributors [ctb, cph] (jQuery library; authors listed in inst/www/shared/jquery-AUTHORS.txt), jQuery UI contributors [ctb, cph] (jQuery UI library; authors listed in inst/www/shared/jqueryui/AUTHORS.txt), Mark Otto [ctb] (Bootstrap library), Jacob Thornton [ctb] (Bootstrap library), Bootstrap contributors [ctb] (Bootstrap library), Twitter, Inc [cph] (Bootstrap library), Prem Nawaz Khan [ctb] (Bootstrap accessibility plugin), Victor Tsaran [ctb] (Bootstrap accessibility plugin), Dennis Lembree [ctb] (Bootstrap accessibility plugin), Srinivasu Chakravarthula [ctb] (Bootstrap accessibility plugin), Cathy O'Connor [ctb] (Bootstrap accessibility plugin), PayPal, Inc [cph] (Bootstrap accessibility plugin), Stefan Petre [ctb, cph] (Bootstrap-datepicker library), Andrew Rowls [ctb, cph] (Bootstrap-datepicker library), Brian Reavis [ctb, cph] (selectize.js library), Salmen Bejaoui [ctb, cph] (selectize-plugin-a11y library), Denis Ineshin [ctb, cph] (ion.rangeSlider library), Sami Samhuri [ctb, cph] (Javascript strftime library), SpryMedia Limited [ctb, cph] (DataTables library), Ivan Sagalaev [ctb, cph] (highlight.js library), R Core Team [ctb, cph] (tar implementation from R)",
       "Maintainer": "Carson Sievert <carson@posit.co>",
+      "Repository": "CRAN"
+    },
+    "slam": {
+      "Package": "slam",
+      "Version": "0.1-55",
+      "Source": "Repository",
+      "Title": "Sparse Lightweight Arrays and Matrices",
+      "Authors@R": "c(person(\"Kurt\", \"Hornik\", role = c(\"aut\", \"cre\"), email = \"Kurt.Hornik@R-project.org\", comment = c(ORCID = \"0000-0003-4198-9911\")), person(\"David\", \"Meyer\", role = \"aut\", email = \"David.Meyer@R-project.org\", comment = c(ORCID = \"0000-0002-5196-3048\")), person(\"Christian\", \"Buchta\", role = \"aut\"))",
+      "Description": "Data structures and algorithms for sparse arrays and matrices, based on index arrays and simple triplet representations, respectively.",
+      "Depends": [
+        "R (>= 3.4.0)"
+      ],
+      "Imports": [
+        "stats"
+      ],
+      "Enhances": [
+        "Matrix",
+        "SparseM",
+        "spam"
+      ],
+      "License": "GPL-2",
+      "NeedsCompilation": "yes",
+      "Author": "Kurt Hornik [aut, cre] (<https://orcid.org/0000-0003-4198-9911>), David Meyer [aut] (<https://orcid.org/0000-0002-5196-3048>), Christian Buchta [aut]",
+      "Maintainer": "Kurt Hornik <Kurt.Hornik@R-project.org>",
       "Repository": "CRAN"
     },
     "sourcetools": {
@@ -3122,6 +3475,46 @@
       "NeedsCompilation": "yes",
       "Author": "Yihui Xie [aut, cre, cph] (ORCID: <https://orcid.org/0000-0003-0645-5666>, URL: https://yihui.org), Wush Wu [ctb], Daijiang Li [ctb], Xianying Tan [ctb], Salim Brüggemann [ctb] (ORCID: <https://orcid.org/0000-0002-5329-5987>), Christophe Dervieux [ctb]",
       "Maintainer": "Yihui Xie <xie@yihui.name>",
+      "Repository": "CRAN"
+    },
+    "xml2": {
+      "Package": "xml2",
+      "Version": "1.5.2",
+      "Source": "Repository",
+      "Title": "Parse XML",
+      "Authors@R": "c( person(\"Hadley\", \"Wickham\", role = \"aut\"), person(\"Jim\", \"Hester\", role = \"aut\"), person(\"Jeroen\", \"Ooms\", email = \"jeroenooms@gmail.com\", role = c(\"aut\", \"cre\")), person(\"Posit Software, PBC\", role = c(\"cph\", \"fnd\")), person(\"R Foundation\", role = \"ctb\", comment = \"Copy of R-project homepage cached as example\") )",
+      "Description": "Bindings to 'libxml2' for working with XML data using a simple,  consistent interface based on 'XPath' expressions. Also supports XML schema validation; for 'XSLT' transformations see the 'xslt' package.",
+      "License": "MIT + file LICENSE",
+      "URL": "https://xml2.r-lib.org, https://r-lib.r-universe.dev/xml2",
+      "BugReports": "https://github.com/r-lib/xml2/issues",
+      "Depends": [
+        "R (>= 3.6.0)"
+      ],
+      "Imports": [
+        "cli",
+        "methods",
+        "rlang (>= 1.1.0)"
+      ],
+      "Suggests": [
+        "covr",
+        "curl",
+        "httr",
+        "knitr",
+        "mockery",
+        "rmarkdown",
+        "testthat (>= 3.2.0)",
+        "xslt"
+      ],
+      "VignetteBuilder": "knitr",
+      "Config/Needs/website": "tidyverse/tidytemplate",
+      "Encoding": "UTF-8",
+      "RoxygenNote": "7.3.3",
+      "SystemRequirements": "libxml2: libxml2-dev (deb), libxml2-devel (rpm)",
+      "Collate": "'S4.R' 'as_list.R' 'xml_parse.R' 'as_xml_document.R' 'classes.R' 'format.R' 'import-standalone-obj-type.R' 'import-standalone-purrr.R' 'import-standalone-types-check.R' 'init.R' 'nodeset_apply.R' 'paths.R' 'utils.R' 'xml2-package.R' 'xml_attr.R' 'xml_children.R' 'xml_document.R' 'xml_find.R' 'xml_missing.R' 'xml_modify.R' 'xml_name.R' 'xml_namespaces.R' 'xml_node.R' 'xml_nodeset.R' 'xml_path.R' 'xml_schema.R' 'xml_serialize.R' 'xml_structure.R' 'xml_text.R' 'xml_type.R' 'xml_url.R' 'xml_write.R' 'zzz.R'",
+      "Config/testthat/edition": "3",
+      "NeedsCompilation": "yes",
+      "Author": "Hadley Wickham [aut], Jim Hester [aut], Jeroen Ooms [aut, cre], Posit Software, PBC [cph, fnd], R Foundation [ctb] (Copy of R-project homepage cached as example)",
+      "Maintainer": "Jeroen Ooms <jeroenooms@gmail.com>",
       "Repository": "CRAN"
     },
     "xtable": {

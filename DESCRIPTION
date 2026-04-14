@@ -16,7 +16,13 @@ Imports:
     readr,
     lubridate,
     plotly,
-    DT
+    DT,
+    httr,
+    xml2,
+    tidyr,
+    ompr,
+    ompr.roi,
+    ROI.plugin.glpk
 Suggests:
     testthat (>= 3.0.0),
     renv

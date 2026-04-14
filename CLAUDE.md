@@ -60,3 +60,10 @@ This project was initialized from `wise-standards`. To update standards:
 make sync-standards
 ```
 This updates guidelines, templates, CSS theme, CLAUDE.md, and constitution base (Part 1) without touching project code or constitution Part 2. Requires `WISE_STANDARDS_PATH` in `.env`.
+
+## Active Technologies
+- R 4.5+ (Shiny) + ompr 1.0.4, ompr.roi 1.0.2, ROI.plugin.glpk 1.0-0 (nouveaux) + stack existante (shiny, bslib, dplyr, plotly, DT) (001-milp-optimizer)
+- N/A (in-memory simulation) (001-milp-optimizer)
+
+## Recent Changes
+- 001-milp-optimizer: Added R 4.5+ (Shiny) + ompr 1.0.4, ompr.roi 1.0.2, ROI.plugin.glpk 1.0-0 (nouveaux) + stack existante (shiny, bslib, dplyr, plotly, DT)

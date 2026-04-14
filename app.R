@@ -15,9 +15,13 @@ library(DT)
 library(tidyr)
 library(httr)
 library(xml2)
+library(ompr)
+library(ompr.roi)
+library(ROI.plugin.glpk)
 
-# Charger le module Belpex
+# Charger les modules
 source("R/belpex.R", local = TRUE)
+source("R/optimizer.R", local = TRUE)
 
 # Charger les variables d'environnement depuis .env
 if (file.exists(".env")) {
@@ -372,12 +376,16 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
 }
 
 run_simulation_auto <- function(df, params) {
-  candidats <- c("smart", "injection", "cost", paste0("hybrid_", params$auto_poids_hybrides))
+  candidats <- c("optimizer", "smart", "injection", "cost", paste0("hybrid_", params$auto_poids_hybrides))
   resultats <- list()
   for (c in candidats) {
-    parsed <- if (startsWith(c, "hybrid_")) list(mode = "hybrid", poids = as.numeric(sub("hybrid_", "", c)))
-    else list(mode = c, poids = params$poids_cout)
-    resultats[[c]] <- run_simulation(df, params, parsed$mode, parsed$poids)
+    if (c == "optimizer") {
+      resultats[[c]] <- tryCatch(run_optimization_milp(df, params), error = function(e) run_simulation(df, params, "smart", 0.5))
+    } else {
+      parsed <- if (startsWith(c, "hybrid_")) list(mode = "hybrid", poids = as.numeric(sub("hybrid_", "", c)))
+      else list(mode = c, poids = params$poids_cout)
+      resultats[[c]] <- run_simulation(df, params, parsed$mode, parsed$poids)
+    }
   }
   n <- nrow(df); fenetre_qt <- params$auto_fenetre_jours * 96
   mode_sel <- rep(candidats[1], n); best <- candidats[1]
@@ -691,18 +699,17 @@ ui <- page_fillable(
         tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
       tags$div(class = "sidebar-section",
-        tags$div(class = "section-title", "Optimisation", tip("Choisissez la strategie de pilotage de la PAC. Chaque mode decide differemment quand allumer ou eteindre la pompe a chaleur.")),
-        selectInput("mode_optim", "Mode", choices = c("Smart" = "smart", "Injection" = "injection", "Cout" = "cost", "Hybrid" = "hybrid", "Auto-adaptatif" = "auto"), selected = "smart"),
-        tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-4px;margin-bottom:6px;", cl$text_muted),
-          HTML("<b>Smart</b> = valeur nette (chauffer ssi ca economise de l'argent)<br>
-                <b>Injection</b> = minimiser le surplus envoye au reseau<br>
-                <b>Cout</b> = minimiser la facture (utilise les prix spot)<br>
-                <b>Hybrid</b> = compromis pondere entre les deux<br>
-                <b>Auto</b> = teste les strategies et choisit la meilleure")),
-        conditionalPanel("input.mode_optim=='hybrid'", sliderInput("poids_cout", "Poids cout", 0, 1, 0.6, step = 0.1),
-          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "0 = 100% injection, 1 = 100% cout")),
-        conditionalPanel("input.mode_optim=='auto'", sliderInput("auto_fenetre", "Fenetre eval (j)", 3, 30, 14, step = 1),
-          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Nombre de jours passes utilises pour evaluer quel mode performe le mieux"))),
+        tags$div(class = "section-title", "Optimisation", tip("Deux approches : Rule-based (regles heuristiques, rapide) ou Optimiseur (MILP, trouve la solution mathematiquement optimale).")),
+        radioButtons("approche", "Approche", choices = c("Rule-based" = "rulebased", "Optimiseur" = "optimiseur"), selected = "rulebased", inline = TRUE),
+        conditionalPanel("input.approche=='rulebased'",
+          selectInput("mode_optim", "Mode", choices = c("Smart" = "smart", "Injection" = "injection", "Cout" = "cost", "Hybrid" = "hybrid", "Auto-adaptatif" = "auto"), selected = "smart"),
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-4px;margin-bottom:6px;", cl$text_muted),
+            HTML("<b>Smart</b> = valeur nette<br><b>Injection</b> = minimiser le surplus<br><b>Cout</b> = minimiser la facture<br><b>Hybrid</b> = compromis pondere<br><b>Auto</b> = teste et choisit")),
+          conditionalPanel("input.mode_optim=='hybrid'", sliderInput("poids_cout", "Poids cout", 0, 1, 0.6, step = 0.1)),
+          conditionalPanel("input.mode_optim=='auto'", sliderInput("auto_fenetre", "Fenetre eval (j)", 3, 30, 14, step = 1))),
+        conditionalPanel("input.approche=='optimiseur'",
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+            HTML("Resout un probleme d'optimisation mathematique (MILP) qui minimise le cout net en respectant toutes les contraintes physiques. Trouve la <b>solution optimale globale</b> sur tout l'horizon, jour par jour.")))),
       tags$div(class = "sidebar-section",
         tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques electriques de votre PAC. Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
         numericInput("p_pac_kw", "Puissance (kW)", 2, min = 0.5, max = 10, step = 0.5),
@@ -1005,7 +1012,21 @@ sur 14 derniers jours    meilleur       ca continue"),
             tags$p("Mode auto = adaptation, pas prediction. Fenetre courte = reactif. Longue = stable.")
           ),
 
-          accordion_panel("10. Glossaire", icon = icon("spell-check"),
+          accordion_panel("10. Rule-based vs Optimiseur", icon = icon("scale-balanced"),
+            tags$p("Cette app propose deux approches fondamentalement differentes pour piloter la PAC :"),
+            tags$div(style = sprintf("background:%s;border:1px solid %s;border-radius:8px;padding:12px;margin:8px 0;", cl$bg_input, cl$grid),
+              tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$reel), "Rule-based (regles heuristiques)"),
+              tags$p(style = "margin:0;", "A chaque quart d'heure, l'algo applique des regles : 'si surplus PV ET ballon froid ALORS allumer'. Decisions locales, pas de vision d'ensemble."),
+              tags$p(style = sprintf("margin:4px 0 0 0;font-size:.78rem;color:%s;", cl$text_muted), "Comme un joueur d'echecs qui decide coup par coup.")),
+            tags$div(style = sprintf("background:%s;border:1px solid %s;border-radius:8px;padding:12px;margin:8px 0;", cl$bg_input, cl$grid),
+              tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$success), "Optimiseur (MILP)"),
+              tags$p(style = "margin:0;", "On declare l'objectif (minimiser la facture) et les contraintes (temperature, batterie, puissance). Le solveur trouve la solution mathematiquement optimale sur toute la journee simultanement."),
+              tags$p(style = sprintf("margin:4px 0 0 0;font-size:.78rem;color:%s;", cl$text_muted), "Comme un joueur qui calcule 10 coups d'avance.")),
+            tags$p(tags$strong("Exemple concret :"), " si les prix sont bas a 10h et tres eleves a 18h, l'optimiseur sait qu'il faut charger la batterie a 10h pour revendre a 18h. Le rule-based ne voit que l'heure en cours et peut rater cette opportunite."),
+            tags$p(tags$strong("Quand utiliser quoi ?"), " Le rule-based est plus rapide et suffisant pour des profils de prix simples (contrat fixe). L'optimiseur brille en contrat dynamique avec des prix volatils et une batterie.")
+          ),
+
+          accordion_panel("11. Glossaire", icon = icon("spell-check"),
             tags$table(style = sprintf("width:100%%;font-size:.8rem;border-collapse:collapse;color:%s;", cl$text), tags$tbody(
               tags$tr(tags$td(style = sprintf("padding:4px 6px;font-weight:600;color:%s;", cl$opti), "Offtake"), tags$td(style = "padding:4px 6px;", "Electricite prelevee du reseau.")),
               tags$tr(tags$td(style = sprintf("padding:4px 6px;font-weight:600;color:%s;", cl$opti), "Intake"), tags$td(style = "padding:4px 6px;", "Electricite injectee (surplus PV).")),
@@ -1089,21 +1110,42 @@ sur 14 derniers jours    meilleur       ca continue"),
   
   sim_result <- eventReactive(input$run_sim, {
     p <- params_r(); df <- raw_data()
+    approche <- input$approche
+
     withProgress(message = "Preparation...", value = 0.1, {
       prep <- prepare_df(df, p)
       df_prep <- prep$df; p <- prep$params
-      setProgress(0.3, detail = "Simulation en cours...")
-      mode <- input$mode_optim
-      if (mode == "auto") {
-        res <- run_simulation_auto(df_prep, p)
+
+      if (approche == "optimiseur") {
+        setProgress(0.3, detail = "Optimisation MILP en cours...")
+        sim <- tryCatch({
+          run_optimization_milp(df_prep, p)
+        }, error = function(e) {
+          showNotification(paste("Erreur optimiseur:", e$message), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(sim)) {
+          showNotification("Optimisation infaisable — verifiez les contraintes (tolerance temperature, etc.)", type = "error")
+          # Fallback : mode smart
+          sim <- run_simulation(df_prep, p, "smart", 0.5)
+          sim$mode_actif <- "smart_fallback"
+        }
         setProgress(1, detail = "Termine!")
-        list(sim = res$auto, candidats = res$candidats, modes = res$modes, df = df_prep, params = p, mode = "auto")
+        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer")
       } else {
-        poids <- if (mode == "hybrid") input$poids_cout else 0.5
-        sim <- run_simulation(df_prep, p, mode, poids)
-        sim$mode_actif <- mode
-        setProgress(1, detail = "Termine!")
-        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = mode)
+        setProgress(0.3, detail = "Simulation en cours...")
+        mode <- input$mode_optim
+        if (mode == "auto") {
+          res <- run_simulation_auto(df_prep, p)
+          setProgress(1, detail = "Termine!")
+          list(sim = res$auto, candidats = res$candidats, modes = res$modes, df = df_prep, params = p, mode = "auto")
+        } else {
+          poids <- if (mode == "hybrid") input$poids_cout else 0.5
+          sim <- run_simulation(df_prep, p, mode, poids)
+          sim$mode_actif <- mode
+          setProgress(1, detail = "Termine!")
+          list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = mode)
+        }
       }
     })
   })
@@ -1124,7 +1166,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     req(sim_result()); res <- sim_result(); sim <- res$sim; n <- nrow(sim)
     p <- if (!is.null(res$params)) res$params else params_r()
     jours <- as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days"))
-    ml <- c(injection = "INJ", cost = "COUT", hybrid = "HYB", auto = "AUTO")
+    ml <- c(injection = "INJ", cost = "COUT", hybrid = "HYB", auto = "AUTO", smart = "SMART", optimizer = "OPTIM")
     batt <- if (p$batterie_active) paste0(p$batt_kwh, "kWh/", p$batt_kw, "kW") else "non"
     contrat <- if (p$type_contrat == "fixe") paste0("fixe ", p$prix_fixe_offtake, "/", p$prix_fixe_injection) else "spot"
     tags$div(id = "status_bar", HTML(sprintf(
@@ -1256,7 +1298,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     if (res$mode != "auto" || is.null(res$sim$mode_actif))
       return(plot_ly() %>% add_annotations(text = "Activez le mode Auto", x = .5, y = .5, showarrow = FALSE, font = list(color = cl$text_muted)) %>% pl_layout())
     dm <- res$sim %>% mutate(jour = as.Date(timestamp)) %>% group_by(jour) %>% summarise(mode = names(which.max(table(mode_actif))), .groups = "drop")
-    mc <- c(smart = cl$success, injection = cl$reel, cost = cl$opti, `hybrid_0.3` = "#a78bfa", `hybrid_0.5` = "#818cf8", `hybrid_0.7` = "#6366f1")
+    mc <- c(optimizer = "#10b981", smart = cl$success, injection = cl$reel, cost = cl$opti, `hybrid_0.3` = "#a78bfa", `hybrid_0.5` = "#818cf8", `hybrid_0.7` = "#6366f1")
     plot_ly(dm, x = ~jour, y = 1, color = ~mode, colors = mc, type = "bar") %>% layout(barmode = "stack", bargap = 0) %>% pl_layout() %>% layout(yaxis = list(visible = FALSE))
   })
   
@@ -1474,7 +1516,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     # Grille de recherche
     pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
     batt_range <- c(0, 5, 10, 15, 20)
-    modes      <- c("smart", "injection", "cost", "hybrid")
+    modes      <- c("optimizer", "smart", "injection", "cost", "hybrid")
     contrats   <- c("fixe", "dynamique")
     
     total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
@@ -1516,7 +1558,7 @@ sur 14 derniers jours    meilleur       ca continue"),
               poids <- if (m == "hybrid") 0.5 else 0.5
               
               tryCatch({
-                sim <- run_simulation(df_prep, p_sim, m, poids)
+                sim <- if (m == "optimizer") run_optimization_milp(df_prep, p_sim) else run_simulation(df_prep, p_sim, m, poids)
                 
                 pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
                 inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
