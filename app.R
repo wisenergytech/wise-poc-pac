@@ -106,52 +106,56 @@ decider <- function(mode, params, t_actuelle, surplus_now, cop_now,
     }
     cout_moyen_futur <- median(cout_futur_par_kwh_th, na.rm = TRUE)
 
+    # ---------------------------------------------------------------
+    # PRIORITE 1 : Maintenir le confort (T >= T_min en permanence)
+    # ---------------------------------------------------------------
+
+    # Marge de securite : combien de degres au-dessus de T_min
+    marge <- t_actuelle - params$t_min
+
+    # Si deja sous T_min ou juste au-dessus : chauffer immediatement
+    if (marge <= 2)
+      return(list(pac_on = 1L, raison = "smart_urgence"))
+
+    # Si T descend sous T_min dans les 8 prochains qt (2h) : prechauffer
+    if (qt_avant_t_min <= 8)
+      return(list(pac_on = 1L, raison = "smart_prechauffage"))
+
     # Prix negatif a l'injection : toujours autoconsommer
     if (prix_injection_now < 0 & surplus_now > 0 & t_actuelle < params$t_max)
       return(list(pac_on = 1L, raison = "smart_eviter_inj_neg"))
 
-    # Le ballon va-t-il avoir besoin de chaleur ?
+    # ---------------------------------------------------------------
+    # PRIORITE 2 : Optimiser le cout (une fois le confort assure)
+    # ---------------------------------------------------------------
+
+    # Le ballon va-t-il avoir besoin de chaleur dans l'horizon ?
     needs_heat <- t_actuelle < params$t_consigne | qt_avant_t_min <= params$horizon_qt
 
-    if (!needs_heat) {
-      # Ballon OK et pas de besoin proche : ne pas chauffer
+    if (!needs_heat)
       return(list(pac_on = 0L, raison = "smart_ballon_ok"))
-    }
 
-    # Le ballon a besoin de chaleur. Question : maintenant ou plus tard ?
-
-    # Cas 1 : Surplus PV total — chauffer est quasi-gratuit
+    # Surplus PV total — chauffer est quasi-gratuit
     if (surplus_now >= pac_conso_qt) {
-      # Cout = perte d'injection. Toujours moins cher que soutirer plus tard
-      # sauf si prix_injection > prix_offtake futur (rare)
-      if (cout_par_kwh_th_now < cout_moyen_futur * 1.5) {
+      if (cout_par_kwh_th_now < cout_moyen_futur * 1.5)
         return(list(pac_on = 1L, raison = "smart_surplus_gratuit"))
-      }
-      # Cas rare : mieux vaut injecter maintenant et soutirer pas cher plus tard
       return(list(pac_on = 0L, raison = "smart_injection_rentable"))
     }
 
-    # Cas 2 : Pas de surplus total — chauffer coute du soutirage
-    # Ne chauffer sur reseau que si le prix actuel est significativement
-    # moins cher que le futur (contrat dynamique uniquement)
+    # Pas de surplus — chauffer sur reseau si prix favorable
     if (cout_par_kwh_th_now < cout_moyen_futur * 0.7) {
-      # Prix actuellement bas par rapport a la moyenne future
       if (t_actuelle < params$t_consigne)
         return(list(pac_on = 1L, raison = "smart_prix_favorable"))
     }
 
-    # Cas 3 : Urgence — le ballon va tomber sous t_min
-    if (qt_avant_t_min <= 2)
-      return(list(pac_on = 1L, raison = "smart_urgence"))
-
-    # Cas 4 : Attendre du surplus PV futur si le ballon tient
+    # Attendre du surplus PV futur si le ballon peut tenir
     h_avant <- which(surplus_futur >= pac_conso_qt)
-    if (length(h_avant) > 0 & qt_avant_t_min > min(h_avant))
+    if (length(h_avant) > 0 & qt_avant_t_min > min(h_avant) + 4)
       return(list(pac_on = 0L, raison = "smart_attente_surplus"))
 
-    # Cas 5 : Pas de surplus a venir, confort menace bientot
-    if (qt_avant_t_min <= 4 & t_actuelle < params$t_min + 2)
-      return(list(pac_on = 1L, raison = "smart_anticipation"))
+    # Pas de surplus a venir et besoin de chaleur : chauffer sur reseau
+    if (t_actuelle < params$t_consigne)
+      return(list(pac_on = 1L, raison = "smart_maintien_confort"))
 
     return(list(pac_on = 0L, raison = "smart_attente"))
   }
