@@ -844,15 +844,53 @@ sur 14 derniers jours    meilleur       ca continue"),
           accordion_panel("10. Rule-based vs Optimiseur", icon = icon("scale-balanced"),
             tags$p("Cette app propose deux approches fondamentalement differentes pour piloter la PAC :"),
             tags$div(style = sprintf("background:%s;border:1px solid %s;border-radius:8px;padding:12px;margin:8px 0;", cl$bg_input, cl$grid),
-              tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$reel), "Rule-based (regles heuristiques)"),
-              tags$p(style = "margin:0;", "A chaque quart d'heure, l'algo applique des regles : 'si surplus PV ET ballon froid ALORS allumer'. Decisions locales, pas de vision d'ensemble."),
-              tags$p(style = sprintf("margin:4px 0 0 0;font-size:.78rem;color:%s;", cl$text_muted), "Comme un joueur d'echecs qui decide coup par coup.")),
+              tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$reel), "Rule-based (Smart)"),
+              tags$p(style = "margin:0;", "A chaque quart d'heure, l'algo applique des regles : 'est-ce que chauffer maintenant coute moins cher que chauffer plus tard ?'. Decisions locales, basees sur la valeur nette."),
+              tags$p(style = sprintf("margin:4px 0 0 0;font-size:.78rem;color:%s;", cl$text_muted), "Comme un joueur d'echecs qui decide coup par coup. Rapide (<1s).")),
             tags$div(style = sprintf("background:%s;border:1px solid %s;border-radius:8px;padding:12px;margin:8px 0;", cl$bg_input, cl$grid),
               tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$success), "Optimiseur (MILP)"),
-              tags$p(style = "margin:0;", "On declare l'objectif (minimiser la facture) et les contraintes (temperature, batterie, puissance). Le solveur trouve la solution mathematiquement optimale sur toute la journee simultanement."),
-              tags$p(style = sprintf("margin:4px 0 0 0;font-size:.78rem;color:%s;", cl$text_muted), "Comme un joueur qui calcule 10 coups d'avance.")),
+              tags$p(style = "margin:0;", "On declare l'objectif (minimiser la facture) et les contraintes (temperature, batterie, puissance). Un solveur mathematique (HiGHS) trouve la solution optimale sur tout le bloc simultanement."),
+              tags$p(style = sprintf("margin:4px 0 0 0;font-size:.78rem;color:%s;", cl$text_muted), "Comme un joueur qui calcule 10 coups d'avance. Plus lent (~1 min pour 30 jours).")),
             tags$p(tags$strong("Exemple concret :"), " si les prix sont bas a 10h et tres eleves a 18h, l'optimiseur sait qu'il faut charger la batterie a 10h pour revendre a 18h. Le rule-based ne voit que l'heure en cours et peut rater cette opportunite."),
             tags$p(tags$strong("Quand utiliser quoi ?"), " Le rule-based est plus rapide et suffisant pour des profils de prix simples (contrat fixe). L'optimiseur brille en contrat dynamique avec des prix volatils et une batterie.")
+          ),
+
+          accordion_panel("11. Comment fonctionne l'optimiseur ?", icon = icon("microchip"),
+            tags$p("L'optimiseur resout un probleme mathematique appele ", tags$strong("MILP"), " (Mixed Integer Linear Programming). Voici comment il fonctionne :"),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 6px 0;", cl$opti), "1. Decoupage en blocs"),
+            tags$p("La periode simulee est decoupee en blocs (par defaut 4 heures = 16 quarts d'heure). Chaque bloc est resolu independamment, avec la temperature de fin du bloc precedent comme point de depart."),
+            tags$p(tags$strong("Pourquoi des blocs ?"), " Resoudre 180 jours d'un coup (17 280 variables) serait trop lent. Des blocs de 4h (16 variables) se resolvent en <1 seconde chacun."),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 6px 0;", cl$opti), "2. Ce que le solveur decide"),
+            tags$p("Pour chaque quart d'heure du bloc, le solveur choisit simultanement :"),
+            tags$ul(
+              tags$li("PAC ON ou OFF (variable binaire 0/1)"),
+              tags$li("Si batterie : charge, decharge, ou rien"),
+              tags$li("Combien soutirer du reseau, combien injecter")
+            ),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 6px 0;", cl$opti), "3. L'objectif"),
+            tags$pre(style = sprintf("background:%s;border-radius:8px;padding:12px;font-size:.78rem;color:%s;", cl$bg_input, cl$opti),
+              "Minimiser : somme( soutirage x prix_offtake - injection x prix_injection )"),
+            tags$p("En clair : depenser le moins possible en electricite, tout en vendant au meilleur prix quand c'est rentable."),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 6px 0;", cl$opti), "4. Les contraintes"),
+            tags$ul(
+              tags$li(tags$strong("Bilan energetique :"), " a chaque qt, PV + soutirage = consommation + PAC + injection (+ batterie). L'energie se conserve."),
+              tags$li(tags$strong("Dynamique thermique :"), " T(t+1) depend de T(t), de la chaleur PAC, des pertes, et des tirages ECS. Meme modele que le rule-based."),
+              tags$li(tags$strong("Confort en fin de bloc :"), " la temperature du ballon doit etre dans [T_min, T_max] a la fin de chaque bloc. Intra-bloc, elle peut descendre temporairement (gros tirage ECS)."),
+              tags$li(tags$strong("Batterie :"), " SOC dans les limites, pas de charge et decharge simultanee, rendement applique.")
+            ),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 6px 0;", cl$opti), "5. Le parametre 'Horizon bloc'"),
+            tags$p("Vous pouvez choisir la taille du bloc (1h a 24h) :"),
+            tags$ul(
+              tags$li(tags$strong("Bloc court (1-4h) :"), " rapide, mais l'optimiseur a peu de vision. Il ne peut pas anticiper un pic de prix dans 6h."),
+              tags$li(tags$strong("Bloc moyen (6-12h) :"), " bon compromis. Voit les tendances de la journee."),
+              tags$li(tags$strong("Bloc long (24h) :"), " solution optimale sur la journee entiere, mais plus lent (~10s/jour).")
+            ),
+            tags$p("En contrat fixe, la taille du bloc a peu d'impact (les prix ne varient pas). En contrat dynamique, un bloc plus long permet de mieux exploiter les variations de prix.")
           ),
 
           accordion_panel("11. Glossaire", icon = icon("spell-check"),
