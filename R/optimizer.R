@@ -51,22 +51,18 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
 
     # Variables de decision
     add_variable(pac_on[t], t = 1:n, type = "binary") |>
-    # Bornes larges sur T pour eviter l'infaisabilite (les vrais limites sont dans les penalites)
+    # Bornes physiques larges (memes conditions que le rule-based)
+    # Les gros tirages ECS peuvent faire descendre T temporairement — c'est tolere
     add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
-    add_variable(t_viol_low[t], t = 1:n, lb = 0) |>   # violation sous T_min
-    add_variable(t_viol_high[t], t = 1:n, lb = 0) |>   # violation au-dessus T_max
     add_variable(offt[t], t = 1:n, lb = 0) |>
     add_variable(inj[t], t = 1:n, lb = 0) |>
 
-    # Objectif : minimiser cout net + penalites pour violations temperature
+    # Objectif : minimiser le cout net UNIQUEMENT (pas de penalite temperature)
+    # Meme critere que le mode Smart pour une comparaison equitable
     set_objective(
-      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t] + t_viol_low[t] * 10 + t_viol_high[t] * 10, t = 1:n),
+      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
       sense = "min"
     ) |>
-
-    # Contraintes souples sur temperature
-    add_constraint(t_bal[t] + t_viol_low[t] >= params$t_min, t = 1:n) |>
-    add_constraint(t_bal[t] - t_viol_high[t] <= params$t_max, t = 1:n) |>
 
     # C1: Bilan energetique nodal (sans batterie d'abord)
     # pv + offtake = conso + pac_elec + injection  (+ charge - discharge si batterie)
@@ -111,8 +107,6 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
     model <- MIPModel() |>
       add_variable(pac_on[t], t = 1:n, type = "binary") |>
       add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
-      add_variable(t_viol_low[t], t = 1:n, lb = 0) |>
-      add_variable(t_viol_high[t], t = 1:n, lb = 0) |>
       add_variable(offt[t], t = 1:n, lb = 0) |>
       add_variable(inj[t], t = 1:n, lb = 0) |>
       add_variable(chrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
@@ -120,15 +114,11 @@ solve_one_day <- function(day_data, params, t_init, soc_init = NULL) {
       add_variable(soc[t], t = 1:n, lb = soc_min, ub = soc_max) |>
       add_variable(batt_ch[t], t = 1:n, type = "binary") |>
 
-      # Objectif avec penalites temperature
+      # Objectif : cout net uniquement (pas de penalite temperature)
       set_objective(
-        sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t] + t_viol_low[t] * 10 + t_viol_high[t] * 10, t = 1:n),
+        sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
         sense = "min"
       ) |>
-
-      # Contraintes souples temperature
-      add_constraint(t_bal[t] + t_viol_low[t] >= params$t_min, t = 1:n) |>
-      add_constraint(t_bal[t] - t_viol_high[t] <= params$t_max, t = 1:n) |>
 
       # Bilan energetique avec batterie
       add_constraint(
