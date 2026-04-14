@@ -929,7 +929,27 @@ sur 14 derniers jours    meilleur       ca continue"),
             tags$p("En contrat fixe, la taille du bloc a peu d'impact (les prix ne varient pas). En contrat dynamique, un bloc plus long permet de mieux exploiter les variations de prix.")
           ),
 
-          accordion_panel("11. Glossaire", icon = icon("spell-check"),
+          accordion_panel("12. Comprendre les resultats", icon = icon("chart-pie"),
+            tags$h6(style = sprintf("color:%s;margin:0 0 8px 0;", cl$opti), "Pourquoi l'optimiseur est meilleur"),
+            tags$p("L'optimiseur produit systematiquement un cout net inferieur ou egal au thermostat classique et au mode Smart. Voici pourquoi :"),
+            tags$ul(
+              tags$li(tags$strong("Moins de soutirage :"), " le thermostat classique chauffe la nuit (pas de PV, 100% reseau). L'optimiseur deplace la consommation PAC vers les heures de surplus PV (cout quasi nul)."),
+              tags$li(tags$strong("Moins d'injection :"), " en chauffant le ballon sur le surplus PV, l'optimiseur reduit l'injection. Chaque kWh autoconsomme evite un soutirage a 0.30 EUR et ne perd qu'une injection a 0.03 EUR — gain net de 0.27 EUR/kWh."),
+              tags$li(tags$strong("Meilleure autoconsommation :"), " l'optimiseur utilise le ballon comme batterie thermique de facon optimale, ce qui augmente mecaniquement le taux d'autoconsommation.")
+            ),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 8px 0;", cl$opti), "Contrat fixe vs dynamique"),
+            tags$ul(
+              tags$li(tags$strong("Contrat fixe :"), " le gain vient uniquement du deplacement du volume (moins de soutirage, plus d'autoconsommation). Le timing ne compte pas car le prix est constant. Le gain est modeste car le thermostat classique autoconsomme deja partiellement par accident (il chauffe en journee quand le ballon est froid apres les tirages ECS du matin)."),
+              tags$li(tags$strong("Contrat dynamique :"), " le gain est plus important car l'optimiseur exploite aussi les variations de prix horaires. Il soutire quand c'est pas cher, evite de soutirer quand c'est cher, et evite d'injecter quand les prix sont negatifs.")
+            ),
+
+            tags$h6(style = sprintf("color:%s;margin:12px 0 8px 0;", cl$opti), "La contrainte de confort"),
+            tags$p("La temperature du ballon doit etre dans la plage [T_min, T_max] (definie par Consigne +/- Tolerance) ", tags$strong("a la fin de chaque bloc"), " d'optimisation. Intra-bloc, la temperature peut descendre temporairement sous T_min lors de gros tirages d'eau chaude — c'est physiquement inevitable et identique au comportement du thermostat classique."),
+            tags$p("Si vous constatez des temperatures tres basses intra-bloc, c'est normal : un tirage de 3-4 kWh fait chuter la temperature de 15-20 degres instantanement dans un ballon de 200L. La PAC la remonte ensuite progressivement.")
+          ),
+
+          accordion_panel("13. Glossaire", icon = icon("spell-check"),
             tags$table(style = sprintf("width:100%%;font-size:.8rem;border-collapse:collapse;color:%s;", cl$text), tags$tbody(
               tags$tr(tags$td(style = sprintf("padding:4px 6px;font-weight:600;color:%s;", cl$opti), "Offtake"), tags$td(style = "padding:4px 6px;", "Electricite prelevee du reseau.")),
               tags$tr(tags$td(style = sprintf("padding:4px 6px;font-weight:600;color:%s;", cl$opti), "Intake"), tags$td(style = "padding:4px 6px;", "Electricite injectee (surplus PV).")),
