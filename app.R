@@ -634,14 +634,27 @@ ui <- page_fillable(
         layout_columns(col_widths = c(6, 6),
           card(full_screen = TRUE, card_header("Repartition des decisions"), card_body(plotlyOutput("plot_decisions", height = "300px"))),
           card(full_screen = TRUE, card_header("Prix spot et PAC ON"), card_body(plotlyOutput("plot_prix_pac", height = "300px"))))),
-      nav_panel(title = "Comparaison", icon = icon("code-compare"),
+      nav_panel(title = "Gains", icon = icon("piggy-bank"),
         explainer(
-          tags$summary("Comprendre la comparaison"),
-          tags$p("Compare le scenario ", tags$strong("reel"), " (ce qui s'est passe) avec le scenario ", tags$strong("optimise"), " (ce que l'algo aurait fait)."),
+          tags$summary("Comprendre les gains"),
           tags$ul(
-            tags$li(tags$strong("Bilan quotidien :"), " les barres cyan representent l'injection evitee chaque jour. Plus la barre est haute, plus l'algo a ete efficace ce jour-la.")
+            tags$li(tags$strong("Cout cumule :"), " deux courbes qui montent au fil du temps. L'ecart entre elles = votre gain total. Plus elles s'ecartent, plus l'optimisation est efficace."),
+            tags$li(tags$strong("Barres quotidiennes :"), " pour chaque jour, le cout reel et le cout optimise cote a cote. Les jours ou la barre cyan est plus courte = l'optimisation a fait economiser."),
+            tags$li(tags$strong("Profil journalier :"), " montre comment la PAC est decalee des heures sans PV (thermostat classique) vers les heures avec PV (optimise).")
           )),
-        layout_columns(col_widths = 12, card(full_screen = TRUE, card_header("Bilan quotidien"), card_body(plotlyOutput("plot_injection_compare", height = "320px"))))),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("Cout cumule — reel vs optimise"),
+            card_body(plotlyOutput("plot_cout_cumule", height = "320px")))),
+        layout_columns(col_widths = c(6, 6),
+          card(full_screen = TRUE, card_header("Cout quotidien — reel vs optimise"),
+            card_body(plotlyOutput("plot_cout_quotidien", height = "300px"))),
+          card(full_screen = TRUE, card_header("Profil PAC — reel vs optimise"),
+            card_body(plotlyOutput("plot_profil_pac", height = "300px")))),
+        layout_columns(col_widths = c(6, 6),
+          card(full_screen = TRUE, card_header("Bilan mensuel"),
+            card_body(DTOutput("table_mensuel"))),
+          card(full_screen = TRUE, card_header("Waterfall — decomposition du gain"),
+            card_body(plotlyOutput("plot_waterfall", height = "300px"))))),
       nav_panel(title = "Insights", icon = icon("lightbulb"),
         explainer(
           tags$summary("Comprendre ces visualisations"),
@@ -665,20 +678,6 @@ ui <- page_fillable(
             card_body(plotlyOutput("plot_loadshift", height = "320px"))),
           card(full_screen = TRUE, card_header("Waterfall — decomposition des economies"),
             card_body(plotlyOutput("plot_waterfall", height = "320px"))))),
-      nav_panel(title = "Bilan EUR", icon = icon("euro-sign"),
-        explainer(
-          tags$summary("Comprendre le bilan financier"),
-          tags$p("Traduction en ", tags$strong("euros"), " des gains energetiques."),
-          tags$ul(
-            tags$li(tags$strong("Economies mensuelles :"), " difference entre ce que vous auriez paye sans optimisation et avec. Les barres vertes = economies, rouges = l'algo a fait pire (rare, en general les premiers jours avant calibration)."),
-            tags$li(tags$strong("Bilan mensuel :"), " detail mois par mois. La colonne 'Gain' est l'economie nette en euros."),
-            tags$li(tags$strong("Repartition des couts :"), " combien vous payez en soutirage vs combien vous recevez en injection. En contrat dynamique, l'objectif est de maximiser l'autoconsommation pour reduire le soutirage aux heures cheres.")
-          ),
-          tags$p(tags$strong("Note :"), " en contrat fixe, le gain vient uniquement de la reduction du volume soutire/injecte. En contrat dynamique, le gain vient aussi du ", tags$strong("timing"), " (soutirer quand c'est moins cher).")),
-        layout_columns(col_widths = 12, card(full_screen = TRUE, card_header("Economies mensuelles"), card_body(plotlyOutput("plot_gains", height = "320px")))),
-        layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header("Bilan mensuel"), card_body(DTOutput("table_mensuel"))),
-          card(full_screen = TRUE, card_header("Repartition des couts"), card_body(plotlyOutput("plot_cout_repartition", height = "300px"))))),
       nav_panel(title = "Dimensionnement", icon = icon("solar-panel"),
         explainer(
           tags$summary("Comprendre le dimensionnement"),
@@ -1102,14 +1101,69 @@ sur 14 derniers jours    meilleur       ca continue"),
       pl_layout(ylab = "cEUR/kWh")
   })
   
-  output$plot_injection_compare <- renderPlotly({
+  # ---- GAINS : Cout cumule reel vs optimise ----
+  output$plot_cout_cumule <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim
+    d <- sim %>%
+      mutate(
+        cout_reel_qt = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
+        cout_opti_qt = sim_offtake * prix_offtake - sim_intake * prix_injection
+      ) %>%
+      mutate(
+        cum_reel = cumsum(ifelse(is.na(cout_reel_qt), 0, cout_reel_qt)),
+        cum_opti = cumsum(ifelse(is.na(cout_opti_qt), 0, cout_opti_qt))
+      )
+    # Sous-echantillonner pour performance (1 point par heure)
+    d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+      group_by(h) %>% slice_tail(n = 1) %>% ungroup()
+    plot_ly(d_h, x = ~timestamp) %>%
+      add_trace(y = ~cum_reel, type = "scatter", mode = "lines", name = "Cout reel",
+        line = list(color = cl$reel, width = 2), fill = "tozeroy", fillcolor = "rgba(249,115,22,0.08)") %>%
+      add_trace(y = ~cum_opti, type = "scatter", mode = "lines", name = "Cout optimise",
+        line = list(color = cl$opti, width = 2), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.08)") %>%
+      pl_layout(ylab = "EUR cumule")
+  })
+
+  # ---- GAINS : Cout quotidien barres cote a cote ----
+  output$plot_cout_quotidien <- renderPlotly({
     req(sim_result()); sim <- sim_result()$sim
     d <- sim %>% mutate(jour = as.Date(timestamp)) %>% group_by(jour) %>%
-      summarise(r = sum(intake_kwh, na.rm = TRUE), o = sum(sim_intake, na.rm = TRUE), .groups = "drop") %>% mutate(e = r - o)
+      summarise(
+        reel = sum(offtake_kwh * prix_offtake - intake_kwh * prix_injection, na.rm = TRUE),
+        opti = sum(sim_offtake * prix_offtake - sim_intake * prix_injection, na.rm = TRUE),
+        .groups = "drop"
+      )
     plot_ly(d, x = ~jour) %>%
-      add_trace(y = ~r, type = "scatter", mode = "lines", name = "Reel", line = list(color = cl$reel, width = 1)) %>%
-      add_trace(y = ~o, type = "scatter", mode = "lines", name = "Optimise", line = list(color = cl$opti, width = 1.5)) %>%
-      add_bars(y = ~e, name = "Evite", marker = list(color = "rgba(34,211,238,0.2)")) %>% pl_layout(ylab = "kWh/jour")
+      add_bars(y = ~reel, name = "Reel", marker = list(color = cl$reel, opacity = 0.7)) %>%
+      add_bars(y = ~opti, name = "Optimise", marker = list(color = cl$opti, opacity = 0.7)) %>%
+      layout(barmode = "group", bargap = 0.15) %>%
+      pl_layout(ylab = "EUR/jour")
+  })
+
+  # ---- GAINS : Profil PAC reel vs optimise ----
+  output$plot_profil_pac <- renderPlotly({
+    req(sim_result()); sim <- sim_result()$sim; p <- if (!is.null(sim_result()$params)) sim_result()$params else params_r()
+    pac_qt <- p$p_pac_kw * p$dt_h
+
+    pr <- sim %>%
+      mutate(h = hour(timestamp) + minute(timestamp) / 60) %>%
+      group_by(h) %>%
+      summarise(
+        pv = mean(pv_kwh, na.rm = TRUE),
+        pac_reel = mean(ifelse(offtake_kwh > pac_qt * 0.5, pac_qt, 0), na.rm = TRUE),
+        pac_opti = mean(sim_pac_on * pac_qt, na.rm = TRUE),
+        .groups = "drop"
+      )
+
+    plot_ly(pr, x = ~h) %>%
+      add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV moyen",
+        fill = "tozeroy", fillcolor = "rgba(251,191,36,0.12)",
+        line = list(color = cl$pv, width = 1)) %>%
+      add_trace(y = ~pac_reel, type = "scatter", mode = "lines", name = "PAC reel",
+        line = list(color = cl$reel, width = 2.5, dash = "dot")) %>%
+      add_trace(y = ~pac_opti, type = "scatter", mode = "lines", name = "PAC optimise",
+        line = list(color = cl$opti, width = 2.5)) %>%
+      pl_layout(xlab = "Heure", ylab = "kWh moyen/qt")
   })
   
   # ---- INSIGHTS : Heatmap ----
@@ -1233,36 +1287,17 @@ sur 14 derniers jours    meilleur       ca continue"),
       layout(xaxis = list(tickfont = list(size = 10)))
   })
 
-  output$plot_gains <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim
-    m <- sim %>% mutate(mois = floor_date(timestamp, "month")) %>% group_by(mois) %>%
-      summarise(cr = sum(offtake_kwh * prix_offtake, na.rm = TRUE) - sum(intake_kwh * prix_injection, na.rm = TRUE),
-        co = sum(sim_offtake * prix_offtake, na.rm = TRUE) - sum(sim_intake * prix_injection, na.rm = TRUE), .groups = "drop") %>%
-      mutate(gain = cr - co)
-    cols <- ifelse(m$gain >= 0, cl$success, cl$danger)
-    plot_ly(m, x = ~mois, y = ~gain, type = "bar", marker = list(color = cols, line = list(width = 0)),
-      text = ~paste0(round(gain), " EUR"), textposition = "outside",
-      textfont = list(color = cl$text, size = 10, family = "JetBrains Mono")) %>% pl_layout(ylab = "Economie (EUR)")
-  })
-  
   output$table_mensuel <- renderDT({
     req(sim_result()); sim <- sim_result()$sim
     m <- sim %>% mutate(mois = floor_date(timestamp, "month")) %>% group_by(mois) %>%
-      summarise(`PV` = round(sum(pv_kwh, na.rm = TRUE)), `Inj.ev` = round(sum(intake_kwh, na.rm = TRUE) - sum(sim_intake, na.rm = TRUE)),
-        `EUR reel` = round(sum(offtake_kwh * prix_offtake, na.rm = TRUE) - sum(intake_kwh * prix_injection, na.rm = TRUE)),
-        `EUR opti` = round(sum(sim_offtake * prix_offtake, na.rm = TRUE) - sum(sim_intake * prix_injection, na.rm = TRUE)),
-        .groups = "drop") %>% mutate(Mois = format(mois, "%b %Y"), `Gain` = `EUR reel` - `EUR opti`) %>% select(Mois, PV, Inj.ev, `EUR reel`, `EUR opti`, Gain)
+      summarise(`PV` = round(sum(pv_kwh, na.rm = TRUE)),
+        `EUR reel` = round(sum(offtake_kwh * prix_offtake - intake_kwh * prix_injection, na.rm = TRUE)),
+        `EUR opti` = round(sum(sim_offtake * prix_offtake - sim_intake * prix_injection, na.rm = TRUE)),
+        .groups = "drop") %>%
+      mutate(Mois = format(mois, "%b %Y"), Gain = `EUR reel` - `EUR opti`, `EUR/j` = round(Gain / days_in_month(mois), 2)) %>%
+      select(Mois, PV, `EUR reel`, `EUR opti`, Gain, `EUR/j`)
     datatable(m, rownames = FALSE, options = list(dom = "t", pageLength = 13), class = "compact") %>%
       formatStyle("Gain", color = styleInterval(0, c(cl$danger, cl$success)), fontWeight = "bold")
-  })
-  
-  output$plot_cout_repartition <- renderPlotly({
-    req(sim_result()); sim <- sim_result()$sim
-    v <- c(sum(sim$sim_offtake * sim$prix_offtake, na.rm = TRUE), -sum(sim$sim_intake * sim$prix_injection, na.rm = TRUE))
-    plot_ly(labels = c("Soutirage paye", "Injection recue"), values = abs(v), type = "pie",
-      textinfo = "label+value", texttemplate = "%{label}<br>%{value:.0f} EUR",
-      textfont = list(size = 11, family = "JetBrains Mono"),
-      marker = list(colors = c(cl$danger, cl$success), line = list(color = cl$bg_dark, width = 2)), hole = 0.5) %>% pl_layout()
   })
   
   output$plot_zoom <- renderPlotly({
