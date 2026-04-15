@@ -207,7 +207,8 @@ run_optimization_lp <- function(df, params) {
 
   all_results <- vector("list", n_blocs)
 
-  t_init <- df$t_ballon[1]
+  # Initial conditions — meme point de depart que la baseline
+  t_init <- params$t_consigne
   soc_init <- if (params$batterie_active) {
     (params$batt_soc_min + params$batt_soc_max) / 2 * params$batt_kwh
   } else {

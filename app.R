@@ -24,6 +24,7 @@ library(ROI.plugin.highs)
 source("R/belpex.R", local = TRUE)
 source("R/optimizer_milp.R", local = TRUE)
 source("R/optimizer_lp.R", local = TRUE)
+source("R/optimizer_qp.R", local = TRUE)
 
 # Charger les variables d'environnement depuis .env
 if (file.exists(".env")) {
@@ -61,18 +62,27 @@ decider <- function(mode, params, t_actuelle, surplus_now, cop_now,
                     prix_injection_fut, prix_offtake_fut,
                     poids_cout = 0.5) {
   
-  if (t_actuelle < params$t_min) return(list(pac_on = 1L, raison = "urgence_confort"))
+  # Meme relaxation T_min que les optimiseurs et la baseline pendant gros ECS
+  # (sout_futur[1] = tirage ECS du qt courant)
+  ecs_now <- if (length(sout_futur) > 0) sout_futur[1] else 0
+  t_min_eff <- if (ecs_now > 1.0) params$t_min - 10 else params$t_min
+
+  if (t_actuelle < t_min_eff) return(list(pac_on = 1L, raison = "urgence_confort"))
   if (t_actuelle >= params$t_max) return(list(pac_on = 0L, raison = "ballon_plein"))
-  
+
   surplus_futur <- pv_futur - conso_hp_fut
   cop_futur     <- calc_cop(t_ext_futur, params$cop_nominal, params$t_ref_cop)
-  
+
+  # Prediction de T future avec le meme modele proportionnel que baseline/optimiseurs
+  k_perte_d <- 0.004 * params$dt_h
+  t_amb_d <- 20
+  cap_d <- params$capacite_kwh_par_degre
   t_simul <- t_actuelle
   qt_avant_t_min <- length(sout_futur)
   for (j in seq_along(sout_futur)) {
-    delta <- -(params$perte_kwh_par_qt + sout_futur[j]) / params$capacite_kwh_par_degre
-    t_simul <- t_simul + delta
-    if (t_simul < params$t_min) { qt_avant_t_min <- j; break }
+    t_min_j <- if (sout_futur[j] > 1.0) params$t_min - 10 else params$t_min
+    t_simul <- (t_simul * (cap_d - k_perte_d) + k_perte_d * t_amb_d - sout_futur[j]) / cap_d
+    if (t_simul < t_min_j) { qt_avant_t_min <- j; break }
   }
   
   if (mode == "smart") {
@@ -111,8 +121,8 @@ decider <- function(mode, params, t_actuelle, surplus_now, cop_now,
     # PRIORITE 1 : Maintenir le confort (T >= T_min en permanence)
     # ---------------------------------------------------------------
 
-    # Marge de securite : combien de degres au-dessus de T_min
-    marge <- t_actuelle - params$t_min
+    # Marge de securite : combien de degres au-dessus de T_min effectif
+    marge <- t_actuelle - t_min_eff
 
     # Si deja sous T_min ou juste au-dessus : chauffer immediatement
     if (marge <= 2)
@@ -171,8 +181,11 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
   sim_cop <- rep(NA_real_, n); sim_raison <- rep(NA_character_, n)
   sim_batt_soc <- rep(NA_real_, n); sim_batt_flux <- rep(NA_real_, n)
   
-  sim_t[1] <- df$t_ballon[1]; sim_on[1] <- 0L
-  
+  # Meme point de depart que la baseline et les optimiseurs
+  sim_t[1] <- params$t_consigne; sim_on[1] <- 0L
+  sim_cop[1] <- calc_cop(df$t_ext[1], params$cop_nominal, params$t_ref_cop)
+  sim_raison[1] <- "init"
+
   # Batterie : état initial à 50% de la capacité utile
   if (params$batterie_active) {
     batt_cap <- params$batt_kwh
@@ -187,7 +200,15 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
     sim_batt_soc[1] <- 0
   }
   sim_batt_flux[1] <- 0
-  
+
+  # Qt 1 : bilan electrique (PAC OFF, meme que baseline)
+  surplus_1 <- df$pv_kwh[1] - df$conso_hors_pac[1]
+  if (surplus_1 >= 0) {
+    sim_off[1] <- 0; sim_inj[1] <- surplus_1
+  } else {
+    sim_off[1] <- abs(surplus_1); sim_inj[1] <- 0
+  }
+
   for (i in 2:n) {
     t_act <- sim_t[i - 1]
     cop_n <- calc_cop(df$t_ext[i], params$cop_nominal, params$t_ref_cop)
@@ -204,9 +225,26 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
       poids_cout = poids_cout)
     
     sim_on[i] <- d$pac_on; sim_cop[i] <- cop_n; sim_raison[i] <- d$raison
-    apport <- d$pac_on * ch_pac
-    dt <- (apport - params$perte_kwh_par_qt - df$soutirage_estime_kwh[i]) / params$capacite_kwh_par_degre
-    sim_t[i] <- max(params$t_min - 2, min(params$t_max + 2, t_act + dt))
+
+    # Meme modele thermique proportionnel que baseline et optimiseurs
+    k_perte <- 0.004 * params$dt_h
+    t_amb <- 20
+    ecs_i <- df$soutirage_estime_kwh[i]
+    t_min_i <- if (ecs_i > 1.0) params$t_min - 10 else params$t_min
+
+    # Memes checks proactifs que la baseline (garantit T >= T_min et T <= T_max)
+    if (sim_on[i] == 0L) {
+      t_sans_pac <- (t_act * (params$capacite_kwh_par_degre - k_perte) + k_perte * t_amb - ecs_i) / params$capacite_kwh_par_degre
+      if (t_sans_pac < t_min_i) { sim_on[i] <- 1L; sim_raison[i] <- "smart_contrainte_tmin" }
+    }
+    if (sim_on[i] == 1L) {
+      t_avec_pac <- (t_act * (params$capacite_kwh_par_degre - k_perte) + ch_pac + k_perte * t_amb - ecs_i) / params$capacite_kwh_par_degre
+      if (t_avec_pac > params$t_max) { sim_on[i] <- 0L; sim_raison[i] <- "smart_contrainte_tmax" }
+    }
+
+    apport <- sim_on[i] * ch_pac
+    sim_t[i] <- (t_act * (params$capacite_kwh_par_degre - k_perte) + apport + k_perte * t_amb - ecs_i) / params$capacite_kwh_par_degre
+    sim_t[i] <- max(max(20, params$t_min - 10), min(params$t_max + 5, sim_t[i]))
     
     # Bilan électrique avant batterie
     ct <- df$conso_hors_pac[i] + d$pac_on * pac_conso_qt_nom
@@ -258,17 +296,18 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
                 batt_soc = sim_batt_soc, batt_flux = sim_batt_flux)
 }
 
-generer_demo <- function(jours = 365) {
+generer_demo <- function(date_start = as.Date("2025-02-01"), date_end = as.Date("2025-07-31")) {
   # ---------------------------------------------------------------
-  # Genere un scenario realiste de maison avec PAC non-optimisee
-  # (thermostat classique : allume quand T < seuil_bas, eteint quand T > seuil_haut)
-  # La PAC ne regarde PAS la production PV → beaucoup d'injection evitable
+  # Genere les DONNEES D'ENTREE uniquement (PV, conso, meteo, ECS, prix).
+  # Pas de simulation thermostat — la baseline est calculee separement
+  # par run_baseline() avec le meme modele thermique que les optimiseurs.
   # ---------------------------------------------------------------
-  n <- jours * 96
+  ts_start <- as.POSIXct(paste0(date_start, " 00:00:00"), tz = "Europe/Brussels")
+  ts_end   <- as.POSIXct(paste0(date_end + 1, " 00:00:00"), tz = "Europe/Brussels") - 900  # last qt
+  ts <- seq(ts_start, ts_end, by = "15 min")
+  n <- length(ts)
   # Seed fixe pour reproductibilite
   set.seed(42)
-  # Demarre en fevrier 2025 pour couvrir les prix Belpex disponibles
-  ts <- seq(as.POSIXct("2025-02-01 00:00:00", tz = "Europe/Brussels"), by = "15 min", length.out = n)
   h <- hour(ts) + minute(ts) / 60
   doy <- yday(ts)
 
@@ -305,52 +344,7 @@ generer_demo <- function(jours = 365) {
     }
   }
 
-  # --- PAC pilotee par thermostat classique (NON-OPTIMISEE) ---
-  # Regle simple : ON quand T < consigne - 2C, OFF quand T > consigne + 2C
-  # Plage etroite (4C) = thermostat classique typique
-  # Ne regarde JAMAIS la production PV
-  p_pac_kw <- 2.0
-  pac_conso_qt <- p_pac_kw * 0.25  # kWh par quart d'heure
-  t_consigne_bas <- 50 - 2  # consigne - hysteresis
-  t_consigne_haut <- 50 + 2  # consigne + hysteresis
-  volume_l <- 200
-  cap_kwh_deg <- volume_l * 0.001163
-
-  t_ballon <- rep(NA_real_, n)
-  pac_on <- rep(0L, n)
-  t_ballon[1] <- 50
-
-  for (i in 2:n) {
-    t_prev <- t_ballon[i - 1]
-    cop <- calc_cop(t_ext[i])
-
-    # Thermostat classique avec hysteresis
-    if (t_prev < t_consigne_bas) {
-      pac_on[i] <- 1L
-    } else if (t_prev > t_consigne_haut) {
-      pac_on[i] <- 0L
-    } else {
-      pac_on[i] <- pac_on[i - 1]  # maintient l'etat precedent
-    }
-
-    # Pertes thermiques (proportionnelles a T_ballon - T_ambiante)
-    # Ballon 200L typique : ~2-3 kWh/jour de pertes statiques = ~0.03 kWh/qt a delta_T=30
-    t_ambiante <- 20
-    perte_kwh <- 0.004 * (t_prev - t_ambiante) * 0.25
-
-    # Bilan thermique
-    apport <- pac_on[i] * pac_conso_qt * cop
-    delta_t <- (apport - perte_kwh - ecs_kwh[i]) / cap_kwh_deg
-    t_ballon[i] <- t_prev + delta_t
-    t_ballon[i] <- max(20, min(70, t_ballon[i]))  # bornes physiques
-  }
-
-  # --- Bilan electrique (grid meter) ---
-  conso_totale_kwh <- conso_base_kw * 0.25 + pac_on * pac_conso_qt
   pv_kwh <- pv_kw * 0.25
-  surplus <- pv_kwh - conso_totale_kwh
-  offtake <- pmax(0, -surplus)   # ce qu'on prend au reseau
-  intake  <- pmax(0, surplus)    # ce qu'on injecte
 
   # --- Prix (placeholder, sera ecrase par Belpex) ---
   bp <- 0.05 + 0.03 * sin(2 * pi * (doy - 30) / 365)
@@ -361,9 +355,6 @@ generer_demo <- function(jours = 365) {
   tibble(
     timestamp = ts,
     pv_kwh = round(pv_kwh, 4),
-    offtake_kwh = round(offtake, 4),
-    intake_kwh = round(intake, 4),
-    t_ballon = round(t_ballon, 1),
     t_ext = round(t_ext, 1),
     prix_eur_kwh = round(prix, 4),
     conso_base_kwh = round(conso_base_kw * 0.25, 4),
@@ -371,77 +362,156 @@ generer_demo <- function(jours = 365) {
   )
 }
 
+# =============================================================================
+# BASELINE — Thermostat classique (meme modele thermique que les optimiseurs)
+# =============================================================================
+# Strategie : ON quand T < T_consigne - hysteresis, OFF quand T > T_consigne.
+# Ne regarde ni le PV, ni les prix. Sert de reference pour calculer les economies.
+# Utilise exactement les memes equations thermiques (cap, k_perte, COP) que les
+# optimiseurs → l'economie est toujours >= 0 par construction.
+# =============================================================================
+run_baseline <- function(df, params) {
+  n <- nrow(df)
+  pac_qt <- params$p_pac_kw * params$dt_h
+  cap <- params$capacite_kwh_par_degre
+  k_perte <- 0.004 * params$dt_h    # meme coefficient que les optimiseurs
+  t_amb <- 20                         # meme que les optimiseurs
+
+  # Seuils thermostat derives des memes params que les optimiseurs
+  t_consigne_bas  <- params$t_min   # ON quand T < T_min (= consigne - tolerance)
+  t_consigne_haut <- params$t_consigne  # OFF quand T > consigne
+
+  pv    <- df$pv_kwh
+  conso <- df$conso_hors_pac
+  ecs   <- df$soutirage_estime_kwh
+  t_ext_v <- df$t_ext
+
+  # Simulation sequentielle
+  t_bal  <- rep(NA_real_, n)
+  pac_on <- rep(0L, n)
+  t_bal[1] <- params$t_consigne  # demarre a la consigne
+
+  # Premier qt
+  cop_1 <- calc_cop(t_ext_v[1], params$cop_nominal, params$t_ref_cop)
+  if (t_bal[1] < t_consigne_bas) pac_on[1] <- 1L
+  # Contrainte proactive : si T tomberait sous T_min sans chauffer, forcer ON
+  # (meme contrainte que les optimiseurs : T >= T_min a chaque qt)
+  t_min_1 <- if (ecs[1] > 1.0) params$t_min - 10 else params$t_min
+  t_sans_pac <- (params$t_consigne * (cap - k_perte) + k_perte * t_amb - ecs[1]) / cap
+  if (t_sans_pac < t_min_1) pac_on[1] <- 1L
+  chaleur_1 <- pac_on[1] * pac_qt * cop_1
+  t_bal[1] <- (params$t_consigne * (cap - k_perte) + chaleur_1 + k_perte * t_amb - ecs[1]) / cap
+  t_bal[1] <- max(max(20, params$t_min - 10), min(params$t_max + 5, t_bal[1]))
+
+  for (i in 2:n) {
+    t_prev <- t_bal[i - 1]
+    cop_i <- calc_cop(t_ext_v[i], params$cop_nominal, params$t_ref_cop)
+
+    # Borne T_min adaptative (meme relaxation que les optimiseurs pendant gros ECS)
+    t_min_i <- if (ecs[i] > 1.0) params$t_min - 10 else params$t_min
+
+    # Thermostat avec hysteresis
+    if (t_prev < t_consigne_bas) {
+      pac_on[i] <- 1L
+    } else if (t_prev > t_consigne_haut) {
+      pac_on[i] <- 0L
+    } else {
+      pac_on[i] <- pac_on[i - 1]
+    }
+
+    # Contrainte proactive : si T tomberait sous T_min sans chauffer, forcer ON
+    # Cela garantit T >= T_min a chaque qt, comme les optimiseurs
+    if (pac_on[i] == 0L) {
+      t_sans_pac <- (t_prev * (cap - k_perte) + k_perte * t_amb - ecs[i]) / cap
+      if (t_sans_pac < t_min_i) pac_on[i] <- 1L
+    }
+
+    # Contrainte T_max : si T depasserait T_max avec chauffage, forcer OFF
+    if (pac_on[i] == 1L) {
+      t_avec_pac <- (t_prev * (cap - k_perte) + pac_qt * cop_i + k_perte * t_amb - ecs[i]) / cap
+      if (t_avec_pac > params$t_max) pac_on[i] <- 0L
+    }
+
+    # Meme equation thermique que les optimiseurs
+    chaleur <- pac_on[i] * pac_qt * cop_i
+    t_bal[i] <- (t_prev * (cap - k_perte) + chaleur + k_perte * t_amb - ecs[i]) / cap
+    t_bal[i] <- max(max(20, params$t_min - 10), min(params$t_max + 5, t_bal[i]))
+  }
+
+  # Bilan electrique
+  conso_totale <- conso + pac_on * pac_qt
+  surplus  <- pv - conso_totale
+  offtake  <- pmax(0, -surplus)
+  intake   <- pmax(0, surplus)
+
+  df %>% mutate(
+    t_ballon    = t_bal,
+    offtake_kwh = offtake,
+    intake_kwh  = intake
+  )
+}
+
 prepare_df <- function(df, params) {
   pq <- params$p_pac_kw * params$dt_h
-  
+
   # Rescaler la production PV selon le dimensionnement choisi
   ratio_pv <- params$pv_kwc / params$pv_kwc_ref
-  # Si conso_base_kwh est fournie (mode demo), l'utiliser directement
-  # Sinon, estimer par desagregation du grid meter
+  # Mode demo : conso_base_kwh + soutirage_ecs_kwh fournis, pas de t_ballon/offtake
+  # Mode CSV  : offtake_kwh, intake_kwh, t_ballon fournis
   has_conso_base <- "conso_base_kwh" %in% names(df)
+  has_t_ballon   <- "t_ballon" %in% names(df)
 
   df <- df %>% mutate(
     pv_kwh_original = pv_kwh,
     pv_kwh = pv_kwh * ratio_pv,
-    cop_reel = calc_cop(t_ext, params$cop_nominal, params$t_ref_cop),
-    delta_t_mesure = t_ballon - lag(t_ballon)
+    cop_reel = calc_cop(t_ext, params$cop_nominal, params$t_ref_cop)
   )
 
   if (has_conso_base) {
-    df <- df %>% mutate(
-      pac_on_reel = as.integer((offtake_kwh + intake_kwh + conso_base_kwh) > (pv_kwh + conso_base_kwh + 0.01)),
-      conso_hors_pac = conso_base_kwh
-    )
+    # Mode demo : conso_hors_pac est connue directement
+    df <- df %>% mutate(conso_hors_pac = conso_base_kwh)
   } else {
+    # Mode CSV : estimer par desagregation du grid meter
     df <- df %>% mutate(
+      delta_t_mesure = t_ballon - lag(t_ballon),
       pac_on_reel = as.integer(offtake_kwh > pq * 0.5),
       conso_hors_pac = pmax(0, offtake_kwh - pac_on_reel * pq)
     )
   }
-  
+
   # Appliquer les prix selon le type de contrat
   if (params$type_contrat == "fixe") {
-    # Contrat fixe : prix constants, indépendants du spot
     df <- df %>% mutate(
       prix_offtake   = params$prix_fixe_offtake,
       prix_injection = params$prix_fixe_injection
     )
   } else {
-    # Contrat dynamique : suit le spot
     df <- df %>% mutate(
       prix_offtake   = prix_eur_kwh + params$taxe_transport_eur_kwh,
       prix_injection = prix_eur_kwh * params$coeff_injection
     )
-    # Protection contre les prix négatifs à l'injection si activée
     if (params$protege_negatif) {
       df <- df %>% mutate(prix_injection = pmax(0, prix_injection))
     }
   }
-  
+
   if ("soutirage_ecs_kwh" %in% names(df)) {
-    # Mode demo : on connait les pertes exactes du modele thermique
-    # Perte = 0.004 * (T_moyen - 20) * 0.25 ≈ 0.03 kWh/qt pour T=50
-    t_moy <- mean(df$t_ballon, na.rm = TRUE)
-    params$perte_kwh_par_qt <- 0.004 * (t_moy - 20) * 0.25
+    # Mode demo : pertes calibrees sur la consigne (meme modele que optimiseurs)
+    params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
+    df <- df %>% mutate(soutirage_estime_kwh = soutirage_ecs_kwh)
   } else {
     # Mode CSV : calibrer les pertes sur les periodes PAC OFF sans ECS
     pm <- df %>% filter(offtake_kwh < 0.05, delta_t_mesure < 0) %>%
       summarise(p = median(delta_t_mesure, na.rm = TRUE)) %>% pull(p)
     if (is.na(pm) || pm >= 0) pm <- -0.2
     params$perte_kwh_par_qt <- abs(pm) * params$capacite_kwh_par_degre
-  }
-
-  df_out <- if ("soutirage_ecs_kwh" %in% names(df)) {
-    df %>% mutate(soutirage_estime_kwh = soutirage_ecs_kwh)
-  } else {
-    df %>% mutate(soutirage_estime_kwh = case_when(
+    df <- df %>% mutate(soutirage_estime_kwh = case_when(
       offtake_kwh < 0.05 & delta_t_mesure < pm ~
         (abs(delta_t_mesure) - abs(pm)) * params$capacite_kwh_par_degre,
       TRUE ~ 0))
   }
 
-  # Retourner df ET params mis a jour (perte_kwh_par_qt calibree)
-  list(df = df_out, params = params)
+  list(df = df, params = params)
 }
 
 # =============================================================================
@@ -560,15 +630,16 @@ ui <- page_fillable(
         tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:%s;letter-spacing:.1em", cl$accent), HTML("&#9889; PAC OPTIMIZER")),
         tags$div(style = sprintf("font-size:.65rem;color:%s;margin-top:2px;letter-spacing:.15em;text-transform:uppercase", cl$text_muted), "Pilotage predictif")),
       tags$div(class = "sidebar-section",
-        tags$div(class = "section-title", "Source de donnees", tip("Demo : donnees synthetiques (PV, conso, temperature) + vrais prix Belpex. CSV : vos propres donnees completes.")),
+        tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a simuler. Demo : donnees synthetiques. CSV : vos propres donnees.")),
         radioButtons("data_source", NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
         conditionalPanel("input.data_source=='csv'", fileInput("csv_file", NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv")),
-        conditionalPanel("input.data_source=='demo'", sliderInput("demo_jours", "Jours", 30, 365, 180, step = 30)),
+        dateRangeInput("date_range", NULL, start = as.Date("2025-02-01"), end = as.Date("2025-07-31"), language = "fr",
+          min = as.Date("2025-02-01"), max = as.Date("2026-01-31")),
         tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
       tags$div(class = "sidebar-section",
-        tags$div(class = "section-title", "Optimisation", tip("Trois approches : Rule-based (heuristique rapide), Optimiseur MILP (on/off optimal) ou Optimiseur LP (charge continue, convexe).")),
-        radioButtons("approche", "Approche", choices = c("Rule-based" = "rulebased", "MILP" = "optimiseur", "LP" = "optimiseur_lp"), selected = "rulebased", inline = TRUE),
+        tags$div(class = "section-title", "Optimisation", tip("Quatre approches : Rule-based (heuristique), MILP (on/off optimal), LP (charge continue lineaire) ou QP (charge continue + confort lisse, via CVXR).")),
+        radioButtons("approche", "Approche", choices = c("Rule-based" = "rulebased", "MILP" = "optimiseur", "LP" = "optimiseur_lp", "QP" = "optimiseur_qp"), selected = "rulebased", inline = TRUE),
         conditionalPanel("input.approche=='rulebased'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
             HTML("Mode <b>Smart</b> : decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP."))),
@@ -585,7 +656,18 @@ ui <- page_fillable(
           sliderInput("optim_bloc_h_lp", tags$span("Horizon bloc", tip("Taille du bloc en heures. Le LP etant plus rapide que le MILP, des blocs plus grands (12-24h) sont recommandes.")),
             1, 24, 24, step = 1, post = "h"),
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-            HTML("LP = rapide, des blocs de 24h sont recommandes")))),
+            HTML("LP = rapide, des blocs de 24h sont recommandes"))),
+        conditionalPanel("input.approche=='optimiseur_qp'",
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+            HTML("Optimisation <b>QP</b> (quadratique convexe, CVXR) : minimise le cout <i>et</i> penalise les ecarts de temperature a la consigne + les variations brusques de charge PAC. Resultat plus confortable et plus lisse.")),
+          sliderInput("optim_bloc_h_qp", tags$span("Horizon bloc", tip("Taille du bloc en heures. CVXR gere bien des blocs de 12-24h.")),
+            1, 24, 24, step = 1, post = "h"),
+          sliderInput("qp_w_comfort", tags$span("Poids confort", tip("Penalite sur l'ecart a la consigne. Plus eleve = temperature plus stable autour de la consigne, mais cout potentiellement plus eleve.")),
+            0, 1, 0.1, step = 0.01),
+          sliderInput("qp_w_smooth", tags$span("Poids lissage", tip("Penalite sur les variations brusques de charge PAC. Plus eleve = charge plus lisse, moins de cycling.")),
+            0, 1, 0.05, step = 0.01),
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+            HTML("Poids a 0 = LP pur. Augmenter pour plus de confort/lissage au detriment du cout.")))),
       tags$div(class = "sidebar-section",
         tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques electriques de votre PAC. Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
         numericInput("p_pac_kw", "Puissance (kW)", 2, min = 0.5, max = 10, step = 0.5),
@@ -628,13 +710,6 @@ ui <- page_fillable(
             "Rendement = part de l'energie recuperee apres un cycle charge/decharge (pertes thermiques). Plage SoC = limites min/max pour proteger la duree de vie."))),
       actionButton("run_sim", "Lancer la simulation", class = "btn-primary w-100 mt-2", icon = icon("play")),
       tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
-      tags$div(class = "sidebar-section",
-        tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a analyser. Tous les graphiques temporels s'adaptent automatiquement.")),
-        radioButtons("period_mode", NULL, choices = c("Dates" = "dates", "Derniers jours" = "slider"), selected = "dates", inline = TRUE),
-        conditionalPanel("input.period_mode=='dates'",
-          dateRangeInput("date_range", NULL, start = Sys.Date() - 30, end = Sys.Date(), language = "fr")),
-        conditionalPanel("input.period_mode=='slider'",
-          sliderInput("period_days_back", "Jours", 7, 365, 30, step = 1))),
       tags$div(style = "margin-top:8px;",
         actionButton("run_automagic", "Trouver la meilleure config", class = "w-100 mt-1",
           icon = icon("wand-magic-sparkles"),
@@ -654,37 +729,37 @@ ui <- page_fillable(
     navset_card_tab(id = "main_tabs",
       nav_panel(title = "Energie", icon = icon("bolt"),
         layout_columns(col_widths = 12,
-          card(full_screen = TRUE, card_header("Consommation — reel vs optimise"),
+          card(full_screen = TRUE, card_header("Consommation — baseline vs optimise"),
             card_body(plotlyOutput("plot_conso_bars", height = "380px")))),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Flux d'energie"),
             card_body(
-              radioButtons("sankey_scenario", NULL, choices = c("Reel" = "reel", "Optimise" = "optimise"), selected = "reel", inline = TRUE),
+              radioButtons("sankey_scenario", NULL, choices = c("Baseline" = "reel", "Optimise" = "optimise"), selected = "reel", inline = TRUE),
               plotlyOutput("plot_sankey", height = "350px"))))),
       nav_panel(title = "Finances", icon = icon("euro-sign"),
         layout_columns(col_widths = 12,
-          card(full_screen = TRUE, card_header("Cout cumule — reel vs optimise"),
+          card(full_screen = TRUE, card_header("Facture nette cumulee — baseline vs optimise"),
             card_body(plotlyOutput("plot_cout_cumule", height = "320px")))),
         layout_columns(col_widths = c(6, 6),
-          card(full_screen = TRUE, card_header("Decomposition du gain"),
+          card(full_screen = TRUE, card_header("Decomposition de l'economie"),
             card_body(plotlyOutput("plot_waterfall", height = "300px"))),
           card(full_screen = TRUE, card_header("Bilan mensuel"),
             card_body(DTOutput("table_mensuel"))))),
       nav_panel(title = "Details", icon = icon("magnifying-glass"),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("PAC — baseline vs optimise (timeline)"),
+            card_body(plotlyOutput("plot_pac_timeline", height = "350px")))),
         layout_columns(col_widths = c(6, 6),
           card(full_screen = TRUE, card_header("Temperature ballon"),
             card_body(plotlyOutput("plot_temperature", height = "280px"))),
           card(full_screen = TRUE, card_header("COP journalier"),
             card_body(plotlyOutput("plot_cop", height = "280px")))),
         layout_columns(col_widths = 12,
-          card(full_screen = TRUE, card_header("Profil PAC — reel vs optimise"),
-            card_body(plotlyOutput("plot_profil_pac", height = "300px")))),
-        layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Heatmap"),
             card_body(
               layout_columns(col_widths = c(4, 8),
                 selectInput("heatmap_var", NULL, choices = c(
-                  "Injection evitee" = "inj_evitee", "Surplus PV" = "surplus",
+                  "Moins d'injection" = "inj_evitee", "Surplus PV" = "surplus",
                   "PAC ON (optimise)" = "pac_on", "Temperature ballon" = "t_ballon",
                   "Prix spot" = "prix"), selected = "inj_evitee"),
                 tags$div()),
@@ -791,7 +866,7 @@ DONNEES CALCULEES
               tags$tbody(
                 tags$tr(tags$td(style = "padding:4px 6px;", "Urgence confort"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$danger), "ON"), tags$td(style = "padding:4px 6px;", "Ballon sous T min. Chauffage force.")),
                 tags$tr(tags$td(style = "padding:4px 6px;", "Surplus PV"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$success), "ON"), tags$td(style = "padding:4px 6px;", "PV > conso. Stockage thermique.")),
-                tags$tr(tags$td(style = "padding:4px 6px;", "Cout optimal"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$success), "ON"), tags$td(style = "padding:4px 6px;", "Parmi les 30% moins chers.")),
+                tags$tr(tags$td(style = "padding:4px 6px;", "Prix favorable"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$success), "ON"), tags$td(style = "padding:4px 6px;", "Parmi les 30% moins chers.")),
                 tags$tr(tags$td(style = "padding:4px 6px;", "Soutirage pas cher"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$success), "ON"), tags$td(style = "padding:4px 6px;", "Prix spot tres bas.")),
                 tags$tr(tags$td(style = "padding:4px 6px;", "Eviter inj. negative"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$success), "ON"), tags$td(style = "padding:4px 6px;", "Prix injection negatif.")),
                 tags$tr(tags$td(style = "padding:4px 6px;", "Anticipation confort"), tags$td(style = sprintf("color:%s;padding:4px 6px;", cl$success), "ON"), tags$td(style = "padding:4px 6px;", "Risque T min dans 30 min.")),
@@ -894,21 +969,21 @@ sur 14 derniers jours    meilleur       ca continue"),
 
           accordion_panel("12. Comprendre les resultats", icon = icon("chart-pie"),
             tags$h6(style = sprintf("color:%s;margin:0 0 8px 0;", cl$opti), "Pourquoi l'optimiseur est meilleur"),
-            tags$p("L'optimiseur produit systematiquement un ", tags$strong("cout net inferieur"), " au thermostat classique. Le mecanisme principal :"),
+            tags$p("L'optimiseur produit systematiquement une ", tags$strong("facture nette inferieure"), " au thermostat classique. Le mecanisme principal :"),
             tags$ul(
               tags$li(tags$strong("Moins de soutirage :"), " le thermostat classique chauffe la nuit (pas de PV, 100% reseau). L'optimiseur ne chauffe que quand c'est necessaire, au moment le moins cher."),
               tags$li(tags$strong("Moins de consommation totale :"), " le thermostat surchauffe souvent le ballon (cycle 48-52 C en permanence). L'optimiseur ne chauffe que le strict necessaire, ce qui reduit les pertes thermiques et donc la consommation totale."),
-              tags$li(tags$strong("Autoconsommation vs cout :"), " l'optimiseur peut parfois injecter PLUS que le reel tout en coutant MOINS. C'est parce qu'il consomme moins au total (moins de pertes). Le taux d'autoconsommation n'est pas le bon indicateur — c'est le ", tags$strong("cout net"), " qui compte.")
+              tags$li(tags$strong("Autoconsommation vs facture :"), " l'optimiseur peut parfois injecter PLUS que le reel tout en coutant MOINS. C'est parce qu'il consomme moins au total (moins de pertes). Le taux d'autoconsommation n'est pas le bon indicateur — c'est la ", tags$strong("facture nette"), " qui compte.")
             ),
 
             tags$div(style = sprintf("background:%s;border:1px solid %s;border-radius:8px;padding:12px;margin:8px 0;", cl$bg_input, cl$grid),
               tags$h6(style = sprintf("color:%s;margin:0 0 6px 0;", cl$pv), "Pourquoi plus d'injection peut etre mieux"),
-              tags$p(style = "margin:0;font-size:.82rem;", "Exemple : le thermostat chauffe inutilement le ballon de 48 a 52 C en journee (autoconsommant du PV), puis le ballon perd cette chaleur la nuit en pertes. L'optimiseur ne chauffe pas inutilement — le surplus PV est injecte (faible revenu a 0.03 EUR/kWh) mais le soutirage nocturne est evite (grosse economie a 0.30 EUR/kWh). Le bilan net est meilleur malgre plus d'injection.")),
+              tags$p(style = "margin:0;font-size:.82rem;", "Exemple : le thermostat chauffe inutilement le ballon de 48 a 52 C en journee (autoconsommant du PV), puis le ballon perd cette chaleur la nuit en pertes. L'optimiseur ne chauffe pas inutilement — le surplus PV est injecte (faible revenu a 0.03 EUR/kWh) mais le soutirage nocturne est evite (grosse economie a 0.30 EUR/kWh). La facture nette est meilleure malgre plus d'injection.")),
 
             tags$h6(style = sprintf("color:%s;margin:12px 0 8px 0;", cl$opti), "Contrat fixe vs dynamique"),
             tags$ul(
-              tags$li(tags$strong("Contrat fixe :"), " le gain vient uniquement du deplacement du volume (moins de soutirage, plus d'autoconsommation). Le timing ne compte pas car le prix est constant. Le gain est modeste car le thermostat classique autoconsomme deja partiellement par accident (il chauffe en journee quand le ballon est froid apres les tirages ECS du matin)."),
-              tags$li(tags$strong("Contrat dynamique :"), " le gain est plus important car l'optimiseur exploite aussi les variations de prix horaires. Il soutire quand c'est pas cher, evite de soutirer quand c'est cher, et evite d'injecter quand les prix sont negatifs.")
+              tags$li(tags$strong("Contrat fixe :"), " l'economie vient uniquement du deplacement du volume (moins de soutirage, plus d'autoconsommation). Le timing ne compte pas car le prix est constant. L'economie est modeste car le thermostat classique autoconsomme deja partiellement par accident (il chauffe en journee quand le ballon est froid apres les tirages ECS du matin)."),
+              tags$li(tags$strong("Contrat dynamique :"), " l'economie est plus importante car l'optimiseur exploite aussi les variations de prix horaires. Il soutire quand c'est pas cher, evite de soutirer quand c'est cher, et evite d'injecter quand les prix sont negatifs.")
             ),
 
             tags$h6(style = sprintf("color:%s;margin:12px 0 8px 0;", cl$opti), "La contrainte de confort"),
@@ -961,7 +1036,8 @@ sur 14 derniers jours    meilleur       ca continue"),
       req(input$csv_file)
       df <- read_csv(input$csv_file$datapath, show_col_types = FALSE) %>% mutate(timestamp = ymd_hms(timestamp))
     } else {
-      df <- generer_demo(input$demo_jours)
+      req(input$date_range)
+      df <- generer_demo(input$date_range[1], input$date_range[2])
     }
 
     # Toujours injecter les vrais prix Belpex
@@ -1006,6 +1082,10 @@ sur 14 derniers jours    meilleur       ca continue"),
       prep <- prepare_df(df, p)
       df_prep <- prep$df; p <- prep$params
 
+      # Baseline : thermostat classique avec le meme modele thermique
+      setProgress(0.2, detail = "Calcul baseline thermostat...")
+      df_prep <- run_baseline(df_prep, p)
+
       if (approche == "optimiseur") {
         setProgress(0.3, detail = "Optimisation MILP en cours...")
         sim <- tryCatch({
@@ -1037,6 +1117,24 @@ sur 14 derniers jours    meilleur       ca continue"),
         }
         setProgress(1, detail = "Termine!")
         list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer_lp")
+      } else if (approche == "optimiseur_qp") {
+        p$optim_bloc_h <- input$optim_bloc_h_qp
+        p$qp_w_comfort <- input$qp_w_comfort
+        p$qp_w_smooth <- input$qp_w_smooth
+        setProgress(0.3, detail = "Optimisation QP (CVXR) en cours...")
+        sim <- tryCatch({
+          run_optimization_qp(df_prep, p)
+        }, error = function(e) {
+          showNotification(paste("Erreur optimiseur QP:", e$message), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(sim)) {
+          showNotification("Optimisation QP infaisable — verifiez les contraintes", type = "error")
+          sim <- run_simulation(df_prep, p, "smart", 0.5)
+          sim$mode_actif <- "smart_fallback"
+        }
+        setProgress(1, detail = "Termine!")
+        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer_qp")
       } else {
         setProgress(0.3, detail = "Simulation en cours...")
         sim <- run_simulation(df_prep, p, "smart", 0.5)
@@ -1056,29 +1154,24 @@ sur 14 derniers jours    meilleur       ca continue"),
       round(sum(sim$offtake_kwh,na.rm=TRUE)), round(sum(sim$sim_offtake,na.rm=TRUE)),
       round(sum(sim$intake_kwh,na.rm=TRUE)), round(sum(sim$sim_intake,na.rm=TRUE)),
       cr, co, cr-co))
-    updateDateRangeInput(session, "date_range", start = as.Date(min(sim$timestamp)), end = as.Date(max(sim$timestamp)))
+    updateDateRangeInput(session, "date_range",
+      start = as.Date(min(sim$timestamp)), end = as.Date(max(sim$timestamp)),
+      min = as.Date(min(sim$timestamp)), max = as.Date(max(sim$timestamp)))
   })
 
   sim_filtered <- reactive({
-    req(sim_result())
+    req(sim_result(), input$date_range)
     sim <- sim_result()$sim
-    if (input$period_mode == "slider") {
-      d2 <- max(sim$timestamp, na.rm = TRUE)
-      d1 <- d2 - days(input$period_days_back)
-      sim %>% filter(timestamp >= d1, timestamp <= d2)
-    } else {
-      req(input$date_range)
-      d1 <- as.POSIXct(input$date_range[1], tz = "Europe/Brussels")
-      d2 <- as.POSIXct(input$date_range[2], tz = "Europe/Brussels") + days(1)
-      sim %>% filter(timestamp >= d1, timestamp < d2)
-    }
+    d1 <- as.POSIXct(input$date_range[1], tz = "Europe/Brussels")
+    d2 <- as.POSIXct(input$date_range[2], tz = "Europe/Brussels") + days(1)
+    sim %>% filter(timestamp >= d1, timestamp < d2)
   })
 
   output$status_bar <- renderUI({
     req(sim_result()); res <- sim_result(); sim <- res$sim; n <- nrow(sim)
     p <- if (!is.null(res$params)) res$params else params_r()
     jours <- as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days"))
-    ml <- c(smart = "SMART", optimizer = "MILP", optimizer_lp = "LP")
+    ml <- c(smart = "SMART", optimizer = "MILP", optimizer_lp = "LP", optimizer_qp = "QP")
     batt <- if (p$batterie_active) paste0(p$batt_kwh, "kWh/", p$batt_kw, "kW") else "non"
     contrat <- if (p$type_contrat == "fixe") paste0("fixe ", p$prix_fixe_offtake, "/", p$prix_fixe_injection) else "spot"
     tags$div(id = "status_bar", HTML(sprintf(
@@ -1104,9 +1197,9 @@ sur 14 derniers jours    meilleur       ca continue"),
     kpis <- list(
       kpi(formatC(round(pv_tot), big.mark = " ", format = "d"), "Production PV", "kWh", cl$pv),
       kpi(paste0(ac, "%"), "Autoconsommation", "", cl$success),
-      kpi(formatC(round(inj_r - inj_o), big.mark = " ", format = "d"), "Injection evitee", "kWh", cl$opti),
-      kpi(formatC(round(offt_r - offt_o), big.mark = " ", format = "d"), "Soutirage evite", "kWh", cl$accent3),
-      kpi(paste0("+", round(gain)), "Economie", "EUR", cl$success),
+      kpi(formatC(round(inj_r - inj_o), big.mark = " ", format = "d"), "Moins d'injection", "kWh", cl$opti),
+      kpi(formatC(round(offt_r - offt_o), big.mark = " ", format = "d"), "Moins de soutirage", "kWh", cl$accent3),
+      kpi(paste0(ifelse(gain >= 0, "+", ""), round(gain)), "Economie", "EUR", cl$success),
       kpi(round(sum(sim$sim_pac_on, na.rm = TRUE) * 0.25), "Heures PAC", "h", cl$pac)
     )
     
@@ -1139,8 +1232,8 @@ sur 14 derniers jours    meilleur       ca continue"),
     )
 
     plot_ly(d, x = ~timestamp) %>%
-      add_bars(y = ~pv_autoconso_reel, name = "PV autoconso (reel)", marker = list(color = cl$pv, opacity = 0.5)) %>%
-      add_bars(y = ~soutirage_reel, name = "Soutirage (reel)", marker = list(color = cl$reel, opacity = 0.5)) %>%
+      add_bars(y = ~pv_autoconso_reel, name = "PV autoconso (baseline)", marker = list(color = cl$pv, opacity = 0.5)) %>%
+      add_bars(y = ~soutirage_reel, name = "Soutirage (baseline)", marker = list(color = cl$reel, opacity = 0.5)) %>%
       add_bars(y = ~pv_autoconso_opti, name = "PV autoconso (opti)", marker = list(color = cl$pv)) %>%
       add_bars(y = ~soutirage_opti, name = "Soutirage (opti)", marker = list(color = cl$opti)) %>%
       layout(barmode = "stack", bargap = 0.1,
@@ -1153,7 +1246,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     agg <- auto_aggregate(sim)
     s <- agg$data
     plot_ly(s, x = ~timestamp) %>%
-      add_trace(y = ~t_ballon, type = "scatter", mode = "lines", name = "Reel", line = list(color = cl$reel, width = 1)) %>%
+      add_trace(y = ~t_ballon, type = "scatter", mode = "lines", name = "Baseline", line = list(color = cl$reel, width = 1)) %>%
       add_trace(y = ~sim_t_ballon, type = "scatter", mode = "lines", name = "Optimise", line = list(color = cl$opti, width = 1.5)) %>%
       add_segments(x = min(s$timestamp), xend = max(s$timestamp), y = p$t_min, yend = p$t_min, line = list(color = cl$text_muted, dash = "dash", width = .8), showlegend = FALSE) %>%
       add_segments(x = min(s$timestamp), xend = max(s$timestamp), y = p$t_max, yend = p$t_max, line = list(color = cl$text_muted, dash = "dash", width = .8), showlegend = FALSE) %>%
@@ -1169,32 +1262,64 @@ sur 14 derniers jours    meilleur       ca continue"),
   
   # (plot_profil, plot_decisions, plot_prix_pac removed — content redistributed to other tabs)
   
-  # ---- GAINS : Cout cumule reel vs optimise ----
+  # ---- FINANCES : Facture nette cumulee reel vs optimise ----
   output$plot_cout_cumule <- renderPlotly({
     req(sim_filtered()); sim <- sim_filtered()
     agg <- auto_aggregate(sim)
     d <- agg$data %>%
       mutate(
-        cout_reel_qt = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
-        cout_opti_qt = sim_offtake * prix_offtake - sim_intake * prix_injection
+        facture_reel_qt = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
+        facture_opti_qt = sim_offtake * prix_offtake - sim_intake * prix_injection
       ) %>%
       mutate(
-        cum_reel = cumsum(ifelse(is.na(cout_reel_qt), 0, cout_reel_qt)),
-        cum_opti = cumsum(ifelse(is.na(cout_opti_qt), 0, cout_opti_qt))
+        cum_reel = cumsum(ifelse(is.na(facture_reel_qt), 0, facture_reel_qt)),
+        cum_opti = cumsum(ifelse(is.na(facture_opti_qt), 0, facture_opti_qt))
       )
     # Sous-echantillonner for performance
     d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
       group_by(h) %>% slice_tail(n = 1) %>% ungroup()
     plot_ly(d_h, x = ~timestamp) %>%
-      add_trace(y = ~cum_reel, type = "scatter", mode = "lines", name = "Cout reel",
+      add_trace(y = ~cum_reel, type = "scatter", mode = "lines", name = "Facture baseline",
         line = list(color = cl$reel, width = 2), fill = "tozeroy", fillcolor = "rgba(249,115,22,0.08)") %>%
-      add_trace(y = ~cum_opti, type = "scatter", mode = "lines", name = "Cout optimise",
+      add_trace(y = ~cum_opti, type = "scatter", mode = "lines", name = "Facture optimisee",
         line = list(color = cl$opti, width = 2), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.08)") %>%
-      pl_layout(title = paste0("Agregation: ", agg$label), ylab = "EUR cumule")
+      pl_layout(title = paste0("Agregation: ", agg$label), ylab = "Facture nette cumulee (EUR)")
   })
 
 
-  # ---- GAINS : Profil PAC reel vs optimise ----
+  # ---- DETAILS : PAC timeline — baseline vs optimise ----
+  output$plot_pac_timeline <- renderPlotly({
+    req(sim_filtered())
+    sf <- sim_filtered()
+    p <- if (!is.null(sim_result()$params)) sim_result()$params else params_r()
+    pac_qt <- p$p_pac_kw * p$dt_h
+
+    # Calculer la conso PAC par qt (reel et optimise)
+    sf <- sf %>% mutate(
+      pac_kwh_reel = ifelse(offtake_kwh > pac_qt * 0.5, pac_qt, 0),
+      pac_kwh_opti = sim_pac_on * pac_qt
+    )
+
+    # Auto-agreger
+    agg <- auto_aggregate(sf)
+    d <- agg$data
+
+    plot_ly(d, x = ~timestamp) %>%
+      # PV en fond (zone jaune)
+      add_trace(y = ~pv_kwh, type = "scatter", mode = "lines", name = "Production PV",
+        fill = "tozeroy", fillcolor = "rgba(251,191,36,0.12)",
+        line = list(color = cl$pv, width = 1)) %>%
+      # PAC reel (barres orange semi-transparentes)
+      add_bars(y = ~pac_kwh_reel, name = "PAC baseline",
+        marker = list(color = cl$reel, opacity = 0.4)) %>%
+      # PAC optimise (barres cyan)
+      add_bars(y = ~pac_kwh_opti, name = "PAC optimise",
+        marker = list(color = cl$opti, opacity = 0.7)) %>%
+      layout(barmode = "overlay", bargap = 0.05) %>%
+      pl_layout(ylab = paste0("kWh (", agg$label, ")"))
+  })
+
+  # ---- DETAILS : Profil PAC reel vs optimise (moyenne horaire) ----
   output$plot_profil_pac <- renderPlotly({
     req(sim_filtered()); sim <- sim_filtered(); p <- if (!is.null(sim_result()$params)) sim_result()$params else params_r()
     pac_qt <- p$p_pac_kw * p$dt_h
@@ -1213,7 +1338,7 @@ sur 14 derniers jours    meilleur       ca continue"),
       add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV moyen",
         fill = "tozeroy", fillcolor = "rgba(251,191,36,0.12)",
         line = list(color = cl$pv, width = 1)) %>%
-      add_trace(y = ~pac_reel, type = "scatter", mode = "lines", name = "PAC reel",
+      add_trace(y = ~pac_reel, type = "scatter", mode = "lines", name = "PAC baseline",
         line = list(color = cl$reel, width = 2.5, dash = "dot")) %>%
       add_trace(y = ~pac_opti, type = "scatter", mode = "lines", name = "PAC optimise",
         line = list(color = cl$opti, width = 2.5)) %>%
@@ -1237,7 +1362,7 @@ sur 14 derniers jours    meilleur       ca continue"),
       )
 
     v <- input$heatmap_var
-    zlab <- c(inj_evitee = "Inj. evitee (kWh)", surplus = "Surplus PV (kWh)",
+    zlab <- c(inj_evitee = "Moins d'injection (kWh)", surplus = "Surplus PV (kWh)",
               pac_on = "PAC ON (frac.)", t_ballon = "T ballon (C)", prix = "Prix (cEUR/kWh)")
 
     cs <- if (v == "inj_evitee") list(c(0, cl$danger), c(0.5, "#1a1d27"), c(1, cl$success))
@@ -1269,34 +1394,34 @@ sur 14 derniers jours    meilleur       ca continue"),
   })
 
 
-  # ---- GAINS : Waterfall ----
+  # ---- FINANCES : Decomposition de l'economie (waterfall) ----
   output$plot_waterfall <- renderPlotly({
     req(sim_filtered()); sim <- sim_filtered()
 
-    # Decomposition du gain
-    soutirage_evite_kwh <- sum(sim$offtake_kwh, na.rm = TRUE) - sum(sim$sim_offtake, na.rm = TRUE)
-    injection_perdue_kwh <- sum(sim$intake_kwh, na.rm = TRUE) - sum(sim$sim_intake, na.rm = TRUE)
+    # Decomposition de l'economie
+    moins_soutirage_kwh <- sum(sim$offtake_kwh, na.rm = TRUE) - sum(sim$sim_offtake, na.rm = TRUE)
+    moins_injection_kwh <- sum(sim$intake_kwh, na.rm = TRUE) - sum(sim$sim_intake, na.rm = TRUE)
 
-    # Gain soutirage = kWh evites * prix moyen offtake
+    # Economie soutirage = kWh evites * prix moyen offtake
     prix_moy_offt <- mean(sim$prix_offtake, na.rm = TRUE)
     prix_moy_inj <- mean(sim$prix_injection, na.rm = TRUE)
 
-    gain_soutirage <- soutirage_evite_kwh * prix_moy_offt
-    perte_injection <- injection_perdue_kwh * prix_moy_inj
+    eco_soutirage <- moins_soutirage_kwh * prix_moy_offt
+    perte_injection <- moins_injection_kwh * prix_moy_inj
 
-    # Gain de timing (difference entre prix moyen et prix reel pondere)
-    cout_reel <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm = TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm = TRUE)
-    cout_opti <- sum(sim$sim_offtake * sim$prix_offtake, na.rm = TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm = TRUE)
-    gain_total <- cout_reel - cout_opti
-    gain_timing <- gain_total - gain_soutirage + perte_injection
+    # Arbitrage horaire (difference entre prix moyen et prix reel pondere)
+    facture_reel <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm = TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm = TRUE)
+    facture_opti <- sum(sim$sim_offtake * sim$prix_offtake, na.rm = TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm = TRUE)
+    eco_totale <- facture_reel - facture_opti
+    eco_arbitrage <- eco_totale - eco_soutirage + perte_injection
 
-    labels <- c("Soutirage evite", "Injection perdue", "Timing prix", "Gain net")
-    values <- c(gain_soutirage, -perte_injection, gain_timing, gain_total)
+    labels <- c("Moins de soutirage", "Moins d'injection", "Arbitrage horaire", "Economie totale")
+    values <- c(eco_soutirage, -perte_injection, eco_arbitrage, eco_totale)
     colors <- c(
-      ifelse(gain_soutirage >= 0, cl$success, cl$danger),
+      ifelse(eco_soutirage >= 0, cl$success, cl$danger),
       ifelse(-perte_injection >= 0, cl$success, cl$danger),
-      ifelse(gain_timing >= 0, cl$success, cl$danger),
-      ifelse(gain_total >= 0, cl$success, cl$danger)
+      ifelse(eco_arbitrage >= 0, cl$success, cl$danger),
+      ifelse(eco_totale >= 0, cl$success, cl$danger)
     )
     measures <- c("relative", "relative", "relative", "total")
 
@@ -1310,7 +1435,7 @@ sur 14 derniers jours    meilleur       ca continue"),
       connector = list(line = list(color = cl$grid, width = 1)),
       increasing = list(marker = list(color = cl$success)),
       decreasing = list(marker = list(color = cl$danger)),
-      totals = list(marker = list(color = ifelse(gain_total >= 0, cl$opti, cl$danger)))
+      totals = list(marker = list(color = ifelse(eco_totale >= 0, cl$opti, cl$danger)))
     ) %>%
       pl_layout(ylab = "EUR") %>%
       layout(xaxis = list(tickfont = list(size = 10)))
@@ -1320,13 +1445,13 @@ sur 14 derniers jours    meilleur       ca continue"),
     req(sim_filtered()); sim <- sim_filtered()
     m <- sim %>% mutate(mois = floor_date(timestamp, "month")) %>% group_by(mois) %>%
       summarise(`PV` = round(sum(pv_kwh, na.rm = TRUE)),
-        `EUR reel` = round(sum(offtake_kwh * prix_offtake - intake_kwh * prix_injection, na.rm = TRUE)),
-        `EUR opti` = round(sum(sim_offtake * prix_offtake - sim_intake * prix_injection, na.rm = TRUE)),
+        `Facture baseline` = round(sum(offtake_kwh * prix_offtake - intake_kwh * prix_injection, na.rm = TRUE)),
+        `Facture opti` = round(sum(sim_offtake * prix_offtake - sim_intake * prix_injection, na.rm = TRUE)),
         .groups = "drop") %>%
-      mutate(Mois = format(mois, "%b %Y"), Gain = `EUR reel` - `EUR opti`, `EUR/j` = round(Gain / days_in_month(mois), 2)) %>%
-      select(Mois, PV, `EUR reel`, `EUR opti`, Gain, `EUR/j`)
+      mutate(Mois = format(mois, "%b %Y"), Economie = `Facture baseline` - `Facture opti`, `EUR/j` = round(Economie / days_in_month(mois), 2)) %>%
+      select(Mois, PV, `Facture baseline`, `Facture opti`, Economie, `EUR/j`)
     datatable(m, rownames = FALSE, options = list(dom = "t", pageLength = 13), class = "compact") %>%
-      formatStyle("Gain", color = styleInterval(0, c(cl$danger, cl$success)), fontWeight = "bold")
+      formatStyle("Economie", color = styleInterval(0, c(cl$danger, cl$success)), fontWeight = "bold")
   })
   
   
@@ -1429,7 +1554,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     # Grille de recherche
     pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
     batt_range <- c(0, 5, 10, 15, 20)
-    modes      <- c("smart", "optimizer", "optimizer_lp")
+    modes      <- c("smart", "optimizer", "optimizer_lp", "optimizer_qp")
     contrats   <- c("fixe", "dynamique")
     
     total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
@@ -1456,6 +1581,8 @@ sur 14 derniers jours    meilleur       ca continue"),
           # Rescaler PV
           ratio <- pv_kwc / p$pv_kwc_ref
           df_prep$pv_kwh <- df_raw$pv_kwh * ratio
+          # Baseline thermostat
+          df_prep <- run_baseline(df_prep, p_ct)
           
           for (bkwh in batt_range) {
             p_sim <- p_ct
@@ -1473,6 +1600,10 @@ sur 14 derniers jours    meilleur       ca continue"),
                   run_optimization_milp(df_prep, p_sim)
                 } else if (m == "optimizer_lp") {
                   run_optimization_lp(df_prep, p_sim)
+                } else if (m == "optimizer_qp") {
+                  p_sim$qp_w_comfort <- 0.1
+                  p_sim$qp_w_smooth <- 0.05
+                  run_optimization_qp(df_prep, p_sim)
                 } else {
                   run_simulation(df_prep, p_sim, "smart", 0.5)
                 }
@@ -1537,7 +1668,7 @@ sur 14 derniers jours    meilleur       ca continue"),
           tags$div(class = "kpi-label", "Contrat")),
         tags$div(class = "text-center",
           tags$div(class = "kpi-value", style = sprintf("color:%s;font-size:1.4rem;", cl$success), paste0(best$Cout_EUR, " EUR")),
-          tags$div(class = "kpi-label", "Cout net/an")),
+          tags$div(class = "kpi-label", "Facture nette/an")),
         tags$div(class = "text-center",
           tags$div(class = "kpi-value", style = sprintf("color:%s;font-size:1.4rem;", cl$opti), paste0(best$Autoconso_pct, "%")),
           tags$div(class = "kpi-label", "Autoconsommation"))
@@ -1562,6 +1693,8 @@ sur 14 derniers jours    meilleur       ca continue"),
       updateRadioButtons(session, "approche", selected = "optimiseur")
     } else if (best$Mode == "optimizer_lp") {
       updateRadioButtons(session, "approche", selected = "optimiseur_lp")
+    } else if (best$Mode == "optimizer_qp") {
+      updateRadioButtons(session, "approche", selected = "optimiseur_qp")
     } else {
       updateRadioButtons(session, "approche", selected = "rulebased")
     }
@@ -1596,17 +1729,17 @@ sur 14 derniers jours    meilleur       ca continue"),
     req(automagic_results())
     res <- automagic_results() %>%
       rename(`PV (kWc)` = PV_kWc, `Batt (kWh)` = Batterie_kWh,
-             `Cout (EUR)` = Cout_EUR, `AC (%)` = Autoconso_pct,
+             `Facture (EUR)` = Cout_EUR, `AC (%)` = Autoconso_pct,
              `Inj (kWh)` = Injection_kWh, `Offt (kWh)` = Soutirage_kWh) %>%
       head(30)
     
     datatable(res, rownames = FALSE,
       options = list(dom = "tip", pageLength = 10, order = list(list(4, "asc"))),
       class = "compact",
-      caption = "Top 30 configurations (triees par cout croissant)") %>%
-      formatStyle("Cout (EUR)", fontWeight = "bold",
+      caption = "Top 30 configurations (triees par facture croissante)") %>%
+      formatStyle("Facture (EUR)", fontWeight = "bold",
         color = styleInterval(
-          quantile(res$`Cout (EUR)`, c(0.33, 0.66), na.rm = TRUE),
+          quantile(res$`Facture (EUR)`, c(0.33, 0.66), na.rm = TRUE),
           c(cl$success, cl$pv, cl$danger)))
   })
   
@@ -1627,7 +1760,7 @@ sur 14 derniers jours    meilleur       ca continue"),
         `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
         `Soutirage (kWh)` = round(sum(sim_sc$sim_offtake, na.rm = TRUE)),
         `Autoconso (%)` = round((1 - sum(sim_sc$sim_intake, na.rm = TRUE) / max(sum(sim_sc$pv_kwh, na.rm = TRUE), 1)) * 100, 1),
-        `Cout net (EUR)` = round(sum(sim_sc$sim_offtake * sim_sc$prix_offtake - sim_sc$sim_intake * sim_sc$prix_injection, na.rm = TRUE))
+        `Facture nette (EUR)` = round(sum(sim_sc$sim_offtake * sim_sc$prix_offtake - sim_sc$sim_intake * sim_sc$prix_injection, na.rm = TRUE))
       )
     }))
     
@@ -1635,9 +1768,9 @@ sur 14 derniers jours    meilleur       ca continue"),
     bar_colors <- ifelse(is_current, cl$accent, cl$text_muted)
     
     p1 <- plot_ly() %>%
-      add_bars(data = scenarii, x = ~factor(kWc), y = ~`Cout net (EUR)`, name = "Cout net",
+      add_bars(data = scenarii, x = ~factor(kWc), y = ~`Facture nette (EUR)`, name = "Facture nette",
         marker = list(color = bar_colors, line = list(width = 0)),
-        text = ~paste0(`Cout net (EUR)`, " EUR"), textposition = "outside",
+        text = ~paste0(`Facture nette (EUR)`, " EUR"), textposition = "outside",
         textfont = list(color = cl$text, size = 10, family = "JetBrains Mono")) %>%
       add_trace(data = scenarii, x = ~factor(kWc), y = ~`Autoconso (%)`, name = "Autoconso %",
         type = "scatter", mode = "lines+markers", yaxis = "y2",
@@ -1649,7 +1782,7 @@ sur 14 derniers jours    meilleur       ca continue"),
           titlefont = list(color = cl$success)),
         barmode = "group"
       ) %>%
-      pl_layout(xlab = "kWc installe", ylab = "Cout net (EUR/an)")
+      pl_layout(xlab = "kWc installe", ylab = "Facture nette (EUR/an)")
     p1
   })
   
@@ -1671,7 +1804,7 @@ sur 14 derniers jours    meilleur       ca continue"),
         `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
         `Soutirage (kWh)` = round(sum(sim_sc$sim_offtake, na.rm = TRUE)),
         `Autoconso (%)` = round((1 - sum(sim_sc$sim_intake, na.rm = TRUE) / max(sum(sim_sc$pv_kwh, na.rm = TRUE), 1)) * 100, 1),
-        `Cout net (EUR)` = round(sum(sim_sc$sim_offtake * sim_sc$prix_offtake - sim_sc$sim_intake * sim_sc$prix_injection, na.rm = TRUE))
+        `Facture nette (EUR)` = round(sum(sim_sc$sim_offtake * sim_sc$prix_offtake - sim_sc$sim_intake * sim_sc$prix_injection, na.rm = TRUE))
       )
     }))
     
@@ -1679,9 +1812,9 @@ sur 14 derniers jours    meilleur       ca continue"),
     bar_colors <- ifelse(is_current, cl$accent, cl$text_muted)
     
     plot_ly() %>%
-      add_bars(data = scenarii, x = ~factor(`Batterie (kWh)`), y = ~`Cout net (EUR)`, name = "Cout net",
+      add_bars(data = scenarii, x = ~factor(`Batterie (kWh)`), y = ~`Facture nette (EUR)`, name = "Facture nette",
         marker = list(color = bar_colors, line = list(width = 0)),
-        text = ~paste0(`Cout net (EUR)`, " EUR"), textposition = "outside",
+        text = ~paste0(`Facture nette (EUR)`, " EUR"), textposition = "outside",
         textfont = list(color = cl$text, size = 10, family = "JetBrains Mono")) %>%
       add_trace(data = scenarii, x = ~factor(`Batterie (kWh)`), y = ~`Autoconso (%)`, name = "Autoconso %",
         type = "scatter", mode = "lines+markers", yaxis = "y2",
@@ -1693,7 +1826,7 @@ sur 14 derniers jours    meilleur       ca continue"),
           titlefont = list(color = cl$success)),
         barmode = "group"
       ) %>%
-      pl_layout(xlab = "Capacite batterie (kWh)", ylab = "Cout net (EUR/an)")
+      pl_layout(xlab = "Capacite batterie (kWh)", ylab = "Facture nette (EUR/an)")
   })
 }
 

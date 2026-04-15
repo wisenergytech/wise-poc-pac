@@ -9,6 +9,12 @@
     ]
   },
   "Packages": {
+    "CVXR": {
+      "Package": "CVXR",
+      "Version": "1.8.2",
+      "Source": "Repository",
+      "Repository": "CRAN"
+    },
     "DT": {
       "Package": "DT",
       "Version": "0.34.0",
