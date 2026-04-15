@@ -45,7 +45,7 @@ solve_block <- function(block_data, params, t_init, soc_init = NULL) {
   model <- MIPModel() |>
     add_variable(pac_on[t], t = 1:n, type = "binary") |>
     # Bornes physiques larges intra-bloc (les gros tirages ECS font descendre T)
-    add_variable(t_bal[t], t = 1:n, lb = 20, ub = 80) |>
+    add_variable(t_bal[t], t = 1:n, lb = max(20, params$t_min - 10), ub = params$t_max + 5) |>
     add_variable(offt[t], t = 1:n, lb = 0) |>
     add_variable(inj[t], t = 1:n, lb = 0)
 
@@ -98,13 +98,15 @@ solve_block <- function(block_data, params, t_init, soc_init = NULL) {
     )
 
   # ----------------------------------------------------------
-  # Contrainte confort : T en fin de bloc doit etre viable
-  # Le ballon peut descendre temporairement (gros tirage ECS)
-  # mais doit revenir dans la plage de confort en fin de bloc
+  # Contrainte confort : T dans [T_min, T_max] a chaque qt
+  # Exception : apres un gros tirage ECS (>1 kWh), la borne basse
+  # est relachee car la PAC ne peut pas compenser instantanement
   # ----------------------------------------------------------
+  # Calculer la borne basse par qt : T_min sauf si gros tirage ECS
+  t_min_qt <- ifelse(ecs > 1.0, params$t_min - 10, params$t_min)
   model <- model |>
-    add_constraint(t_bal[n] >= params$t_min) |>
-    add_constraint(t_bal[n] <= params$t_max)
+    add_constraint(t_bal[t] >= t_min_qt[t], t = 1:n) |>
+    add_constraint(t_bal[t] <= params$t_max, t = 1:n)
 
   # ----------------------------------------------------------
   # Contraintes batterie
