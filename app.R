@@ -22,7 +22,8 @@ library(ROI.plugin.highs)
 
 # Charger les modules
 source("R/belpex.R", local = TRUE)
-source("R/optimizer.R", local = TRUE)
+source("R/optimizer_milp.R", local = TRUE)
+source("R/optimizer_lp.R", local = TRUE)
 
 # Charger les variables d'environnement depuis .env
 if (file.exists(".env")) {
@@ -566,18 +567,25 @@ ui <- page_fillable(
         tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
       tags$div(class = "sidebar-section",
-        tags$div(class = "section-title", "Optimisation", tip("Deux approches : Rule-based (regles heuristiques, rapide) ou Optimiseur (MILP, trouve la solution mathematiquement optimale).")),
-        radioButtons("approche", "Approche", choices = c("Rule-based" = "rulebased", "Optimiseur" = "optimiseur"), selected = "rulebased", inline = TRUE),
+        tags$div(class = "section-title", "Optimisation", tip("Trois approches : Rule-based (heuristique rapide), Optimiseur MILP (on/off optimal) ou Optimiseur LP (charge continue, convexe).")),
+        radioButtons("approche", "Approche", choices = c("Rule-based" = "rulebased", "MILP" = "optimiseur", "LP" = "optimiseur_lp"), selected = "rulebased", inline = TRUE),
         conditionalPanel("input.approche=='rulebased'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
             HTML("Mode <b>Smart</b> : decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP."))),
         conditionalPanel("input.approche=='optimiseur'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-            HTML("Resout un probleme d'optimisation mathematique (MILP) qui minimise le cout net en respectant les contraintes physiques. Trouve la <b>solution optimale</b> bloc par bloc.")),
+            HTML("Resout un probleme MILP (Mixed Integer Linear Programming) : decisions <b>on/off</b> binaires. Trouve la solution optimale bloc par bloc.")),
           sliderInput("optim_bloc_h", tags$span("Horizon bloc", tip("Taille du bloc d'optimisation en heures. Plus court = plus rapide mais moins de vision. Plus long = meilleur resultat mais plus lent. 4h est un bon compromis : assez pour voir les tendances de prix et de PV, assez court pour resoudre en <1s.")),
             1, 24, 4, step = 1, post = "h"),
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-            HTML("4h = rapide (~1s/bloc) | 12h = equilibre | 24h = optimal mais lent")))),
+            HTML("4h = rapide (~1s/bloc) | 12h = equilibre | 24h = optimal mais lent"))),
+        conditionalPanel("input.approche=='optimiseur_lp'",
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+            HTML("Optimisation <b>LP</b> (lineaire pur) : la PAC module sa puissance en continu (0-100%%). Probleme convexe, resolution rapide, optimum global garanti. Ideal pour PAC inverter.")),
+          sliderInput("optim_bloc_h_lp", tags$span("Horizon bloc", tip("Taille du bloc en heures. Le LP etant plus rapide que le MILP, des blocs plus grands (12-24h) sont recommandes.")),
+            1, 24, 24, step = 1, post = "h"),
+          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+            HTML("LP = rapide, des blocs de 24h sont recommandes")))),
       tags$div(class = "sidebar-section",
         tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques electriques de votre PAC. Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
         numericInput("p_pac_kw", "Puissance (kW)", 2, min = 0.5, max = 10, step = 0.5),
@@ -814,7 +822,7 @@ DONNEES CALCULEES
 
           accordion_panel("8. Batterie electrochimique", icon = icon("battery-three-quarters"),
             tags$pre(style = sprintf("background:%s;border-radius:8px;padding:12px;font-size:.75rem;color:%s;", cl$bg_input, cl$text_muted),
-"PV \u2192 Maison \u2192 PAC \u2192 Batterie \u2192 Injection
+"PV \u2192 Conso residuelle \u2192 PAC \u2192 Batterie \u2192 Injection
 Deficit \u2192 Batterie \u2192 Soutirage"),
             tags$ul(
               tags$li(tags$strong("Rendement :"), " 90% = 10% perdu/cycle."),
@@ -1003,17 +1011,32 @@ sur 14 derniers jours    meilleur       ca continue"),
         sim <- tryCatch({
           run_optimization_milp(df_prep, p)
         }, error = function(e) {
-          showNotification(paste("Erreur optimiseur:", e$message), type = "error", duration = 10)
+          showNotification(paste("Erreur optimiseur MILP:", e$message), type = "error", duration = 10)
           NULL
         })
         if (is.null(sim)) {
-          showNotification("Optimisation infaisable — verifiez les contraintes (tolerance temperature, etc.)", type = "error")
-          # Fallback : mode smart
+          showNotification("Optimisation MILP infaisable — verifiez les contraintes (tolerance temperature, etc.)", type = "error")
           sim <- run_simulation(df_prep, p, "smart", 0.5)
           sim$mode_actif <- "smart_fallback"
         }
         setProgress(1, detail = "Termine!")
         list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer")
+      } else if (approche == "optimiseur_lp") {
+        p$optim_bloc_h <- input$optim_bloc_h_lp
+        setProgress(0.3, detail = "Optimisation LP en cours...")
+        sim <- tryCatch({
+          run_optimization_lp(df_prep, p)
+        }, error = function(e) {
+          showNotification(paste("Erreur optimiseur LP:", e$message), type = "error", duration = 10)
+          NULL
+        })
+        if (is.null(sim)) {
+          showNotification("Optimisation LP infaisable — verifiez les contraintes", type = "error")
+          sim <- run_simulation(df_prep, p, "smart", 0.5)
+          sim$mode_actif <- "smart_fallback"
+        }
+        setProgress(1, detail = "Termine!")
+        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer_lp")
       } else {
         setProgress(0.3, detail = "Simulation en cours...")
         sim <- run_simulation(df_prep, p, "smart", 0.5)
@@ -1055,7 +1078,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     req(sim_result()); res <- sim_result(); sim <- res$sim; n <- nrow(sim)
     p <- if (!is.null(res$params)) res$params else params_r()
     jours <- as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days"))
-    ml <- c(smart = "SMART", optimizer = "OPTIM")
+    ml <- c(smart = "SMART", optimizer = "MILP", optimizer_lp = "LP")
     batt <- if (p$batterie_active) paste0(p$batt_kwh, "kWh/", p$batt_kw, "kW") else "non"
     contrat <- if (p$type_contrat == "fixe") paste0("fixe ", p$prix_fixe_offtake, "/", p$prix_fixe_injection) else "spot"
     tags$div(id = "status_bar", HTML(sprintf(
@@ -1343,9 +1366,9 @@ sur 14 derniers jours    meilleur       ca continue"),
     maison <- pv_auto + off - pac_elec
     maison <- max(0, maison)
 
-    # Nodes: 0=PV, 1=Reseau, 2=PAC, 3=Maison, 4=Injection
+    # Nodes: 0=PV, 1=Reseau, 2=PAC, 3=Conso residuelle, 4=Injection
     nodes <- list(
-      label = c("PV", "Reseau", "PAC", "Maison", "Injection"),
+      label = c("PV", "Reseau", "PAC", "Conso residuelle", "Injection"),
       color = c(cl$pv, cl$danger, cl$pac, cl$text_muted, cl$reel),
       pad = 20, thickness = 20
     )
@@ -1356,10 +1379,10 @@ sur 14 derniers jours    meilleur       ca continue"),
       target = c(2, 3, 4, 2, 3),
       value = c(
         min(pv_auto, pac_elec),          # PV -> PAC
-        max(0, pv_auto - pac_elec),      # PV -> Maison
+        max(0, pv_auto - pac_elec),      # PV -> Conso residuelle
         inj,                              # PV -> Injection
         max(0, pac_elec - pv_auto),      # Reseau -> PAC
-        max(0, off - max(0, pac_elec - pv_auto))  # Reseau -> Maison
+        max(0, off - max(0, pac_elec - pv_auto))  # Reseau -> Conso residuelle
       ),
       color = c(
         "rgba(251,191,36,0.4)",
@@ -1406,7 +1429,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     # Grille de recherche
     pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
     batt_range <- c(0, 5, 10, 15, 20)
-    modes      <- c("smart", "optimizer")
+    modes      <- c("smart", "optimizer", "optimizer_lp")
     contrats   <- c("fixe", "dynamique")
     
     total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
@@ -1446,7 +1469,13 @@ sur 14 derniers jours    meilleur       ca continue"),
                 k, total, pv_kwc, bkwh, m, ct))
               
               tryCatch({
-                sim <- if (m == "optimizer") run_optimization_milp(df_prep, p_sim) else run_simulation(df_prep, p_sim, "smart", 0.5)
+                sim <- if (m == "optimizer") {
+                  run_optimization_milp(df_prep, p_sim)
+                } else if (m == "optimizer_lp") {
+                  run_optimization_lp(df_prep, p_sim)
+                } else {
+                  run_simulation(df_prep, p_sim, "smart", 0.5)
+                }
                 
                 pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
                 inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
@@ -1531,6 +1560,8 @@ sur 14 derniers jours    meilleur       ca continue"),
     updateNumericInput(session, "batt_kwh", value = best$Batterie_kWh)
     if (best$Mode == "optimizer") {
       updateRadioButtons(session, "approche", selected = "optimiseur")
+    } else if (best$Mode == "optimizer_lp") {
+      updateRadioButtons(session, "approche", selected = "optimiseur_lp")
     } else {
       updateRadioButtons(session, "approche", selected = "rulebased")
     }
