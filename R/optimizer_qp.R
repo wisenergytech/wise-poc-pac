@@ -37,13 +37,14 @@ library(CVXR)
 # -----------------------------------------------------------------------------
 # solve_block_qp — Solve a single block with CVXR (quadratic convex)
 # -----------------------------------------------------------------------------
-solve_block_qp <- function(block_data, params, t_init, soc_init = NULL) {
+solve_block_qp <- function(block_data, params, t_init, soc_init = NULL, prix_terminal_per_deg = 0) {
   n <- nrow(block_data)
   if (n < 2) return(NULL)
 
   # Precalculations
   pac_qt <- params$p_pac_kw * params$dt_h
-  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop)
+  # COP linearized around T_consigne (T_ballon is a decision variable)
+  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
   chaleur_pac <- pac_qt * cop
   cap <- params$capacite_kwh_par_degre
 
@@ -92,7 +93,10 @@ solve_block_qp <- function(block_data, params, t_init, soc_init = NULL) {
   # 3) Smoothing: penalize abrupt PAC load changes
   smooth_term <- sum_squares(pac_load[2:n] - pac_load[1:(n - 1)])
 
-  objective <- Minimize(cost_term + w_comfort * comfort_term + w_smooth * smooth_term)
+  # 4) Terminal value: reward keeping the tank warm at end of block
+  terminal_term <- t_bal[n] * prix_terminal_per_deg
+
+  objective <- Minimize(cost_term + w_comfort * comfort_term + w_smooth * smooth_term - terminal_term)
 
   # ----------------------------------------------------------
   # Constraints
@@ -103,7 +107,7 @@ solve_block_qp <- function(block_data, params, t_init, soc_init = NULL) {
     pac_load <= 1,
     offt >= 0,
     inj >= 0,
-    t_bal >= max(20, params$t_min - 10),
+    t_bal >= 20,
     t_bal <= params$t_max + 5
   )
 
@@ -139,12 +143,13 @@ solve_block_qp <- function(block_data, params, t_init, soc_init = NULL) {
 
   # C3+C4: Per-qt comfort bounds (relaxed during heavy ECS draws)
   for (t in 1:n) {
-    t_min_t <- if (ecs[t] > 1.0) params$t_min - 10 else params$t_min
-    constraints <- c(constraints, list(
-      t_bal[t] >= t_min_t,
-      t_bal[t] <= params$t_max
-    ))
+    if (ecs[t] <= chaleur_pac[t]) {
+      constraints <- c(constraints, list(t_bal[t] >= params$t_min))
+    }
+    constraints <- c(constraints, list(t_bal[t] <= params$t_max))
   }
+  # End-of-block: ensure T doesn't end too low for the next block
+  constraints <- c(constraints, list(t_bal[n] >= params$t_min))
 
   # C5: Battery SOC dynamics
   if (has_batt) {
@@ -240,42 +245,43 @@ run_optimization_qp <- function(df, params) {
   for (b in seq_len(n_blocs)) {
     i_start <- (b - 1) * bloc_qt + 1
     i_end <- min(b * bloc_qt, n)
-    block_data <- df[i_start:i_end, ]
+    n_execute <- i_end - i_start + 1
+
+    # Overlapping blocks: extend with lookahead from next block
+    i_lookahead_end <- min(i_end + bloc_qt, n)
+    block_data <- df[i_start:i_lookahead_end, ]
+
+    baseline_fallback <- function(bd) {
+      tibble(
+        sim_pac_on = 0,
+        sim_t_ballon = bd$t_ballon,
+        sim_offtake = bd$offtake_kwh,
+        sim_intake = bd$intake_kwh,
+        sim_cop = calc_cop(bd$t_ext, params$cop_nominal, params$t_ref_cop),
+        decision_raison = "optimizer_qp_fallback",
+        batt_soc = 0,
+        batt_flux = 0
+      )
+    }
+
+    prix_terminal_per_deg <- 0  # overlap provides natural lookahead
 
     if (nrow(block_data) < 2) {
-      block_sim <- run_simulation(block_data, params, "smart", 0.5)
-      block_result <- tibble(
-        sim_pac_on = block_sim$sim_pac_on,
-        sim_t_ballon = block_sim$sim_t_ballon,
-        sim_offtake = block_sim$sim_offtake,
-        sim_intake = block_sim$sim_intake,
-        sim_cop = block_sim$sim_cop,
-        decision_raison = "optimizer_qp_fallback",
-        batt_soc = block_sim$batt_soc,
-        batt_flux = block_sim$batt_flux
-      )
+      block_result <- baseline_fallback(df[i_start:i_end, ])
     } else {
-      block_result <- solve_block_qp(block_data, params, t_init, soc_init)
+      full_result <- solve_block_qp(block_data, params, t_init, soc_init, prix_terminal_per_deg)
 
-      if (is.null(block_result)) {
-        message(sprintf("[QP Optimizer] Block %d infeasible, fallback to Smart", b))
-        block_sim <- run_simulation(block_data, params, "smart", 0.5)
-        block_result <- tibble(
-          sim_pac_on = block_sim$sim_pac_on,
-          sim_t_ballon = block_sim$sim_t_ballon,
-          sim_offtake = block_sim$sim_offtake,
-          sim_intake = block_sim$sim_intake,
-          sim_cop = block_sim$sim_cop,
-          decision_raison = "optimizer_qp_fallback",
-          batt_soc = block_sim$batt_soc,
-          batt_flux = block_sim$batt_flux
-        )
+      if (is.null(full_result)) {
+        message(sprintf("[QP Optimizer] Block %d infeasible, fallback to baseline", b))
+        block_result <- baseline_fallback(df[i_start:i_end, ])
+      } else {
+        block_result <- full_result[1:n_execute, ]
       }
     }
 
     all_results[[b]] <- block_result
 
-    t_init <- tail(block_result$sim_t_ballon, 1)
+    t_init <- max(params$t_min, tail(block_result$sim_t_ballon, 1))
     if (params$batterie_active) {
       soc_init <- tail(block_result$batt_soc, 1) * params$batt_kwh
     }

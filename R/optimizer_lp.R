@@ -41,13 +41,14 @@
 # -----------------------------------------------------------------------------
 # solve_block_lp — Solve a single block with pure LP (continuous PAC load)
 # -----------------------------------------------------------------------------
-solve_block_lp <- function(block_data, params, t_init, soc_init = NULL) {
+solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_terminal_per_deg = 0) {
   n <- nrow(block_data)
   if (n < 2) return(NULL)
 
   # Precalculations
   pac_qt <- params$p_pac_kw * params$dt_h
-  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop)
+  # COP linearized around T_consigne (T_ballon is a decision variable)
+  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
   chaleur_pac <- pac_qt * cop
   cap <- params$capacite_kwh_par_degre
 
@@ -71,27 +72,28 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL) {
   # ----------------------------------------------------------
   model <- MIPModel() |>
     add_variable(pac_load[t], t = 1:n, lb = 0, ub = 1, type = "continuous") |>
-    add_variable(t_bal[t], t = 1:n,
-      lb = max(20, params$t_min - 10),
-      ub = params$t_max + 5) |>
+    add_variable(t_bal[t], t = 1:n, lb = 20, ub = params$t_max + 5) |>
     add_variable(offt[t], t = 1:n, lb = 0) |>
-    add_variable(inj[t], t = 1:n, lb = 0)
+    add_variable(inj[t], t = 1:n, lb = 0) |>
+    add_variable(slack[t], t = 1:n, lb = 0)
 
   if (has_batt) {
     model <- model |>
       add_variable(chrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
       add_variable(dischrg[t], t = 1:n, lb = 0, ub = batt_pw) |>
       add_variable(soc[t], t = 1:n, lb = soc_min_kwh, ub = soc_max_kwh)
-    # No binary batt_ch: the solver won't charge and discharge simultaneously
-    # because round-trip efficiency < 1 makes it suboptimal.
   }
 
+  penalty <- 10  # EUR per degree below T_min per qt
+
   # ----------------------------------------------------------
-  # Objective: minimize net electricity cost
+  # Objective: minimize net electricity cost + slack penalty - terminal value
   # ----------------------------------------------------------
   model <- model |>
     set_objective(
-      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n),
+      sum_expr(offt[t] * prix_off[t] - inj[t] * prix_inj[t], t = 1:n) +
+        sum_expr(slack[t] * penalty, t = 1:n) -
+        sum_expr(t_bal[t] * prix_terminal_per_deg, t = n:n),
       sense = "min"
     )
 
@@ -128,11 +130,10 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL) {
     )
 
   # ----------------------------------------------------------
-  # C3+C4: Comfort bounds
+  # C3+C4: Comfort — soft T_min via slack, hard T_max
   # ----------------------------------------------------------
-  t_min_qt <- ifelse(ecs > 1.0, params$t_min - 10, params$t_min)
   model <- model |>
-    add_constraint(t_bal[t] >= t_min_qt[t], t = 1:n) |>
+    add_constraint(t_bal[t] + slack[t] >= params$t_min, t = 1:n) |>
     add_constraint(t_bal[t] <= params$t_max, t = 1:n)
 
   # ----------------------------------------------------------
@@ -218,42 +219,43 @@ run_optimization_lp <- function(df, params) {
   for (b in seq_len(n_blocs)) {
     i_start <- (b - 1) * bloc_qt + 1
     i_end <- min(b * bloc_qt, n)
-    block_data <- df[i_start:i_end, ]
+    n_execute <- i_end - i_start + 1
+
+    # Overlapping blocks: extend with lookahead from next block
+    i_lookahead_end <- min(i_end + bloc_qt, n)
+    block_data <- df[i_start:i_lookahead_end, ]
+
+    baseline_fallback <- function(bd) {
+      tibble(
+        sim_pac_on = 0,
+        sim_t_ballon = bd$t_ballon,
+        sim_offtake = bd$offtake_kwh,
+        sim_intake = bd$intake_kwh,
+        sim_cop = calc_cop(bd$t_ext, params$cop_nominal, params$t_ref_cop),
+        decision_raison = "optimizer_lp_fallback",
+        batt_soc = 0,
+        batt_flux = 0
+      )
+    }
+
+    prix_terminal_per_deg <- 0  # overlap provides natural lookahead
 
     if (nrow(block_data) < 2) {
-      block_sim <- run_simulation(block_data, params, "smart", 0.5)
-      block_result <- tibble(
-        sim_pac_on = block_sim$sim_pac_on,
-        sim_t_ballon = block_sim$sim_t_ballon,
-        sim_offtake = block_sim$sim_offtake,
-        sim_intake = block_sim$sim_intake,
-        sim_cop = block_sim$sim_cop,
-        decision_raison = "optimizer_lp_fallback",
-        batt_soc = block_sim$batt_soc,
-        batt_flux = block_sim$batt_flux
-      )
+      block_result <- baseline_fallback(df[i_start:i_end, ])
     } else {
-      block_result <- solve_block_lp(block_data, params, t_init, soc_init)
+      full_result <- solve_block_lp(block_data, params, t_init, soc_init, prix_terminal_per_deg)
 
-      if (is.null(block_result)) {
-        message(sprintf("[LP Optimizer] Block %d infeasible, fallback to Smart", b))
-        block_sim <- run_simulation(block_data, params, "smart", 0.5)
-        block_result <- tibble(
-          sim_pac_on = block_sim$sim_pac_on,
-          sim_t_ballon = block_sim$sim_t_ballon,
-          sim_offtake = block_sim$sim_offtake,
-          sim_intake = block_sim$sim_intake,
-          sim_cop = block_sim$sim_cop,
-          decision_raison = "optimizer_lp_fallback",
-          batt_soc = block_sim$batt_soc,
-          batt_flux = block_sim$batt_flux
-        )
+      if (is.null(full_result)) {
+        message(sprintf("[LP Optimizer] Block %d infeasible, fallback to baseline", b))
+        block_result <- baseline_fallback(df[i_start:i_end, ])
+      } else {
+        block_result <- full_result[1:n_execute, ]
       }
     }
 
     all_results[[b]] <- block_result
 
-    t_init <- tail(block_result$sim_t_ballon, 1)
+    t_init <- max(params$t_min, tail(block_result$sim_t_ballon, 1))
     if (params$batterie_active) {
       soc_init <- tail(block_result$batt_soc, 1) * params$batt_kwh
     }
