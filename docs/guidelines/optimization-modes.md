@@ -181,3 +181,68 @@ chauffants ou des systemes sensibles aux variations.
 | MILP | Optimum global pour le modele on/off |
 | LP | Optimum global pour le modele continu |
 | QP | Optimum global pour le compromis cout/confort/lissage |
+
+## Donnees d'entree du simulateur
+
+Le generateur demo (`generer_demo()`) produit un jeu de donnees synthetiques
+a partir de sources reelles et de modeles. Toutes les donnees sont au pas
+de 15 minutes.
+
+### Sources de donnees
+
+| Source | Donnee | Resolution | Fichiers | Fallback |
+|---|---|---|---|---|
+| Open-Meteo | T_ext reelle | Horaire → interpole 15 min | `data/openmeteo_temp_YYYY.csv` | Modele sinusoidal + bruit |
+| ENTSO-E | Prix Belpex | Horaire | `data/belpex_historical_YYYY.csv` | Modele sinusoidal + bruit |
+| Synthetique | Production PV | 15 min | Genere a la volee | Bruit aleatoire |
+| Synthetique | Tirages ECS | 15 min | Genere a la volee | — |
+| Synthetique | Chauffage ambiance | 15 min | Genere a la volee (PAC > 10 kW) | — |
+| Synthetique | Conso base (hors PAC) | 15 min | Genere a la volee | — |
+
+### Correlations entre donnees
+
+Les donnees ne sont pas independantes — elles sont correlees pour refleter
+la realite physique :
+
+- **PV ← Prix Belpex** : quand le prix est bas en journee (10h-16h), il y a
+  beaucoup de solaire sur le reseau → le PV synthetique est eleve. Percentile
+  inverse du prix moyen journalier = score d'ensoleillement.
+- **T_ext ← Open-Meteo** : temperatures reelles historiques (Profondeville, BE).
+  En cas d'indisponibilite, un modele sinusoidal est utilise avec un bonus
+  de temperature pour les jours ensoleilles (derive du score Belpex).
+- **Chauffage ← T_ext** : la charge de chauffage est proportionnelle a
+  `max(0, 15 - T_ext)`. Plus il fait froid → plus on chauffe. Active
+  uniquement pour les PAC > 10 kW (installations mixtes chauffage + ECS).
+- **ECS ← Volume ballon** : les tirages sont proportionnels au volume
+  du ballon (6 kWh/jour pour 200 L de reference).
+
+### Schema des correlations
+
+```
+Prix Belpex (reel)
+    |
+    +--→ Score ensoleillement (percentile inverse du prix 10h-16h)
+    |        |
+    |        +--→ Couverture nuageuse → Production PV
+    |        +--→ Bonus T_ext (fallback si pas d'Open-Meteo)
+    |
+T_ext (Open-Meteo reel)
+    |
+    +--→ Chauffage ambiance (PAC > 10 kW) : G x max(0, 15 - T_ext)
+    +--→ COP de la PAC : calc_cop(T_ext)
+    |
+Volume ballon
+    |
+    +--→ Tirages ECS : proportionnel a volume / 200
+```
+
+### Colonnes du dataframe de sortie
+
+| Colonne | Unite | Description |
+|---|---|---|
+| `timestamp` | POSIXct | Horodatage au quart d'heure (Europe/Brussels) |
+| `pv_kwh` | kWh | Production PV par quart d'heure (6 kWc de reference) |
+| `t_ext` | C | Temperature exterieure |
+| `prix_eur_kwh` | EUR/kWh | Prix spot Belpex |
+| `conso_base_kwh` | kWh | Consommation hors PAC par quart d'heure |
+| `soutirage_ecs_kwh` | kWh | Demande thermique totale (ECS + chauffage si PAC > 10 kW) |
