@@ -306,7 +306,8 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
 }
 
 generer_demo <- function(date_start = as.Date("2025-02-01"), date_end = as.Date("2025-07-31"),
-                         p_pac_kw = 2, volume_ballon_l = 200, pv_kwc = 6) {
+                         p_pac_kw = 2, volume_ballon_l = 200, pv_kwc = 6,
+                         ecs_kwh_jour = NULL, building_type = "standard") {
   # ---------------------------------------------------------------
   # Genere les DONNEES D'ENTREE :
   # - T_ext reelles (Open-Meteo) ou synthetiques (fallback)
@@ -427,8 +428,12 @@ generer_demo <- function(date_start = as.Date("2025-02-01"), date_end = as.Date(
   # --- Soutirage ECS (eau chaude sanitaire) ---
   # Proportionnel a la puissance PAC (reflet de la taille de l'installation)
   # Reference : 6 kWh_th/jour pour une PAC de 2 kW (residentiel)
-  # Le volume du ballon est un choix de stockage, pas de demande
-  facteur_ecs <- p_pac_kw / 2
+  # ECS scaling: user-defined or estimated from PAC power
+  if (!is.null(ecs_kwh_jour) && !is.na(ecs_kwh_jour)) {
+    facteur_ecs <- ecs_kwh_jour / 6  # base: 6 kWh/jour
+  } else {
+    facteur_ecs <- p_pac_kw / 2  # auto: proportional to PAC power
+  }
   ecs_kwh <- numeric(n)
   for (i in seq_len(n)) {
     if (h[i] > 6.5 & h[i] < 8.5) {
@@ -452,7 +457,13 @@ generer_demo <- function(date_start = as.Date("2025-02-01"), date_end = as.Date(
     # G estime : la PAC couvre le besoin a T_ext = -5 C (dimensionnement)
     # P_pac_thermique = G * (T_seuil - T_dim) → G = P_pac * COP / (T_seuil - T_dim)
     # On prend COP ~3.5 et T_dim = -5 C
-    g_batiment_kw_par_k <- p_pac_kw * 3.5 / (t_seuil_chauffage - (-5))  # kW/K
+    # G depends on building type
+    g_factor <- switch(building_type,
+      passif = 0.4,
+      standard = 1.0,
+      ancien = 1.8,
+      1.0)
+    g_batiment_kw_par_k <- p_pac_kw * 3.5 / (t_seuil_chauffage - (-5)) * g_factor  # kW/K
     chauffage_kwh <- pmax(0, t_seuil_chauffage - t_ext) * g_batiment_kw_par_k * 0.25  # kWh par qt
     # Ajouter au soutirage thermique total
     ecs_kwh <- ecs_kwh + chauffage_kwh
@@ -678,6 +689,54 @@ tip <- function(text) {
   tags$span(class = "info-tip", title = text, "i")
 }
 
+# KPI card avec valeur absolue, % relatif et gain, et info-bulle
+kpi_card <- function(value, label, unit, color,
+                     baseline_val = NULL, opti_val = NULL,
+                     gain_val = NULL, gain_unit = NULL, gain_invert = FALSE,
+                     tooltip = NULL) {
+  val_div <- tags$div(class = "kpi-value", style = sprintf("color:%s;", color),
+    value, tags$span(class = "kpi-unit", unit))
+
+  label_div <- if (!is.null(tooltip)) {
+    tags$div(class = "kpi-label", label, tip(tooltip))
+  } else {
+    tags$div(class = "kpi-label", label)
+  }
+
+  sub_divs <- list()
+
+  # Ligne relative % vs baseline
+  if (!is.null(baseline_val) && !is.null(opti_val) && abs(baseline_val) > 0.001) {
+    pct <- (opti_val - baseline_val) / abs(baseline_val) * 100
+    cls <- if (gain_invert) {
+      if (pct <= 0) "positive" else "negative"
+    } else {
+      if (pct >= 0) "positive" else "negative"
+    }
+    sub_divs <- c(sub_divs, list(
+      tags$div(class = "kpi-sub",
+        sprintf("%s%.1f%% vs baseline", ifelse(pct >= 0, "+", ""), pct))
+    ))
+  }
+
+  # Ligne gain/reduction
+  if (!is.null(gain_val)) {
+    gu <- if (!is.null(gain_unit)) gain_unit else unit
+    cls <- if (gain_invert) {
+      if (gain_val <= 0) "positive" else "negative"
+    } else {
+      if (gain_val >= 0) "positive" else "negative"
+    }
+    sub_divs <- c(sub_divs, list(
+      tags$div(class = paste("kpi-gain", cls),
+        sprintf("%s%s %s", ifelse(gain_val >= 0, "+", ""),
+          formatC(round(gain_val), big.mark = " ", format = "d"), gu))
+    ))
+  }
+
+  do.call(tags$div, c(list(class = "text-center"), list(val_div, label_div), sub_divs))
+}
+
 # Panneau explicatif depliable pour chaque onglet
 explainer <- function(...) {
   tags$details(class = "tab-explainer", ...)
@@ -703,6 +762,9 @@ ui <- page_fillable(
     .kpi-value{font-family:'JetBrains Mono',monospace;font-size:1.8rem;font-weight:700;line-height:1}
     .kpi-label{font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-top:4px}
     .kpi-unit{font-size:.75rem;color:%s;margin-left:4px}
+    .kpi-sub{font-size:.65rem;color:%s;margin-top:2px;font-family:'JetBrains Mono',monospace}
+    .kpi-gain{font-size:.72rem;font-weight:600;margin-top:1px;font-family:'JetBrains Mono',monospace}
+    .kpi-gain.positive{color:%s} .kpi-gain.negative{color:%s}
     .sidebar-section{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid %s}
     .section-title{font-family:'JetBrains Mono',monospace;font-size:.7rem;text-transform:uppercase;letter-spacing:.15em;color:%s;margin-bottom:8px}
     .form-label{font-size:.78rem;color:%s}
@@ -729,7 +791,8 @@ ui <- page_fillable(
     .tab-explainer strong{color:%s}
     .tab-explainer code{background:%s;padding:1px 5px;border-radius:3px;font-size:.78rem;color:%s}
   ", cl$bg_dark,cl$grid,cl$grid,cl$accent,cl$text_muted,cl$accent,cl$accent,cl$text_muted,
-     cl$text_muted,cl$grid,cl$accent,cl$text_muted,cl$bg_input,cl$grid,cl$accent,cl$accent,
+     cl$text_muted,cl$text_muted,cl$success,cl$danger,
+     cl$grid,cl$accent,cl$text_muted,cl$bg_input,cl$grid,cl$accent,cl$accent,
      cl$text_muted,cl$bg_card,
      cl$accent,cl$grid,cl$accent,cl$accent,
      cl$bg_card,cl$accent3,cl$bg_dark,cl$bg_input,cl$grid,cl$text_muted,cl$accent,cl$accent,cl$bg_input,cl$opti)))),
@@ -807,7 +870,13 @@ ui <- page_fillable(
           numericInput("volume_ballon_manual", "Volume (L)", 200, min = 50, max = 100000, step = 50)),
         numericInput("t_consigne", "Consigne (C)", 50, min = 35, max = 65, step = 1),
         sliderInput("t_tolerance", "Tolerance +/-C", 1, 10, 5, step = 1),
-        tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage.")),
+        tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
+        numericInput("ecs_kwh_jour", tags$span("ECS (kWh_th/jour)", tip("Demande en eau chaude sanitaire par jour en kWh thermiques. Reference : 6 kWh/jour pour un menage, 50-200 kWh/jour pour un immeuble ou une industrie. Si vide, estime automatiquement a partir de la puissance PAC.")),
+          NULL, min = 1, max = 5000, step = 1),
+        conditionalPanel("input.p_pac_kw > 10",
+          selectInput("building_type", tags$span("Type de batiment", tip("Influence le coefficient de deperdition thermique (G) pour le chauffage d'ambiance. Passif = tres bien isole, Standard = construction recente, Ancien = peu isole.")),
+            choices = c("Passif (G faible)" = "passif", "Standard (RT2012)" = "standard", "Ancien (peu isole)" = "ancien"),
+            selected = "standard"))),
       tags$div(class = "sidebar-section",
         tags$div(class = "section-title", "Tarification", tip("Le type de contrat change fondamentalement la strategie optimale. En dynamique, le prix varie chaque heure selon le marche Belpex.")),
         radioButtons("type_contrat", "Contrat", choices = c("Dynamique (spot)" = "dynamique", "Fixe" = "fixe"), selected = "dynamique", inline = TRUE),
@@ -842,6 +911,8 @@ ui <- page_fillable(
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
             "Rendement = part de l'energie recuperee apres un cycle charge/decharge (pertes thermiques). Plage SoC = limites min/max pour proteger la duree de vie."))),
       actionButton("run_sim", "Lancer la simulation", class = "btn-primary w-100 mt-2", icon = icon("play")),
+      conditionalPanel("output.has_sim_result",
+        downloadButton("download_csv", "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = icon("download"))),
       tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
       tags$div(style = "margin-top:8px;",
         actionButton("run_automagic", "Trouver la meilleure config", class = "w-100 mt-1",
@@ -857,10 +928,10 @@ ui <- page_fillable(
           cl$grid, cl$text_muted))),
     
     uiOutput("status_bar"),
-    uiOutput("kpi_row"),
-    
+
     navset_card_tab(id = "main_tabs",
       nav_panel(title = "Energie", icon = icon("bolt"),
+        uiOutput("energy_kpi_row"),
         layout_columns(col_widths = c(4, 4, 4),
           card(full_screen = TRUE, card_header("Soutirage reseau"),
             card_body(plotlyOutput("plot_soutirage", height = "300px"))),
@@ -874,6 +945,7 @@ ui <- page_fillable(
               radioButtons("sankey_scenario", NULL, choices = c("Baseline" = "reel", "Optimise" = "optimise"), selected = "reel", inline = TRUE),
               plotlyOutput("plot_sankey", height = "350px"))))),
       nav_panel(title = "Finances", icon = icon("euro-sign"),
+        uiOutput("finance_kpi_row"),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("Facture nette cumulee — baseline vs optimise"),
             card_body(plotlyOutput("plot_cout_cumule", height = "320px")))),
@@ -1306,7 +1378,9 @@ sur 14 derniers jours    meilleur       ca continue"),
       req(input$date_range)
       df <- generer_demo(input$date_range[1], input$date_range[2],
         p_pac_kw = input$p_pac_kw, volume_ballon_l = volume_ballon_eff(),
-        pv_kwc = pv_kwc_eff())
+        pv_kwc = pv_kwc_eff(),
+        ecs_kwh_jour = input$ecs_kwh_jour,
+        building_type = if (!is.null(input$building_type)) input$building_type else "standard")
     }
 
     # Injecter les vrais prix Belpex (CSV uniquement — demo les charge deja dans generer_demo)
@@ -1708,40 +1782,98 @@ sur 14 derniers jours    meilleur       ca continue"),
   })
   outputOptions(output, "status_bar", suspendWhenHidden = FALSE)
 
-  output$kpi_row <- renderUI({
-    req(sim_filtered()); sim <- sim_filtered()
-    pv_tot <- sum(sim$pv_kwh, na.rm = TRUE)
-    inj_r <- sum(sim$intake_kwh, na.rm = TRUE); inj_o <- sum(sim$sim_intake, na.rm = TRUE)
-    offt_r <- sum(sim$offtake_kwh, na.rm = TRUE); offt_o <- sum(sim$sim_offtake, na.rm = TRUE)
-    ac <- round((1 - inj_o / max(pv_tot, 1)) * 100, 1)
-    cr <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm = TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm = TRUE)
-    co <- sum(sim$sim_offtake * sim$prix_offtake, na.rm = TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm = TRUE)
-    gain <- cr - co
-    kpi <- function(v, l, u, c) tags$div(class = "text-center",
-      tags$div(class = "kpi-value", style = sprintf("color:%s;", c), v, tags$span(class = "kpi-unit", u)),
-      tags$div(class = "kpi-label", l))
-    
+  # ---- KPIs ENERGIE (onglet Energie) ----
+  output$energy_kpi_row <- renderUI({
+    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
+
+    pv_tot    <- sum(sim$pv_kwh, na.rm = TRUE)
+    inj_base  <- sum(sim$intake_kwh, na.rm = TRUE)
+    inj_opti  <- sum(sim$sim_intake, na.rm = TRUE)
+    offt_base <- sum(sim$offtake_kwh, na.rm = TRUE)
+    offt_opti <- sum(sim$sim_offtake, na.rm = TRUE)
+    ac_base   <- round((1 - inj_base / max(pv_tot, 1)) * 100, 1)
+    ac_opti   <- round((1 - inj_opti / max(pv_tot, 1)) * 100, 1)
+    heures_pac <- round(sum(sim$sim_pac_on, na.rm = TRUE) * 0.25)
+
     kpis <- list(
-      kpi(formatC(round(pv_tot), big.mark = " ", format = "d"), "Production PV", "kWh", cl$pv),
-      kpi(paste0(ac, "%"), "Autoconsommation", "", cl$success),
-      kpi(formatC(round(inj_r - inj_o), big.mark = " ", format = "d"), "Moins d'injection", "kWh", cl$opti),
-      kpi(formatC(round(offt_r - offt_o), big.mark = " ", format = "d"), "Moins de soutirage", "kWh", cl$accent3),
-      kpi(paste0(ifelse(gain >= 0, "+", ""), round(gain)), "Economie", "EUR", cl$success),
-      kpi(round(sum(sim$sim_pac_on, na.rm = TRUE) * 0.25), "Heures PAC", "h", cl$pac)
+      kpi_card(formatC(round(pv_tot), big.mark = " ", format = "d"),
+        "Production PV", "kWh", cl$pv,
+        tooltip = "Production photovoltaique totale sur la periode. Identique en baseline et optimise (meme ensoleillement)."),
+      kpi_card(paste0(ac_opti, "%"),
+        "Autoconsommation", "", cl$success,
+        baseline_val = ac_base, opti_val = ac_opti,
+        gain_val = round(ac_opti - ac_base, 1), gain_unit = "pts",
+        tooltip = "Part du PV consommee sur place. = 1 - (injection / production PV). Plus c'est haut, moins on gaspille de PV."),
+      kpi_card(formatC(round(offt_base - offt_opti), big.mark = " ", format = "d"),
+        "Moins de soutirage", "kWh", cl$accent3,
+        baseline_val = offt_base, opti_val = offt_opti, gain_invert = TRUE,
+        gain_val = round(offt_base - offt_opti), gain_unit = "kWh",
+        tooltip = "Reduction du soutirage reseau. = soutirage baseline - soutirage optimise. Chaque kWh evite est un kWh non achete."),
+      kpi_card(formatC(round(inj_base - inj_opti), big.mark = " ", format = "d"),
+        "Moins d'injection", "kWh", cl$opti,
+        baseline_val = inj_base, opti_val = inj_opti, gain_invert = TRUE,
+        gain_val = round(inj_base - inj_opti), gain_unit = "kWh",
+        tooltip = "Reduction de l'injection reseau. = injection baseline - injection optimise. Energie gardee sur place plutot que vendue a bas prix."),
+      kpi_card(heures_pac,
+        "Heures PAC", "h", cl$pac,
+        tooltip = "Heures de fonctionnement de la PAC (optimise). = nombre de quarts d'heure ou la PAC est active x 0.25.")
     )
-    
-    # Ajouter KPI batterie si active
-    p <- params_r()
+
     if (p$batterie_active && !is.null(sim$batt_flux)) {
       charge_tot <- sum(pmax(0, sim$batt_flux), na.rm = TRUE)
       cycles <- round(charge_tot / max(p$batt_kwh, 1), 1)
-      kpis <- c(kpis, list(kpi(cycles, "Cycles batterie", "/an", "#818cf8")))
+      kpis <- c(kpis, list(
+        kpi_card(cycles, "Cycles batterie", "", cl$accent3,
+          tooltip = "Cycles complets de charge/decharge. = energie chargee totale / capacite batterie.")))
     }
-    
+
     ncols <- length(kpis)
     cw <- rep(floor(12 / ncols), ncols)
     cw[1] <- 12 - sum(cw[-1])
     do.call(layout_columns, c(list(col_widths = cw, style = "margin-bottom:12px;"), kpis))
+  })
+
+  # ---- KPIs FINANCES (onglet Finances) ----
+  output$finance_kpi_row <- renderUI({
+    req(sim_filtered()); sim <- sim_filtered()
+
+    facture_base <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm = TRUE) -
+                    sum(sim$intake_kwh * sim$prix_injection, na.rm = TRUE)
+    facture_opti <- sum(sim$sim_offtake * sim$prix_offtake, na.rm = TRUE) -
+                    sum(sim$sim_intake * sim$prix_injection, na.rm = TRUE)
+    gain <- facture_base - facture_opti
+    pct_gain <- if (abs(facture_base) > 0.01) round(gain / abs(facture_base) * 100, 1) else 0
+
+    cout_sout_base <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm = TRUE)
+    cout_sout_opti <- sum(sim$sim_offtake * sim$prix_offtake, na.rm = TRUE)
+
+    rev_inj_base <- sum(sim$intake_kwh * sim$prix_injection, na.rm = TRUE)
+    rev_inj_opti <- sum(sim$sim_intake * sim$prix_injection, na.rm = TRUE)
+
+    prix_moy <- mean(sim$prix_offtake, na.rm = TRUE)
+
+    layout_columns(col_widths = c(2, 2, 2, 2, 2, 2), style = "margin-bottom:12px;",
+      kpi_card(paste0(round(facture_base), " EUR"),
+        "Facture baseline", "", cl$reel,
+        tooltip = "Cout net baseline = somme(soutirage x prix) - somme(injection x prix). Sans optimisation."),
+      kpi_card(paste0(round(facture_opti), " EUR"),
+        "Facture optimisee", "", cl$opti,
+        baseline_val = facture_base, opti_val = facture_opti, gain_invert = TRUE,
+        tooltip = "Cout net optimise = somme(soutirage_opti x prix) - somme(injection_opti x prix). Avec pilotage PAC."),
+      kpi_card(paste0(ifelse(gain >= 0, "+", ""), round(gain), " EUR"),
+        "Economie nette", "", if (gain >= 0) cl$success else cl$danger,
+        tooltip = "Economie = facture baseline - facture optimisee. Inclut la reduction de soutirage, la variation d'injection et l'arbitrage horaire."),
+      kpi_card(paste0(pct_gain, "%"),
+        "Reduction facture", "", if (gain >= 0) cl$success else cl$danger,
+        tooltip = "Reduction en % = economie / |facture baseline| x 100."),
+      kpi_card(paste0(round(cout_sout_base - cout_sout_opti), " EUR"),
+        "Eco. soutirage", "", cl$accent3,
+        baseline_val = cout_sout_base, opti_val = cout_sout_opti, gain_invert = TRUE,
+        tooltip = "Economie sur le soutirage = cout soutirage baseline - cout soutirage optimise. Principale source d'economie."),
+      kpi_card(paste0(round(rev_inj_opti - rev_inj_base), " EUR"),
+        "Delta injection", "", cl$pv,
+        tooltip = "Variation du revenu d'injection = revenu injection optimise - revenu injection baseline. Negatif si l'optimisation reduit l'injection (normal : on autoconsomme plus).")
+    )
   })
   
   # --- Helpers pour les 3 charts energie ---
@@ -2026,21 +2158,37 @@ sur 14 derniers jours    meilleur       ca continue"),
     compute_co2_impact(sim, co2_15min)
   })
 
-  # KPI row
+  # ---- KPIs CO2 (onglet Impact CO2) ----
   output$co2_kpi_row <- renderUI({
     req(co2_impact())
     impact <- co2_impact()
 
-    kpi <- function(v, l, u, c) tags$div(class = "text-center",
-      tags$div(class = "kpi-value", style = sprintf("color:%s;", c), v, tags$span(class = "kpi-unit", u)),
-      tags$div(class = "kpi-label", l))
+    co2_base_kg <- sum(impact$co2_baseline_g, na.rm = TRUE) / 1000
+    co2_opti_kg <- sum(impact$co2_opti_g, na.rm = TRUE) / 1000
 
-    co2_col <- "#34d399"  # vert
-    layout_columns(col_widths = c(3, 3, 3, 3), style = "margin-bottom:12px;",
-      kpi(sprintf("%.1f", impact$co2_saved_kg), "CO2 evite", "kg", co2_col),
-      kpi(sprintf("%.1f", impact$co2_pct_reduction), "Reduction intensite", "%", co2_col),
-      kpi(sprintf("%.0f", impact$equiv_car_km), "Equivalent voiture", "km", "#22d3ee"),
-      kpi(sprintf("%.1f", impact$equiv_trees_year), "Equivalent arbres", "/an", "#fbbf24")
+    layout_columns(col_widths = c(2, 2, 2, 2, 2, 2), style = "margin-bottom:12px;",
+      kpi_card(sprintf("%.1f", impact$co2_saved_kg),
+        "CO2 evite", "kg", cl$success,
+        baseline_val = co2_base_kg, opti_val = co2_opti_kg, gain_invert = TRUE,
+        gain_val = round(impact$co2_saved_kg, 1), gain_unit = "kg",
+        tooltip = "Emissions evitees = somme((soutirage_base - soutirage_opti) x intensite_CO2). Positif = moins de CO2 emis."),
+      kpi_card(sprintf("%.0f", impact$intensity_before),
+        "Intensite baseline", "gCO2/kWh", cl$reel,
+        tooltip = "Intensite carbone moyenne ponderee par la consommation baseline. = somme(soutirage_base x intensite) / somme(soutirage_base)."),
+      kpi_card(sprintf("%.0f", impact$intensity_after),
+        "Intensite optimisee", "gCO2/kWh", cl$opti,
+        baseline_val = impact$intensity_before, opti_val = impact$intensity_after, gain_invert = TRUE,
+        gain_val = round(impact$intensity_after - impact$intensity_before), gain_unit = "gCO2/kWh",
+        tooltip = "Intensite carbone moyenne ponderee par la consommation optimisee. Plus bas = consommation deplacee vers des heures plus vertes."),
+      kpi_card(sprintf("%.1f%%", impact$co2_pct_reduction),
+        "Reduction intensite", "", cl$success,
+        tooltip = "Reduction de l'intensite carbone = (intensite_before - intensite_after) / intensite_before x 100."),
+      kpi_card(sprintf("%.0f", impact$equiv_car_km),
+        "Equiv. voiture", "km", "#22d3ee",
+        tooltip = "Kilometres de voiture thermique equivalents au CO2 evite. Facteur : 120 gCO2/km (EU WLTP 2024)."),
+      kpi_card(sprintf("%.1f", impact$equiv_trees_year),
+        "Equiv. arbres", "/an", "#fbbf24",
+        tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite en 1 an. Facteur : 25 kg CO2/arbre/an (FAO).")
     )
   })
 
@@ -2682,6 +2830,34 @@ sur 14 derniers jours    meilleur       ca continue"),
       ) %>%
       pl_layout(xlab = "Capacite batterie (kWh)", ylab = "Facture nette (EUR/an)")
   })
+
+  # ----------------------------------------------------------
+  # CSV Export
+  # ----------------------------------------------------------
+  output$has_sim_result <- reactive({ !is.null(tryCatch(sim_result(), error = function(e) NULL)) })
+  outputOptions(output, "has_sim_result", suspendWhenHidden = FALSE)
+
+  output$download_csv <- downloadHandler(
+    filename = function() {
+      paste0("pac_optimizer_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+    },
+    content = function(file) {
+      req(sim_filtered())
+      sim <- sim_filtered()
+      export <- sim %>% select(
+        timestamp, t_ext, pv_kwh, prix_offtake, prix_injection,
+        conso_hors_pac, soutirage_estime_kwh,
+        t_ballon_baseline = t_ballon, offtake_baseline = offtake_kwh, injection_baseline = intake_kwh,
+        t_ballon_opti = sim_t_ballon, offtake_opti = sim_offtake, injection_opti = sim_intake,
+        pac_on_opti = sim_pac_on, cop_opti = sim_cop, decision = decision_raison
+      )
+      if (!is.null(sim$batt_soc)) {
+        export$batt_soc <- sim$batt_soc
+        export$batt_flux <- sim$batt_flux
+      }
+      write.csv(export, file, row.names = FALSE)
+    }
+  )
 }
 
 shinyApp(ui, server)
