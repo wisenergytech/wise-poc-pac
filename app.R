@@ -1726,8 +1726,7 @@ sur 14 derniers jours    meilleur       ca continue"),
         showNotification(sprintf("Serie 3 (unite %s) placee sur l'axe gauche par defaut", unit3),
           type = "warning", duration = 3)
       }
-      p <- p %>% add_trace(y = df_agg[[v3]], type = "scatter", mode = "lines",
-        name = label3, line = list(color = col3, width = 2, dash = "dot"), yaxis = axe3)
+      p <- p %>% add_smart_trace(df_agg[[v3]], v3, label3, col3, axe3, dash = "dot")
     }
 
     p %>% layout(
@@ -1737,7 +1736,8 @@ sur 14 derniers jours    meilleur       ca continue"),
       yaxis2 = list(title = label2, overlaying = "y", side = "right",
         tickfont = list(color = cl$accent3), titlefont = list(color = cl$accent3),
         gridcolor = "rgba(0,0,0,0)"),
-      hovermode = "x unified"
+      hovermode = "x unified",
+      barmode = "group"
     ) %>%
       pl_layout()
   })
