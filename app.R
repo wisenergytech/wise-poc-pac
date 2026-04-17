@@ -26,6 +26,7 @@ source("R/optimizer_milp.R", local = TRUE)
 source("R/optimizer_lp.R", local = TRUE)
 source("R/optimizer_qp.R", local = TRUE)
 source("R/openmeteo.R", local = TRUE)
+source("R/co2_elia.R", local = TRUE)
 
 # Charger les variables d'environnement depuis .env
 if (file.exists(".env")) {
@@ -772,6 +773,9 @@ ui <- page_fillable(
             1, 24, 24, step = 1, post = "h"),
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
             HTML("LP = rapide, des blocs de 24h sont recommandes"))),
+        conditionalPanel("input.approche=='optimiseur' || input.approche=='optimiseur_lp'",
+          sliderInput("slack_penalty", tags$span("Penalite T_min (EUR/C)", tip("Cout de violation de T_min par degre par quart d'heure. Plus bas = l'optimiseur explore des temperatures proches de T_min (meilleur COP, plus d'economies). Plus haut = respect strict de T_min. A 2.5 EUR/C, l'optimiseur accepte de descendre legerement sous T_min si le gain economique le justifie.")),
+            0.5, 20, 2.5, step = 0.5, post = " EUR/C")),
         conditionalPanel("input.approche=='optimiseur_qp'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
             HTML("Optimisation <b>QP</b> (quadratique convexe, CVXR) : minimise le cout <i>et</i> penalise les ecarts de temperature a la consigne + les variations brusques de charge PAC. Resultat plus confortable et plus lisse.")),
@@ -878,6 +882,20 @@ ui <- page_fillable(
             card_body(plotlyOutput("plot_waterfall", height = "300px"))),
           card(full_screen = TRUE, card_header("Bilan mensuel"),
             card_body(DTOutput("table_mensuel"))))),
+      nav_panel(title = "Impact CO2", icon = icon("leaf"),
+        layout_columns(col_widths = 12,
+          uiOutput("co2_kpi_row")),
+        layout_columns(col_widths = 12,
+          card(full_screen = TRUE, card_header("Impact CO2 horaire — baseline vs optimise"),
+            card_body(plotlyOutput("plot_co2_hourly", height = "350px")))),
+        layout_columns(col_widths = c(6, 6),
+          card(full_screen = TRUE, card_header("CO2 evite cumule"),
+            card_body(plotlyOutput("plot_co2_cumul", height = "300px"))),
+          card(full_screen = TRUE, card_header("Heatmap intensite CO2 du reseau"),
+            card_body(plotlyOutput("plot_co2_heatmap", height = "300px")))),
+        layout_columns(col_widths = 12,
+          tags$div(style = sprintf("font-size:.75rem;color:%s;padding:4px 8px;", cl$text_muted),
+            uiOutput("co2_data_source")))),
       nav_panel(title = "Details", icon = icon("magnifying-glass"),
         layout_columns(col_widths = 12,
           card(full_screen = TRUE, card_header("PAC — baseline vs optimise (timeline)"),
@@ -1276,6 +1294,7 @@ sur 14 derniers jours    meilleur       ca continue"),
       batt_soc_min = input$batt_soc_range[1] / 100,
       batt_soc_max = input$batt_soc_range[2] / 100,
       poids_cout = 0.5,
+      slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
       optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 4)
   })
   
@@ -1448,8 +1467,9 @@ sur 14 derniers jours    meilleur       ca continue"),
     message(sprintf("[PARAMS] PV=%s kWc (ref=%s) | PAC=%s kW COP=%s | Ballon=%s L [%s..%s]C consigne=%s",
       p$pv_kwc, p$pv_kwc_ref, p$p_pac_kw, p$cop_nominal,
       p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne))
-    message(sprintf("[PARAMS] Contrat=%s | Batterie=%s | Bloc opti=%sh",
-      contrat, batt, if (!is.null(p$optim_bloc_h)) p$optim_bloc_h else "n/a"))
+    message(sprintf("[PARAMS] Contrat=%s | Batterie=%s | Bloc opti=%sh | Penalite slack=%s EUR/C",
+      contrat, batt, if (!is.null(p$optim_bloc_h)) p$optim_bloc_h else "n/a",
+      if (!is.null(p$slack_penalty)) p$slack_penalty else "n/a"))
     if (mode == "optimizer_qp") {
       message(sprintf("[PARAMS] QP poids: confort=%s lissage=%s", p$qp_w_comfort, p$qp_w_smooth))
     }
@@ -1682,8 +1702,8 @@ sur 14 derniers jours    meilleur       ca continue"),
       line_tag("RUN ", as.character(header)),
       line_tag("DIM ", sprintf("PV=<b>%s kWc</b> (ref=%s) &middot; PAC=<b>%s kW</b> COP=%s &middot; Ballon=<b>%s L</b> [%s..%s]&deg;C consigne=%s",
         p$pv_kwc, p$pv_kwc_ref, p$p_pac_kw, p$cop_nominal, p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne)),
-      line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b>",
-        contrat, batt, bloc, thermostat, input$data_source))
+      line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b>",
+        contrat, batt, bloc, if (!is.null(input$slack_penalty)) input$slack_penalty else "n/a", thermostat, input$data_source))
     )
   })
   outputOptions(output, "status_bar", suspendWhenHidden = FALSE)
@@ -1984,8 +2004,158 @@ sur 14 derniers jours    meilleur       ca continue"),
     datatable(m, rownames = FALSE, options = list(dom = "t", pageLength = 13), class = "compact") %>%
       formatStyle("Economie", color = styleInterval(0, c(cl$danger, cl$success)), fontWeight = "bold")
   })
-  
-  
+
+
+  # ---- IMPACT CO2 ----
+
+  # Reactive: fetch CO2 intensity once per simulation run
+  co2_data <- reactive({
+    req(sim_filtered())
+    sim <- sim_filtered()
+    start_d <- min(sim$timestamp, na.rm = TRUE)
+    end_d   <- max(sim$timestamp, na.rm = TRUE)
+    fetch_co2_intensity(start_d, end_d)
+  })
+
+  # Reactive: compute CO2 impact
+  co2_impact <- reactive({
+    req(sim_filtered(), co2_data())
+    sim <- sim_filtered()
+    co2_raw <- co2_data()
+    co2_15min <- interpolate_co2_15min(co2_raw$df, sim$timestamp)
+    compute_co2_impact(sim, co2_15min)
+  })
+
+  # KPI row
+  output$co2_kpi_row <- renderUI({
+    req(co2_impact())
+    impact <- co2_impact()
+
+    kpi <- function(v, l, u, c) tags$div(class = "text-center",
+      tags$div(class = "kpi-value", style = sprintf("color:%s;", c), v, tags$span(class = "kpi-unit", u)),
+      tags$div(class = "kpi-label", l))
+
+    co2_col <- "#34d399"  # vert
+    layout_columns(col_widths = c(3, 3, 3, 3), style = "margin-bottom:12px;",
+      kpi(sprintf("%.1f", impact$co2_saved_kg), "CO2 evite", "kg", co2_col),
+      kpi(sprintf("%.1f", impact$co2_pct_reduction), "Reduction intensite", "%", co2_col),
+      kpi(sprintf("%.0f", impact$equiv_car_km), "Equivalent voiture", "km", "#22d3ee"),
+      kpi(sprintf("%.1f", impact$equiv_trees_year), "Equivalent arbres", "/an", "#fbbf24")
+    )
+  })
+
+  # Hourly CO2 impact chart (bars = saved/added, line = intensity)
+  output$plot_co2_hourly <- renderPlotly({
+    req(sim_filtered(), co2_impact())
+    sim <- sim_filtered()
+    impact <- co2_impact()
+
+    d <- sim %>%
+      mutate(
+        co2_saved_g   = impact$co2_saved_g,
+        co2_intensity = impact$co2_intensity,
+        h = floor_date(timestamp, "hour")
+      ) %>%
+      group_by(h) %>%
+      summarise(
+        co2_saved_g   = sum(co2_saved_g, na.rm = TRUE),
+        co2_intensity = mean(co2_intensity, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      rename(timestamp = h)
+
+    bar_colors <- ifelse(d$co2_saved_g >= 0, cl$success, cl$danger)
+
+    plot_ly(d, x = ~timestamp) %>%
+      add_bars(y = ~co2_saved_g, name = "CO2 evite (g)",
+        marker = list(color = bar_colors)) %>%
+      add_trace(y = ~co2_intensity, type = "scatter", mode = "lines",
+        name = "Intensite reseau (gCO2/kWh)", yaxis = "y2",
+        line = list(color = cl$accent3, width = 1.5, dash = "dot")) %>%
+      pl_layout(ylab = "CO2 evite (g)") %>%
+      layout(
+        yaxis2 = list(
+          title = "gCO2eq/kWh", overlaying = "y", side = "right",
+          gridcolor = "transparent", tickfont = list(size = 10, color = cl$accent3),
+          titlefont = list(color = cl$accent3, size = 11)
+        ),
+        barmode = "relative"
+      )
+  })
+
+  # Cumulative CO2 saved
+  output$plot_co2_cumul <- renderPlotly({
+    req(sim_filtered(), co2_impact())
+    sim <- sim_filtered()
+    impact <- co2_impact()
+
+    d <- sim %>%
+      mutate(co2_cumul_kg = impact$co2_saved_cumul_kg) %>%
+      select(timestamp, co2_cumul_kg)
+
+    plot_ly(d, x = ~timestamp, y = ~co2_cumul_kg, type = "scatter", mode = "lines",
+      name = "CO2 evite cumule",
+      fill = "tozeroy", fillcolor = "rgba(52,211,153,0.15)",
+      line = list(color = cl$success, width = 2)) %>%
+      pl_layout(ylab = "kg CO2eq evite")
+  })
+
+  # CO2 intensity heatmap (day x hour)
+  output$plot_co2_heatmap <- renderPlotly({
+    req(sim_filtered(), co2_impact())
+    sim <- sim_filtered()
+    impact <- co2_impact()
+
+    d <- sim %>%
+      mutate(
+        co2_intensity = impact$co2_intensity,
+        jour = as.Date(timestamp),
+        h = hour(timestamp)
+      ) %>%
+      group_by(jour, h) %>%
+      summarise(co2 = mean(co2_intensity, na.rm = TRUE), .groups = "drop")
+
+    mat <- d %>%
+      tidyr::pivot_wider(names_from = h, values_from = co2) %>%
+      arrange(jour)
+
+    jours  <- mat$jour
+    heures <- as.integer(colnames(mat)[-1])
+    z_mat  <- as.matrix(mat[, -1])
+
+    txt_mat <- matrix(
+      paste0(rep(format(jours, "%d %b"), each = length(heures)), " ", rep(heures, length(jours)), "h\n",
+             round(as.vector(t(z_mat)), 0), " gCO2/kWh"),
+      nrow = length(jours), ncol = length(heures), byrow = TRUE)
+
+    # Echelle : vert (bas carbone) → rouge (haut carbone)
+    cs <- list(c(0, "#065f46"), c(0.3, "#34d399"), c(0.5, "#fbbf24"), c(0.8, "#f97316"), c(1, "#dc2626"))
+
+    plot_ly(x = heures, y = jours, z = z_mat, type = "heatmap",
+      colorscale = cs, hoverinfo = "text", text = txt_mat,
+      colorbar = list(title = list(text = "gCO2/kWh", font = list(color = cl$text_muted, size = 9)),
+        tickfont = list(color = cl$text_muted, size = 9))) %>%
+      pl_layout(xlab = "Heure", ylab = NULL)
+  })
+
+  # Source de donnees
+  output$co2_data_source <- renderUI({
+    req(co2_data())
+    src <- co2_data()$source
+    label <- switch(src,
+      api_historical    = "Elia ODS192 (historique, consumption-based)",
+      api_realtime      = "Elia ODS191 (temps reel, consumption-based)",
+      api_generation_mix = "Elia ODS201 (calcule depuis le mix de generation)",
+      fallback          = "Profil synthetique (moyennes belges 2024)"
+    )
+    icon_name <- if (src == "fallback") "triangle-exclamation" else "circle-check"
+    icon_col  <- if (src == "fallback") cl$danger else cl$success
+    tags$span(
+      tags$i(class = paste0("fa fa-", icon_name), style = sprintf("color:%s;", icon_col)),
+      sprintf(" Source CO2 : %s", label)
+    )
+  })
+
   # ---- Batterie SoC ----
   output$plot_batterie <- renderPlotly({
     req(sim_filtered()); sim <- sim_filtered(); p <- params_r()

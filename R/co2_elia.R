@@ -1,0 +1,321 @@
+# =============================================================================
+# MODULE CO2 ELIA — Intensite carbone du reseau electrique belge
+# =============================================================================
+# Recupere l'intensite CO2 horaire depuis Elia Open Data (API publique) :
+#   - ODS192 : historique consumption-based (jusqu'a ~Dec 2025)
+#   - ODS191 : temps reel consumption-based
+#   - ODS201 : mix de generation → production-based (calcul via facteurs IPCC)
+#   - Fallback : profil synthetique belge (moyennes horaires 2024)
+#
+# Methodologie : GHG Protocol Scope 2 (consumption-based quand disponible)
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Profil fallback : intensite CO2 horaire typique belge (gCO2eq/kWh)
+# Consumption-based (imports inclus). Source : Elia ODS192 moyennes 2024.
+# Index = heure UTC (0-23).
+# ---------------------------------------------------------------------------
+FALLBACK_CO2_PROFILE <- c(
+  130, 125, 120, 115, 115, 118,   # 00-05h : nucleaire + eolien dominant
+  145, 185, 215, 228, 222, 205,   # 06-11h : montee matin, gaz en marginal
+  192, 182, 172, 178, 192, 218,   # 12-17h : solaire reduit midi, remontee
+  242, 252, 232, 202, 173, 148    # 18-23h : pointe soir, puis decline
+)
+
+# ---------------------------------------------------------------------------
+# Facteurs d'emission lifecycle IPCC par type de combustible (gCO2eq/kWh)
+# Source : IPCC AR5 Annex II + mapping ENTSO-E
+# ---------------------------------------------------------------------------
+IPCC_EMISSION_FACTORS <- c(
+  "Nuclear"                        = 12.0,
+  "Wind Onshore"                   = 11.0,
+  "Wind Offshore"                  = 12.0,
+  "Solar"                          = 41.0,
+  "Hydro Run-of-river and poundage" = 4.0,
+  "Hydro Pumped Storage"           = 30.0,
+  "Fossil Gas"                     = 490.0,
+  "Fossil Oil"                     = 650.0,
+  "Biomass"                        = 230.0,
+  "Waste"                          = 350.0,
+  "Energy Storage"                 = 0.0,
+  "Other"                          = 300.0
+)
+
+# Constantes d'equivalence
+CO2_CAR_KM_FACTOR  <- 120   # gCO2/km, EU WLTP 2024
+CO2_TREE_KG_YEAR   <- 25    # kg CO2/arbre/an, FAO
+
+ELIA_BASE_URL <- "https://opendata.elia.be/api/explore/v2.1/catalog/datasets"
+ELIA_PAGE_SIZE <- 100
+ELIA_TIMEOUT <- 12
+
+# ---------------------------------------------------------------------------
+# Fetch principal : essaie ODS192, ODS191, ODS201, puis fallback
+# ---------------------------------------------------------------------------
+#' Recupere l'intensite CO2 horaire pour une plage de dates
+#'
+#' @param start_date Date de debut
+#' @param end_date Date de fin
+#' @return list(df = tibble(datetime, co2_g_per_kwh), source = character)
+fetch_co2_intensity <- function(start_date, end_date) {
+
+  start_date <- as.POSIXct(paste0(as.Date(start_date), " 00:00:00"), tz = "UTC")
+  end_date   <- as.POSIXct(paste0(as.Date(end_date),   " 23:59:59"), tz = "UTC")
+
+  # 1. Historique consumption-based (ODS192)
+  df <- fetch_elia_co2_dataset("ods192", start_date, end_date)
+  if (!is.null(df) && nrow(df) > 0) {
+    message(sprintf("[CO2 Elia] ODS192 : %d enregistrements", nrow(df)))
+    return(list(df = df, source = "api_historical"))
+  }
+
+  # 2. Temps reel consumption-based (ODS191)
+  df <- fetch_elia_co2_dataset("ods191", start_date, end_date)
+  if (!is.null(df) && nrow(df) > 0) {
+    message(sprintf("[CO2 Elia] ODS191 : %d enregistrements", nrow(df)))
+    return(list(df = df, source = "api_realtime"))
+  }
+
+  # 3. Production-based depuis mix de generation (ODS201)
+  df <- fetch_co2_from_generation(start_date, end_date)
+  if (!is.null(df) && nrow(df) > 0) {
+    message(sprintf("[CO2 Elia] ODS201 (calcule) : %d enregistrements", nrow(df)))
+    return(list(df = df, source = "api_generation_mix"))
+  }
+
+  # 4. Fallback synthetique
+  message("[CO2 Elia] Fallback : profil synthetique belge")
+  df <- build_fallback_co2(start_date, end_date)
+  return(list(df = df, source = "fallback"))
+}
+
+# ---------------------------------------------------------------------------
+# Fetch pagine depuis un dataset Elia (ODS192 ou ODS191)
+# ---------------------------------------------------------------------------
+fetch_elia_co2_dataset <- function(dataset_id, start_date, end_date) {
+  tryCatch({
+    start_str <- format(start_date, "%Y-%m-%dT%H:%M:%S")
+    end_str   <- format(end_date,   "%Y-%m-%dT%H:%M:%S")
+    url <- sprintf("%s/%s/records", ELIA_BASE_URL, dataset_id)
+
+    all_records <- list()
+    offset <- 0
+
+    repeat {
+      resp <- httr::GET(url,
+        query = list(
+          limit    = ELIA_PAGE_SIZE,
+          offset   = offset,
+          order_by = "datetime",
+          where    = sprintf('datetime >= "%s" AND datetime <= "%s"', start_str, end_str),
+          select   = "datetime,consumption"
+        ),
+        httr::timeout(ELIA_TIMEOUT)
+      )
+
+      if (httr::status_code(resp) != 200) return(NULL)
+
+      data <- httr::content(resp, as = "parsed", simplifyVector = TRUE)
+      records <- data$results
+      if (is.null(records) || length(records) == 0 || nrow(records) == 0) break
+
+      all_records[[length(all_records) + 1]] <- records
+      total <- data$total_count %||% 0
+      offset <- offset + nrow(records)
+      if (offset >= total) break
+    }
+
+    if (length(all_records) == 0) return(NULL)
+
+    df <- dplyr::bind_rows(all_records)
+    df$datetime <- as.POSIXct(sub("[+-]\\d{2}:\\d{2}$", "", df$datetime),
+                              format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
+    df$datetime <- lubridate::floor_date(df$datetime, "hour")
+    df <- df %>%
+      dplyr::rename(co2_g_per_kwh = consumption) %>%
+      dplyr::select(datetime, co2_g_per_kwh) %>%
+      dplyr::filter(!is.na(co2_g_per_kwh)) %>%
+      dplyr::distinct(datetime, .keep_all = TRUE) %>%
+      dplyr::arrange(datetime)
+
+    if (nrow(df) == 0) return(NULL)
+    df
+  }, error = function(e) {
+    message(sprintf("[CO2 Elia] Erreur %s : %s", dataset_id, e$message))
+    NULL
+  })
+}
+
+# ---------------------------------------------------------------------------
+# Calcul production-based depuis le mix de generation (ODS201)
+# ---------------------------------------------------------------------------
+fetch_co2_from_generation <- function(start_date, end_date) {
+  tryCatch({
+    start_str <- format(start_date, "%Y-%m-%dT%H:%M:%S")
+    end_str   <- format(end_date,   "%Y-%m-%dT%H:%M:%S")
+    url <- sprintf("%s/ods201/records", ELIA_BASE_URL)
+
+    where_clause <- sprintf(
+      'datetime >= "%s" AND datetime <= "%s" AND resolutioncode = "PT15M"',
+      start_str, end_str
+    )
+
+    all_records <- list()
+    offset <- 0
+
+    repeat {
+      resp <- httr::GET(url,
+        query = list(
+          limit    = ELIA_PAGE_SIZE,
+          offset   = offset,
+          order_by = "datetime",
+          where    = where_clause,
+          select   = "datetime,fueltypeentsoe,generatedpower"
+        ),
+        httr::timeout(ELIA_TIMEOUT)
+      )
+
+      if (httr::status_code(resp) != 200) return(NULL)
+
+      data <- httr::content(resp, as = "parsed", simplifyVector = TRUE)
+      records <- data$results
+      if (is.null(records) || length(records) == 0 || nrow(records) == 0) break
+
+      all_records[[length(all_records) + 1]] <- records
+      total <- data$total_count %||% 0
+      offset <- offset + nrow(records)
+      if (offset >= total) break
+    }
+
+    if (length(all_records) == 0) return(NULL)
+
+    df <- dplyr::bind_rows(all_records)
+    df$datetime <- as.POSIXct(sub("[+-]\\d{2}:\\d{2}$", "", df$datetime),
+                              format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
+    df$datetime <- lubridate::floor_date(df$datetime, "hour")
+    df$generatedpower <- as.numeric(df$generatedpower)
+    df <- df %>% dplyr::filter(!is.na(generatedpower), generatedpower > 0)
+
+    if (nrow(df) == 0) return(NULL)
+
+    # Appliquer les facteurs d'emission IPCC
+    df$ef <- IPCC_EMISSION_FACTORS[df$fueltypeentsoe]
+    df$ef[is.na(df$ef)] <- 300.0  # facteur par defaut
+    df$co2_g <- df$generatedpower * df$ef
+
+    # Moyenne ponderee par heure
+    hourly <- df %>%
+      dplyr::group_by(datetime) %>%
+      dplyr::summarise(
+        co2_g_per_kwh = sum(co2_g) / sum(generatedpower),
+        .groups = "drop"
+      ) %>%
+      dplyr::filter(!is.na(co2_g_per_kwh)) %>%
+      dplyr::arrange(datetime)
+
+    if (nrow(hourly) == 0) return(NULL)
+    hourly
+  }, error = function(e) {
+    message(sprintf("[CO2 Elia] Erreur ODS201 : %s", e$message))
+    NULL
+  })
+}
+
+# ---------------------------------------------------------------------------
+# Profil fallback synthetique
+# ---------------------------------------------------------------------------
+build_fallback_co2 <- function(start_date, end_date) {
+  hours <- seq(
+    from = lubridate::floor_date(start_date, "hour"),
+    to   = lubridate::floor_date(end_date, "hour"),
+    by   = "1 hour"
+  )
+  # Heure UTC pour indexer le profil
+  h_utc <- as.integer(format(hours, "%H"))
+  tibble::tibble(
+    datetime      = hours,
+    co2_g_per_kwh = FALLBACK_CO2_PROFILE[h_utc + 1]
+  )
+}
+
+# ---------------------------------------------------------------------------
+# Interpolation horaire → 15 min
+# ---------------------------------------------------------------------------
+#' Interpole l'intensite CO2 horaire au pas de 15 min
+#'
+#' @param co2_hourly tibble avec colonnes datetime et co2_g_per_kwh (horaire, UTC)
+#' @param ts_15min Vecteur de timestamps au pas de 15 min (Europe/Brussels)
+#' @return Vecteur d'intensite CO2 interpolee (meme longueur que ts_15min)
+interpolate_co2_15min <- function(co2_hourly, ts_15min) {
+  # Convertir en numerique pour approx()
+  x_hourly <- as.numeric(co2_hourly$datetime)
+  y_hourly <- co2_hourly$co2_g_per_kwh
+
+  # Convertir timestamps 15min en UTC pour alignement
+  x_target <- as.numeric(lubridate::with_tz(ts_15min, "UTC"))
+
+  result <- approx(x_hourly, y_hourly, xout = x_target, rule = 2)$y
+
+  # Remplacer NA par la mediane
+  if (any(is.na(result))) {
+    med <- median(y_hourly, na.rm = TRUE)
+    result[is.na(result)] <- med
+  }
+
+  round(result, 1)
+}
+
+# ---------------------------------------------------------------------------
+# Calcul d'impact CO2 : baseline vs optimise
+# ---------------------------------------------------------------------------
+#' Calcule l'impact CO2 de l'optimisation
+#'
+#' @param sim DataFrame de simulation avec offtake_kwh, sim_offtake, timestamp
+#' @param co2_15min Vecteur d'intensite CO2 au pas 15 min (gCO2eq/kWh)
+#' @return list avec les KPIs et vecteurs horaires
+compute_co2_impact <- function(sim, co2_15min) {
+
+  # CO2 par quart d'heure (gCO2eq)
+  co2_baseline_g <- sim$offtake_kwh * co2_15min
+  co2_opti_g     <- sim$sim_offtake * co2_15min
+  co2_saved_g    <- co2_baseline_g - co2_opti_g
+
+  # Cumul en kg
+  co2_saved_cumul_kg <- cumsum(co2_saved_g) / 1000
+
+  # KPIs agreges
+  total_baseline_kwh <- sum(sim$offtake_kwh, na.rm = TRUE)
+  total_opti_kwh     <- sum(sim$sim_offtake, na.rm = TRUE)
+
+  intensity_before <- if (total_baseline_kwh > 0) {
+    sum(co2_baseline_g, na.rm = TRUE) / total_baseline_kwh
+  } else 0
+
+  intensity_after <- if (total_opti_kwh > 0) {
+    sum(co2_opti_g, na.rm = TRUE) / total_opti_kwh
+  } else 0
+
+  co2_saved_kg <- sum(co2_saved_g, na.rm = TRUE) / 1000
+
+  co2_pct_reduction <- if (intensity_before > 0) {
+    (intensity_before - intensity_after) / intensity_before * 100
+  } else 0
+
+  # Equivalences
+  equiv_car_km    <- co2_saved_kg * 1000 / CO2_CAR_KM_FACTOR
+  equiv_trees_year <- co2_saved_kg / CO2_TREE_KG_YEAR
+
+  list(
+    co2_saved_kg       = co2_saved_kg,
+    co2_pct_reduction  = co2_pct_reduction,
+    intensity_before   = intensity_before,
+    intensity_after    = intensity_after,
+    equiv_car_km       = equiv_car_km,
+    equiv_trees_year   = equiv_trees_year,
+    co2_baseline_g     = co2_baseline_g,
+    co2_opti_g         = co2_opti_g,
+    co2_saved_g        = co2_saved_g,
+    co2_saved_cumul_kg = co2_saved_cumul_kg,
+    co2_intensity      = co2_15min
+  )
+}
