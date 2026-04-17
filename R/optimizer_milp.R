@@ -130,8 +130,9 @@ solve_block <- function(block_data, params, t_init, soc_init = NULL, prix_termin
 
   # Precalculations
   pac_qt <- params$p_pac_kw * params$dt_h            # kWh electrical per qt
-  # COP linearized around T_consigne (T_ballon is a decision variable, can't be used directly)
-  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
+  # COP: use override if provided (iterative COP), else linearize around T_consigne
+  cop <- if (!is.null(params$cop_override)) params$cop_override
+         else calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
   chaleur_pac <- pac_qt * cop                         # kWh thermal per qt
   cap <- params$capacite_kwh_par_degre                # kWh per degree
 
@@ -184,8 +185,8 @@ solve_block <- function(block_data, params, t_init, soc_init = NULL, prix_termin
   model <- model |>
     add_variable(slack[t], t = 1:n, lb = 0)
 
-  # Penalty: 10 EUR per degree below T_min per qt (much larger than any price)
-  penalty <- 10
+  # Penalty: EUR per degree below T_min per qt (user-configurable)
+  penalty <- if (!is.null(params$slack_penalty)) params$slack_penalty else 2.5
 
   # ----------------------------------------------------------
   # Objective: minimize net electricity cost + slack penalty - terminal value
@@ -364,19 +365,33 @@ run_optimization_milp <- function(df, params) {
       )
     }
 
-    # No terminal value needed — overlap provides natural lookahead
-    prix_terminal_per_deg <- 0
+    # Last block has no lookahead beyond data — use average price of current block as terminal value
+    if (i_lookahead_end == i_end) {
+      cop_moyen <- mean(calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop))
+      prix_moyen <- mean(block_data$prix_offtake, na.rm = TRUE)
+      prix_terminal_per_deg <- params$capacite_kwh_par_degre / max(cop_moyen, 1) * prix_moyen
+    } else {
+      prix_terminal_per_deg <- 0  # overlap provides natural lookahead
+    }
 
     if (nrow(block_data) < 2) {
       block_result <- baseline_fallback(df[i_start:i_end, ])
     } else {
-      full_result <- solve_block(block_data, params, t_init, soc_init, prix_terminal_per_deg)
+      # Iterative COP: solve, get T trajectory, update COP, re-solve
+      params_iter <- params
+      full_result <- NULL
+      for (cop_iter in 1:2) {
+        full_result <- solve_block(block_data, params_iter, t_init, soc_init, prix_terminal_per_deg)
+        if (is.null(full_result) || cop_iter == 2) break
+        # Update COP based on solved T_ballon trajectory
+        t_bal_solved <- full_result$sim_t_ballon
+        params_iter$cop_override <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = t_bal_solved)
+      }
 
       if (is.null(full_result)) {
         message(sprintf("[Optimizer] Block %d infeasible, fallback to baseline", b))
         block_result <- baseline_fallback(df[i_start:i_end, ])
       } else {
-        # Keep only the executed portion (first n_execute rows)
         block_result <- full_result[1:n_execute, ]
       }
     }

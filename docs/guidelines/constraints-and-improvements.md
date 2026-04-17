@@ -470,3 +470,104 @@ Par ordre d'impact :
 
 6. **PV correctement dimensionne** — assez de surplus pour remplir le ballon
    pendant les heures de production gratuite.
+
+## 8. Ameliorations complementaires (IMPLEMENTEES)
+
+### 8.1 Valeur terminale sur le dernier bloc
+
+Le dernier bloc n'a pas de lookahead (pas de donnees au-dela). Sans valeur
+terminale, l'optimiseur vide le ballon a T_min en fin de simulation (aucun
+cout associe a la perte d'energie stockee).
+
+**Fix** : pour le dernier bloc uniquement (`i_lookahead_end == i_end`), la
+valeur terminale est calculee avec le prix moyen du bloc lui-meme :
+
+```
+prix_terminal_per_deg = capacite_kwh_par_degre / COP_moyen * prix_offtake_moyen
+```
+
+Les blocs intermediaires continuent a utiliser le lookahead (overlap).
+
+### 8.2 Anti-simultaneite batterie LP/QP
+
+Le MILP utilise une variable binaire `batt_ch[t]` pour empecher charge et
+decharge simultanees. Le LP et QP n'avaient aucune contrainte equivalente.
+
+**Fix** : ajout d'une relaxation lineaire dans LP et QP :
+
+```
+charge[t] + decharge[t] <= batt_pw
+```
+
+Cela empeche de charger et decharger a pleine puissance simultanement.
+Ce n'est pas aussi strict que la contrainte binaire du MILP (charge partielle
++ decharge partielle reste possible) mais elimine les cas abusifs.
+
+### 8.3 Penalite slack configurable
+
+La penalite de violation de T_min etait fixee a 10 EUR/C dans le code.
+
+**Fix** : slider dans l'UI (visible pour MILP et LP), valeur par defaut
+2.5 EUR/C. Une penalite plus basse permet a l'optimiseur d'explorer des
+temperatures proches de T_min ou le COP est meilleur, augmentant les economies.
+Une penalite trop basse risque de causer des violations de confort.
+
+### 8.4 COP iteratif
+
+Les optimiseurs linearisent le COP autour de T_consigne. Mais la solution
+optimale peut maintenir le ballon a des temperatures differentes.
+
+**Fix** : boucle de 2 iterations dans chaque optimiseur :
+1. Resoudre avec COP linearise a T_consigne
+2. Extraire la trajectoire T_ballon de la solution
+3. Recalculer COP(T_ext, T_ballon_resolu) → `cop_override`
+4. Re-resoudre avec le COP corrige
+
+Le COP de la 2e iteration reflete mieux la realite. L'optimiseur exploite
+le gain de COP aux temperatures basses.
+
+### 8.5 ECS parametre utilisateur
+
+Le soutirage ECS etait calcule automatiquement (`p_pac_kw / 2 * reference`).
+Pour des installations specifiques, cette estimation peut etre fausse.
+
+**Fix** : champ `numericInput` dans la sidebar permettant de specifier la
+demande ECS en kWh_th/jour. Si vide, l'estimation automatique est utilisee.
+
+### 8.6 Type de batiment pour le chauffage
+
+Le coefficient de deperdition thermique G etait derive automatiquement de
+la puissance PAC. Pour une meme puissance, un batiment passif et un batiment
+ancien ont des charges tres differentes.
+
+**Fix** : selecteur "Type de batiment" (visible pour PAC > 10 kW) avec
+trois profils :
+- Passif (G × 0.4) : tres bien isole
+- Standard RT2012 (G × 1.0) : construction recente
+- Ancien (G × 1.8) : peu isole
+
+### 8.7 Export CSV
+
+Bouton "Exporter CSV" disponible apres simulation. Exporte le dataframe
+filtre avec colonnes baseline et optimisees :
+- timestamp, t_ext, pv_kwh, prix_offtake, prix_injection
+- conso_hors_pac, soutirage_estime_kwh
+- t_ballon_baseline, offtake_baseline, injection_baseline
+- t_ballon_opti, offtake_opti, injection_opti
+- pac_on_opti, cop_opti, decision
+- batt_soc, batt_flux (si batterie active)
+
+### 8.8 Comparaison cote-a-cote des modes (A FAIRE)
+
+Lancer Smart + LP + MILP sur les memes donnees et afficher les 3 courbes
+sur le meme graphique. Permet de voir visuellement quel mode fait quoi.
+Non implemente — necessite une refonte UI significative.
+
+### 8.9 Scaling ECS corrige
+
+L'ECS etait proportionnel au volume du ballon (`volume / 200`). Avec le
+nouveau dimensionnement auto (36 100 L pour 60 kW), le facteur devenait
+180× — absurde. Les blocs d'optimisation devenaient infaisables.
+
+**Fix** : l'ECS scale desormais avec la puissance PAC (`p_pac_kw / 2`).
+Le volume du ballon est un choix de stockage, pas un indicateur de demande.

@@ -47,8 +47,9 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
 
   # Precalculations
   pac_qt <- params$p_pac_kw * params$dt_h
-  # COP linearized around T_consigne (T_ballon is a decision variable)
-  cop <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
+  # COP: use override if provided (iterative COP), else linearize around T_consigne
+  cop <- if (!is.null(params$cop_override)) params$cop_override
+         else calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
   chaleur_pac <- pac_qt * cop
   cap <- params$capacite_kwh_par_degre
 
@@ -84,7 +85,7 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
       add_variable(soc[t], t = 1:n, lb = soc_min_kwh, ub = soc_max_kwh)
   }
 
-  penalty <- 10  # EUR per degree below T_min per qt
+  penalty <- if (!is.null(params$slack_penalty)) params$slack_penalty else 2.5
 
   # ----------------------------------------------------------
   # Objective: minimize net electricity cost + slack penalty - terminal value
@@ -147,7 +148,9 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
       add_constraint(
         soc[t] == soc[t - 1] + chrg[t] * batt_eff - dischrg[t] / batt_eff,
         t = 2:n
-      )
+      ) |>
+      # Anti-simultaneity relaxation: can't charge and discharge at full power simultaneously
+      add_constraint(chrg[t] + dischrg[t] <= batt_pw, t = 1:n)
   }
 
   # ----------------------------------------------------------
@@ -238,12 +241,27 @@ run_optimization_lp <- function(df, params) {
       )
     }
 
-    prix_terminal_per_deg <- 0  # overlap provides natural lookahead
+    # Last block has no lookahead beyond data — use average price of current block as terminal value
+    if (i_lookahead_end == i_end) {
+      cop_moyen <- mean(calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop))
+      prix_moyen <- mean(block_data$prix_offtake, na.rm = TRUE)
+      prix_terminal_per_deg <- params$capacite_kwh_par_degre / max(cop_moyen, 1) * prix_moyen
+    } else {
+      prix_terminal_per_deg <- 0  # overlap provides natural lookahead
+    }
 
     if (nrow(block_data) < 2) {
       block_result <- baseline_fallback(df[i_start:i_end, ])
     } else {
-      full_result <- solve_block_lp(block_data, params, t_init, soc_init, prix_terminal_per_deg)
+      # Iterative COP: solve, get T trajectory, update COP, re-solve
+      params_iter <- params
+      full_result <- NULL
+      for (cop_iter in 1:2) {
+        full_result <- solve_block_lp(block_data, params_iter, t_init, soc_init, prix_terminal_per_deg)
+        if (is.null(full_result) || cop_iter == 2) break
+        t_bal_solved <- full_result$sim_t_ballon
+        params_iter$cop_override <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = t_bal_solved)
+      }
 
       if (is.null(full_result)) {
         message(sprintf("[LP Optimizer] Block %d infeasible, fallback to baseline", b))

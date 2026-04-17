@@ -1793,7 +1793,11 @@ sur 14 derniers jours    meilleur       ca continue"),
     offt_opti <- sum(sim$sim_offtake, na.rm = TRUE)
     ac_base   <- round((1 - inj_base / max(pv_tot, 1)) * 100, 1)
     ac_opti   <- round((1 - inj_opti / max(pv_tot, 1)) * 100, 1)
-    heures_pac <- round(sum(sim$sim_pac_on, na.rm = TRUE) * 0.25)
+    pac_qt <- p$p_pac_kw * p$dt_h
+    conso_pac_opti <- sum(sim$sim_pac_on * pac_qt, na.rm = TRUE)
+    # Bilan energetique baseline : PAC = soutirage + PV - injection - conso hors PAC
+    conso_pac_base <- sum(sim$offtake_kwh + sim$pv_kwh - sim$intake_kwh - sim$conso_hors_pac, na.rm = TRUE)
+    conso_pac_base <- max(0, conso_pac_base)
 
     kpis <- list(
       kpi_card(formatC(round(pv_tot), big.mark = " ", format = "d"),
@@ -1814,9 +1818,11 @@ sur 14 derniers jours    meilleur       ca continue"),
         baseline_val = inj_base, opti_val = inj_opti, gain_invert = TRUE,
         gain_val = round(inj_base - inj_opti), gain_unit = "kWh",
         tooltip = "Reduction de l'injection reseau. = injection baseline - injection optimise. Energie gardee sur place plutot que vendue a bas prix."),
-      kpi_card(heures_pac,
-        "Heures PAC", "h", cl$pac,
-        tooltip = "Heures de fonctionnement de la PAC (optimise). = nombre de quarts d'heure ou la PAC est active x 0.25.")
+      kpi_card(formatC(round(conso_pac_opti), big.mark = " ", format = "d"),
+        "Conso PAC", "kWh", cl$pac,
+        baseline_val = conso_pac_base, opti_val = conso_pac_opti, gain_invert = TRUE,
+        gain_val = round(conso_pac_opti - conso_pac_base), gain_unit = "kWh",
+        tooltip = "Consommation electrique de la PAC. Baseline = bilan energetique (soutirage + PV - injection - conso hors PAC). Optimise = somme(taux_charge x puissance x dt). Moins = meilleur pilotage ou meilleur COP.")
     )
 
     if (p$batterie_active && !is.null(sim$batt_flux)) {
