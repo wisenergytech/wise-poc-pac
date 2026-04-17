@@ -1034,18 +1034,31 @@ ui <- page_fillable(
               plotlyOutput("plot_compare", height = "480px"))))),
       nav_panel(title = "Contraintes", icon = icon("check-circle"),
         layout_columns(col_widths = 12,
-          card(full_screen = TRUE, card_header("Temperature ballon vs bornes de confort"),
-            card_body(uiOutput("cv_temp_summary"), plotlyOutput("plot_cv_temperature", height = "320px")))),
+          card(card_body(uiOutput("cv_scorecard")))),
         layout_columns(col_widths = 12,
-          card(full_screen = TRUE, card_header("Bilan energetique — residu (entrees - sorties)"),
-            card_body(uiOutput("cv_energy_summary"), plotlyOutput("plot_cv_energy_balance", height = "300px")))),
-        layout_columns(col_widths = 12,
-          card(full_screen = TRUE, card_header("Coherence thermique — delta T predit vs simule"),
-            card_body(plotlyOutput("plot_cv_thermal", height = "300px")))),
-        conditionalPanel("input.batterie_active",
-          layout_columns(col_widths = 12,
-            card(full_screen = TRUE, card_header("Batterie — SoC vs bornes + anti-simultaneite"),
-              card_body(uiOutput("cv_batt_summary"), plotlyOutput("plot_cv_battery", height = "320px")))))),
+          card(full_screen = TRUE,
+            card_header(
+              layout_columns(col_widths = c(6, 6),
+                selectInput("cv_check", NULL, choices = list(
+                  "Contraintes" = c(
+                    "Marge temperature vs bornes" = "marge_temp",
+                    "SOC batterie vs bornes" = "soc_bornes",
+                    "Charge/decharge simultanees" = "simult"),
+                  "Conservation (smoke tests)" = c(
+                    "Bilan electrique (residu)" = "bilan_elec",
+                    "Bilan thermique (residu)" = "bilan_therm",
+                    "Conservation energie totale" = "conserv_totale"),
+                  "Qualite optimisation" = c(
+                    "Prix effectif kWh thermique" = "prix_kwh_th",
+                    "Cout marginal baseline vs opti" = "cout_marginal"),
+                  "Validite physique" = c(
+                    "Puissance PAC vs capacite" = "puissance_pac",
+                    "Taux de variation T (dT/dt)" = "dt_dt",
+                    "COP realise vs theorique" = "cop_realise",
+                    "Autoconsommation PV" = "autoconso_pv")
+                ), selected = "bilan_elec"),
+                tags$div())),
+            card_body(plotlyOutput("plot_cv_main", height = "400px"))))),
     ) # fin navset_card_tab
   ) # fin layout_sidebar
 ) # fin page_fillable
@@ -1685,11 +1698,20 @@ sur 14 derniers jours    meilleur       ca continue"),
     # Couleurs : axe gauche (cyan/opti), axe droit (orange/accent3)
     # Serie 3 : meme axe qu'une des deux premieres selon l'unite
     # Couleur : variante (cyan2 ou accent2) pour la distinguer
+    # Barres pour les volumes (summable), lignes pour les grandeurs continues
+    add_smart_trace <- function(p, y_vals, var_name, label, color, yaxis, dash = NULL) {
+      if (var_name %in% summable) {
+        p %>% add_bars(y = y_vals, name = label,
+          marker = list(color = color, opacity = 0.7), yaxis = yaxis)
+      } else {
+        p %>% add_trace(y = y_vals, type = "scatter", mode = "lines",
+          name = label, line = list(color = color, width = 2, dash = dash), yaxis = yaxis)
+      }
+    }
+
     p <- plot_ly(df_agg, x = ~timestamp) %>%
-      add_trace(y = df_agg[[v1]], type = "scatter", mode = "lines",
-        name = label1, line = list(color = cl$opti, width = 2), yaxis = "y") %>%
-      add_trace(y = df_agg[[v2]], type = "scatter", mode = "lines",
-        name = label2, line = list(color = cl$accent3, width = 2), yaxis = "y2")
+      add_smart_trace(df_agg[[v1]], v1, label1, cl$opti, "y") %>%
+      add_smart_trace(df_agg[[v2]], v2, label2, cl$accent3, "y2")
 
     if (!is.na(v3)) {
       label3 <- names(compare_vars)[compare_vars == v3]
@@ -2396,151 +2418,231 @@ sur 14 derniers jours    meilleur       ca continue"),
 
 
 
-  # ---- CONTRAINTES : Temperature ballon vs bornes ----
-  output$plot_cv_temperature <- renderPlotly({
+  # ---- CONTRAINTES : Scorecard global (toujours visible) ----
+  output$cv_scorecard <- renderUI({
     req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
-    d <- sim %>% mutate(h = floor_date(timestamp, "hour")) %>%
-      group_by(h) %>%
-      summarise(t_bal = mean(sim_t_ballon, na.rm = TRUE), .groups = "drop") %>%
-      rename(timestamp = h) %>%
-      mutate(
-        violation_low  = ifelse(t_bal < p$t_min, t_bal, NA_real_),
-        violation_high = ifelse(t_bal > p$t_max, t_bal, NA_real_)
-      )
-    plot_ly(d, x = ~timestamp) %>%
-      add_trace(y = ~t_bal, type = "scatter", mode = "lines", name = "T ballon optimise",
-        line = list(color = cl$opti, width = 1.5)) %>%
-      add_trace(y = ~violation_low, type = "scatter", mode = "markers", name = "Violation T_min",
-        marker = list(color = cl$danger, size = 5, symbol = "circle"), hoverinfo = "x+y") %>%
-      add_trace(y = ~violation_high, type = "scatter", mode = "markers", name = "Violation T_max",
-        marker = list(color = "#f59e0b", size = 5, symbol = "diamond"), hoverinfo = "x+y") %>%
-      add_segments(x = min(d$timestamp), xend = max(d$timestamp), y = p$t_min, yend = p$t_min,
-        line = list(color = cl$danger, dash = "dash", width = 1), name = "T_min") %>%
-      add_segments(x = min(d$timestamp), xend = max(d$timestamp), y = p$t_max, yend = p$t_max,
-        line = list(color = "#f59e0b", dash = "dash", width = 1), name = "T_max") %>%
-      pl_layout(ylab = "Temperature (C)")
-  })
+    pac_qt <- p$p_pac_kw * p$dt_h
+    n_tot <- sum(!is.na(sim$sim_t_ballon))
 
-  output$cv_temp_summary <- renderUI({
-    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
+    # Temperature
     n_low  <- sum(sim$sim_t_ballon < p$t_min, na.rm = TRUE)
     n_high <- sum(sim$sim_t_ballon > p$t_max, na.rm = TRUE)
-    n_tot  <- sum(!is.na(sim$sim_t_ballon))
-    pct_ok <- round((1 - (n_low + n_high) / n_tot) * 100, 1)
-    col <- if (pct_ok >= 99) cl$success else if (pct_ok >= 95) "#f59e0b" else cl$danger
-    tags$div(style = sprintf("font-size:.82rem;color:%s;margin-bottom:6px;", cl$text_muted),
-      HTML(sprintf("Conformite : <b style='color:%s'>%s%%</b> &middot; Violations T_min : <b>%d qt</b> (%.1f h) &middot; Violations T_max : <b>%d qt</b> (%.1f h)",
-        col, pct_ok, n_low, n_low * 0.25, n_high, n_high * 0.25)))
-  })
+    pct_t <- round((1 - (n_low + n_high) / n_tot) * 100, 1)
+    col_t <- if (pct_t >= 99) cl$success else if (pct_t >= 95) "#f59e0b" else cl$danger
 
-  # ---- CONTRAINTES : Bilan energetique ----
-  output$plot_cv_energy_balance <- renderPlotly({
-    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
-    pac_qt <- p$p_pac_kw * p$dt_h
-    d <- sim %>% mutate(
-      entrees = pv_kwh + sim_offtake,
-      sorties = conso_hors_pac + sim_pac_on * pac_qt + sim_intake,
-      residu  = entrees - sorties
-    )
-    # Ajouter batterie si active
+    # Bilan electrique
+    res_e <- sim$pv_kwh + sim$sim_offtake - sim$conso_hors_pac - sim$sim_pac_on * pac_qt - sim$sim_intake
     if (p$batterie_active && !is.null(sim$batt_flux)) {
       batt_eff <- sqrt(p$batt_rendement)
-      d <- d %>% mutate(
-        entrees = entrees + pmax(0, -batt_flux) * batt_eff,
-        sorties = sorties + pmax(0, batt_flux),
-        residu  = entrees - sorties
-      )
+      res_e <- res_e + pmax(0, -sim$batt_flux) * batt_eff - pmax(0, sim$batt_flux)
     }
-    d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
-      group_by(h) %>%
-      summarise(residu = sum(residu, na.rm = TRUE), .groups = "drop") %>%
-      rename(timestamp = h)
-    plot_ly(d_h, x = ~timestamp) %>%
-      add_bars(y = ~residu, name = "Residu",
-        marker = list(color = ifelse(abs(d_h$residu) > 0.01, cl$danger, cl$success))) %>%
-      pl_layout(ylab = "Residu (kWh)")
-  })
+    max_e <- round(max(abs(res_e), na.rm = TRUE), 4)
+    col_e <- if (max_e < 0.001) cl$success else if (max_e < 0.01) "#f59e0b" else cl$danger
 
-  output$cv_energy_summary <- renderUI({
-    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
-    pac_qt <- p$p_pac_kw * p$dt_h
-    residu <- sim$pv_kwh + sim$sim_offtake - sim$conso_hors_pac - sim$sim_pac_on * pac_qt - sim$sim_intake
-    if (p$batterie_active && !is.null(sim$batt_flux)) {
-      batt_eff <- sqrt(p$batt_rendement)
-      residu <- residu + pmax(0, -sim$batt_flux) * batt_eff - pmax(0, sim$batt_flux)
+    # Bilan thermique
+    cap <- p$capacite_kwh_par_degre; k_perte <- 0.004 * p$dt_h; t_amb <- 20
+    chaleur <- sim$sim_pac_on * pac_qt * sim$sim_cop
+    t_pred <- (lag(sim$sim_t_ballon) * (cap - k_perte) + chaleur + k_perte * t_amb - sim$soutirage_estime_kwh) / cap
+    res_th <- sim$sim_t_ballon - t_pred
+    max_th <- round(max(abs(res_th), na.rm = TRUE), 3)
+    col_th <- if (max_th < 0.01) cl$success else if (max_th < 0.5) "#f59e0b" else cl$danger
+
+    # Batterie
+    batt_html <- ""
+    if (p$batterie_active && !is.null(sim$batt_soc)) {
+      n_soc_v <- sum(sim$batt_soc < p$batt_soc_min - 0.001 | sim$batt_soc > p$batt_soc_max + 0.001, na.rm = TRUE)
+      n_simult <- sum(pmax(0, sim$batt_flux) > 0.001 & pmax(0, -sim$batt_flux) > 0.001, na.rm = TRUE)
+      col_b <- if (n_soc_v + n_simult == 0) cl$success else cl$danger
+      batt_html <- sprintf(" &middot; Batt : <b style='color:%s'>%d viol.</b>", col_b, n_soc_v + n_simult)
     }
-    max_abs <- round(max(abs(residu), na.rm = TRUE), 4)
-    sum_abs <- round(sum(abs(residu), na.rm = TRUE), 4)
-    col <- if (max_abs < 0.001) cl$success else if (max_abs < 0.01) "#f59e0b" else cl$danger
-    tags$div(style = sprintf("font-size:.82rem;color:%s;margin-bottom:6px;", cl$text_muted),
-      HTML(sprintf("Residu max : <b style='color:%s'>%s kWh</b> &middot; Residu cumule abs : <b>%s kWh</b> &middot; %s",
-        col, max_abs, sum_abs,
-        if (max_abs < 0.001) "Bilan parfait" else if (max_abs < 0.01) "Ecarts negligeables" else "Ecarts detectes — verifier")))
+
+    tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:.78rem;color:%s;", cl$text_muted),
+      HTML(sprintf(
+        "T confort : <b style='color:%s'>%s%%</b> (%d+%d qt) &middot; Bilan elec : <b style='color:%s'>%s</b> &middot; Bilan therm : <b style='color:%s'>%s C</b>%s",
+        col_t, pct_t, n_low, n_high, col_e, max_e, col_th, max_th, batt_html)))
   })
 
-  # ---- CONTRAINTES : Coherence thermique ----
-  output$plot_cv_thermal <- renderPlotly({
-    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
-    cap <- p$capacite_kwh_par_degre
-    k_perte <- 0.004 * p$dt_h
-    t_amb <- 20
+  # ---- CONTRAINTES : Graphique unique conditionnel ----
+  output$plot_cv_main <- renderPlotly({
+    req(sim_filtered(), input$cv_check)
+    sim <- sim_filtered(); p <- params_r()
     pac_qt <- p$p_pac_kw * p$dt_h
-    d <- sim %>% mutate(
-      chaleur_pac = sim_pac_on * pac_qt * sim_cop,
-      t_predit = (lag(sim_t_ballon) * (cap - k_perte) + chaleur_pac + k_perte * t_amb - soutirage_estime_kwh) / cap,
-      ecart = sim_t_ballon - t_predit
-    ) %>% filter(!is.na(ecart))
-    d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
-      group_by(h) %>%
-      summarise(ecart = mean(ecart, na.rm = TRUE), .groups = "drop") %>%
-      rename(timestamp = h)
-    plot_ly(d_h, x = ~timestamp) %>%
-      add_bars(y = ~ecart, name = "Ecart T",
-        marker = list(color = ifelse(abs(d_h$ecart) > 0.5, cl$danger, cl$success))) %>%
-      pl_layout(ylab = "Ecart T simule - T predit (C)")
-  })
+    check <- input$cv_check
 
-  # ---- CONTRAINTES : Batterie SOC + anti-simultaneite ----
-  output$plot_cv_battery <- renderPlotly({
-    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
-    if (!p$batterie_active || is.null(sim$batt_soc)) return(plot_ly() %>% pl_layout())
-    d <- sim %>% mutate(
-      soc_pct = batt_soc * 100,
-      soc_min_pct = p$batt_soc_min * 100,
-      soc_max_pct = p$batt_soc_max * 100,
-      charge   = pmax(0, batt_flux),
-      decharge = pmax(0, -batt_flux),
-      simult   = ifelse(charge > 0.001 & decharge > 0.001, soc_pct, NA_real_)
-    )
-    plot_ly(d, x = ~timestamp) %>%
-      add_trace(y = ~soc_pct, type = "scatter", mode = "lines", name = "SoC",
-        line = list(color = cl$opti, width = 1.5), fill = "tozeroy",
-        fillcolor = "rgba(34,211,238,0.08)") %>%
-      add_trace(y = ~simult, type = "scatter", mode = "markers", name = "Charge+decharge simultanées",
-        marker = list(color = cl$danger, size = 7, symbol = "x"), hoverinfo = "x+y") %>%
-      add_segments(x = min(d$timestamp), xend = max(d$timestamp),
-        y = d$soc_min_pct[1], yend = d$soc_min_pct[1],
-        line = list(color = cl$danger, dash = "dash", width = 1), name = "SoC min") %>%
-      add_segments(x = min(d$timestamp), xend = max(d$timestamp),
-        y = d$soc_max_pct[1], yend = d$soc_max_pct[1],
-        line = list(color = "#f59e0b", dash = "dash", width = 1), name = "SoC max") %>%
-      pl_layout(ylab = "SoC (%)")
-  })
+    if (check == "marge_temp") {
+      d <- sim %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>%
+        summarise(t_bal = mean(sim_t_ballon, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h) %>%
+        mutate(marge_min = t_bal - p$t_min, marge_max = p$t_max - t_bal)
+      plot_ly(d, x = ~timestamp) %>%
+        add_trace(y = ~marge_min, type = "scatter", mode = "lines", name = "Marge T_min",
+          line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.06)") %>%
+        add_trace(y = ~marge_max, type = "scatter", mode = "lines", name = "Marge T_max",
+          line = list(color = "#f59e0b", width = 1), fill = "tozeroy", fillcolor = "rgba(245,158,11,0.06)") %>%
+        add_segments(x = min(d$timestamp), xend = max(d$timestamp), y = 0, yend = 0,
+          line = list(color = cl$danger, dash = "dash", width = 1), name = "Seuil violation") %>%
+        pl_layout(ylab = "Marge (C)")
 
-  output$cv_batt_summary <- renderUI({
-    req(sim_filtered()); sim <- sim_filtered(); p <- params_r()
-    if (!p$batterie_active || is.null(sim$batt_soc)) return(NULL)
-    soc <- sim$batt_soc
-    n_below <- sum(soc < p$batt_soc_min - 0.001, na.rm = TRUE)
-    n_above <- sum(soc > p$batt_soc_max + 0.001, na.rm = TRUE)
-    charge   <- pmax(0, sim$batt_flux)
-    decharge <- pmax(0, -sim$batt_flux)
-    n_simult <- sum(charge > 0.001 & decharge > 0.001, na.rm = TRUE)
-    col_soc <- if (n_below + n_above == 0) cl$success else cl$danger
-    col_sim <- if (n_simult == 0) cl$success else cl$danger
-    tags$div(style = sprintf("font-size:.82rem;color:%s;margin-bottom:6px;", cl$text_muted),
-      HTML(sprintf("Bornes SoC : <b style='color:%s'>%d violations</b> (min: %d, max: %d) &middot; Anti-simultaneite : <b style='color:%s'>%d violations</b>",
-        col_soc, n_below + n_above, n_below, n_above, col_sim, n_simult)))
+    } else if (check == "soc_bornes") {
+      if (!p$batterie_active || is.null(sim$batt_soc)) return(plot_ly() %>% pl_layout(title = "Batterie non active"))
+      d <- sim %>% mutate(soc_pct = batt_soc * 100)
+      plot_ly(d, x = ~timestamp) %>%
+        add_trace(y = ~soc_pct, type = "scatter", mode = "lines", name = "SoC",
+          line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.08)") %>%
+        add_segments(x = min(d$timestamp), xend = max(d$timestamp),
+          y = p$batt_soc_min * 100, yend = p$batt_soc_min * 100,
+          line = list(color = cl$danger, dash = "dash", width = 1), name = "SoC min") %>%
+        add_segments(x = min(d$timestamp), xend = max(d$timestamp),
+          y = p$batt_soc_max * 100, yend = p$batt_soc_max * 100,
+          line = list(color = "#f59e0b", dash = "dash", width = 1), name = "SoC max") %>%
+        pl_layout(ylab = "SoC (%)")
+
+    } else if (check == "simult") {
+      if (!p$batterie_active || is.null(sim$batt_flux)) return(plot_ly() %>% pl_layout(title = "Batterie non active"))
+      d <- sim %>% mutate(charge = pmax(0, batt_flux), decharge = pmax(0, -batt_flux),
+        simult = pmin(charge, decharge))
+      plot_ly(d, x = ~timestamp) %>%
+        add_trace(y = ~charge, type = "scatter", mode = "lines", name = "Charge", line = list(color = cl$success, width = 1)) %>%
+        add_trace(y = ~decharge, type = "scatter", mode = "lines", name = "Decharge", line = list(color = cl$reel, width = 1)) %>%
+        add_bars(y = ~simult, name = "Simultanee", marker = list(color = cl$danger)) %>%
+        pl_layout(ylab = "kWh/qt")
+
+    } else if (check == "bilan_elec") {
+      d <- sim %>% mutate(
+        entrees = pv_kwh + sim_offtake,
+        sorties = conso_hors_pac + sim_pac_on * pac_qt + sim_intake,
+        residu  = entrees - sorties)
+      if (p$batterie_active && !is.null(sim$batt_flux)) {
+        batt_eff <- sqrt(p$batt_rendement)
+        d <- d %>% mutate(entrees = entrees + pmax(0, -batt_flux) * batt_eff,
+          sorties = sorties + pmax(0, batt_flux), residu = entrees - sorties)
+      }
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>% summarise(residu = sum(residu, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_bars(y = ~residu, name = "Residu",
+          marker = list(color = ifelse(abs(d_h$residu) > 0.01, cl$danger, cl$success))) %>%
+        pl_layout(ylab = "Residu electrique (kWh)")
+
+    } else if (check == "bilan_therm") {
+      cap <- p$capacite_kwh_par_degre; k_perte <- 0.004 * p$dt_h; t_amb <- 20
+      d <- sim %>% mutate(
+        chaleur_pac = sim_pac_on * pac_qt * sim_cop,
+        t_predit = (lag(sim_t_ballon) * (cap - k_perte) + chaleur_pac + k_perte * t_amb - soutirage_estime_kwh) / cap,
+        ecart = sim_t_ballon - t_predit) %>% filter(!is.na(ecart))
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>% summarise(ecart = mean(ecart, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_bars(y = ~ecart, name = "Ecart T",
+          marker = list(color = ifelse(abs(d_h$ecart) > 0.5, cl$danger, cl$success))) %>%
+        pl_layout(ylab = "Ecart T simule - T predit (C)")
+
+    } else if (check == "conserv_totale") {
+      cap <- p$capacite_kwh_par_degre
+      d <- sim %>% mutate(
+        entrant_cum = cumsum(pv_kwh + sim_offtake),
+        sortant_cum = cumsum(sim_intake + conso_hors_pac),
+        pac_cum = cumsum(sim_pac_on * pac_qt),
+        delta_stock = (sim_t_ballon - sim_t_ballon[1]) * cap,
+        residu_cum = entrant_cum - sortant_cum - pac_cum)
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>% slice_tail(n = 1) %>% ungroup() %>% rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_trace(y = ~entrant_cum, type = "scatter", mode = "lines", name = "Entrant cumule", line = list(color = cl$success, width = 1.5)) %>%
+        add_trace(y = ~sortant_cum + pac_cum, type = "scatter", mode = "lines", name = "Sortant + PAC cumule", line = list(color = cl$reel, width = 1.5)) %>%
+        pl_layout(ylab = "Energie cumulee (kWh)")
+
+    } else if (check == "prix_kwh_th") {
+      d <- sim %>% mutate(
+        cout_qt = sim_offtake * prix_offtake - sim_intake * prix_injection,
+        chaleur_th = sim_pac_on * pac_qt * sim_cop,
+        prix_th = ifelse(chaleur_th > 0.01, cout_qt / chaleur_th, NA_real_)) %>%
+        filter(!is.na(prix_th), prix_th > -1, prix_th < 2)
+      plot_ly(d, x = ~timestamp) %>%
+        add_trace(y = ~prix_th, type = "scatter", mode = "markers", name = "Prix kWh_th",
+          marker = list(color = cl$opti, size = 3, opacity = 0.5)) %>%
+        add_segments(x = min(d$timestamp), xend = max(d$timestamp),
+          y = mean(d$prix_th, na.rm = TRUE), yend = mean(d$prix_th, na.rm = TRUE),
+          line = list(color = cl$pv, dash = "dash", width = 1), name = sprintf("Moy: %.3f", mean(d$prix_th, na.rm = TRUE))) %>%
+        pl_layout(ylab = "EUR/kWh_th")
+
+    } else if (check == "cout_marginal") {
+      d <- sim %>% mutate(
+        cout_base_qt = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
+        cout_opti_qt = sim_offtake * prix_offtake - sim_intake * prix_injection,
+        eco_qt = cout_base_qt - cout_opti_qt)
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>% summarise(eco = sum(eco_qt, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_bars(y = ~eco, name = "Economie/h",
+          marker = list(color = ifelse(d_h$eco >= 0, cl$success, cl$danger))) %>%
+        pl_layout(ylab = "Economie par heure (EUR)")
+
+    } else if (check == "puissance_pac") {
+      d <- sim %>% mutate(puissance_kw = sim_pac_on * p$p_pac_kw)
+      plot_ly(d, x = ~timestamp) %>%
+        add_trace(y = ~puissance_kw, type = "scatter", mode = "lines", name = "Puissance PAC",
+          line = list(color = cl$pac, width = 1), fill = "tozeroy", fillcolor = "rgba(52,211,153,0.08)") %>%
+        add_segments(x = min(d$timestamp), xend = max(d$timestamp),
+          y = p$p_pac_kw, yend = p$p_pac_kw,
+          line = list(color = cl$danger, dash = "dash", width = 1), name = sprintf("P_max = %s kW", p$p_pac_kw)) %>%
+        pl_layout(ylab = "Puissance (kW)")
+
+    } else if (check == "dt_dt") {
+      d <- sim %>% mutate(
+        dt_dt = (sim_t_ballon - lag(sim_t_ballon)) / p$dt_h) %>% filter(!is.na(dt_dt))
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>% summarise(dt_dt = mean(dt_dt, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_bars(y = ~dt_dt, name = "dT/dt",
+          marker = list(color = ifelse(abs(d_h$dt_dt) > 20, cl$danger, cl$opti))) %>%
+        pl_layout(ylab = "Taux de variation T (C/h)")
+
+    } else if (check == "cop_realise") {
+      d <- sim %>% mutate(
+        cop_theorique = calc_cop(t_ext, p$cop_nominal, p$t_ref_cop, t_ballon = sim_t_ballon),
+        ecart_cop = sim_cop - cop_theorique) %>%
+        filter(sim_pac_on > 0)
+      if (nrow(d) == 0) return(plot_ly() %>% pl_layout(title = "Aucun qt PAC ON"))
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>% summarise(cop_sim = mean(sim_cop, na.rm = TRUE),
+          cop_th = mean(cop_theorique, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_trace(y = ~cop_sim, type = "scatter", mode = "lines", name = "COP simule",
+          line = list(color = cl$opti, width = 1.5)) %>%
+        add_trace(y = ~cop_th, type = "scatter", mode = "lines", name = "COP theorique",
+          line = list(color = cl$reel, width = 1, dash = "dot")) %>%
+        pl_layout(ylab = "COP")
+
+    } else if (check == "autoconso_pv") {
+      d <- sim %>% mutate(
+        conso_tot_base = conso_hors_pac + ifelse(offtake_kwh > pac_qt * 0.5, pac_qt, 0),
+        conso_tot_opti = conso_hors_pac + sim_pac_on * pac_qt,
+        ac_base = pmin(pv_kwh, conso_tot_base),
+        ac_opti = pmin(pv_kwh, conso_tot_opti))
+      d_h <- d %>% mutate(h = floor_date(timestamp, "hour")) %>%
+        group_by(h) %>%
+        summarise(ac_base = sum(ac_base, na.rm = TRUE), ac_opti = sum(ac_opti, na.rm = TRUE),
+          pv = sum(pv_kwh, na.rm = TRUE), .groups = "drop") %>%
+        rename(timestamp = h)
+      plot_ly(d_h, x = ~timestamp) %>%
+        add_trace(y = ~ac_base, type = "scatter", mode = "lines", name = "Autoconso baseline",
+          line = list(color = cl$reel, width = 1), fill = "tozeroy", fillcolor = "rgba(249,115,22,0.06)") %>%
+        add_trace(y = ~ac_opti, type = "scatter", mode = "lines", name = "Autoconso optimise",
+          line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.06)") %>%
+        add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV total",
+          line = list(color = cl$pv, width = 1, dash = "dot")) %>%
+        pl_layout(ylab = "kWh/h")
+
+    } else {
+      plot_ly() %>% pl_layout(title = "Selectionnez une verification")
+    }
   })
 
   # ---- AUTOMAGIC : grid search ----

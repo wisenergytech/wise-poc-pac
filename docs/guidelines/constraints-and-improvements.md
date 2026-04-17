@@ -571,3 +571,151 @@ nouveau dimensionnement auto (36 100 L pour 60 kW), le facteur devenait
 
 **Fix** : l'ECS scale desormais avec la puissance PAC (`p_pac_kw / 2`).
 Le volume du ballon est un choix de stockage, pas un indicateur de demande.
+
+## 9. Timeseries de verification (A IMPLEMENTER)
+
+Liste des timeseries necessaires pour verifier le respect des contraintes
+et la validite physique de l'optimisation. Classees par priorite.
+
+### 9.1 Verification des contraintes
+
+**#1 — Marge temperature vs bornes** (CRITIQUE)
+
+```
+marge_min[t] = T_ballon[t] - T_min
+marge_max[t] = T_max - T_ballon[t]
+```
+
+Afficher les marges plutot que T brut. Violations = marge negative.
+Distinguer :
+- Violations physiques (ECS > capacite PAC, inevitables)
+- Violations slack (optimiseur a choisi de violer, cout < penalite)
+- Violations numeriques (bruit solveur ~1e-6)
+
+**#2 — SOC batterie : coherence flux vs stock** (UTILE)
+
+```
+residu_soc[t] = SOC[t] - SOC[t-1] - charge[t] * η + decharge[t] / η
+```
+
+Doit etre ~0 a chaque qt. Si non nul → incoherence modele batterie.
+
+**#3 — Charge + decharge simultanees** (UTILE)
+
+```
+simult[t] = min(charge[t], decharge[t])
+```
+
+Doit etre ~0 partout. Si > 0 → anti-simultaneite violee (LP/QP).
+
+### 9.2 Verification physique (lois de conservation)
+
+**#4 — Bilan electrique : residu** (CRITIQUE)
+
+```
+residu[t] = PV + offtake - conso_hors_pac - PAC_elec - injection (± batterie)
+```
+
+Doit etre **exactement 0** a chaque qt. Tout ecart = bug comptable.
+C'est la loi de conservation de l'energie electrique.
+
+**#5 — Bilan thermique : residu** (CRITIQUE)
+
+```
+residu[t] = T[t] - ( T[t-1] * (cap-k)/cap + chaleur_PAC/cap + k*T_amb/cap - ECS/cap )
+```
+
+Doit etre ~0 a chaque qt. Un ecart signale une incoherence entre la
+trajectoire T et le modele thermique. En mode COP iteratif, un petit
+residu est attendu (COP solve 2 ≠ solve 1).
+
+**#6 — Conservation energie totale sur la periode** (HAUTE)
+
+```
+Entrant  = sum(PV) + sum(offtake)
+Sortant  = sum(injection) + sum(conso_hors_pac) + sum(pertes_thermiques)
+Stock    = ΔT_ballon * cap / COP + ΔSOC_batterie
+Residu   = Entrant - Sortant - Stock
+```
+
+Doit etre ~0 sur la periode complete.
+
+### 9.3 Verification de la coherence economique
+
+**#7 — Prix effectif du kWh thermique** (HAUTE)
+
+```
+prix_th[t] = (offtake[t] * prix_offtake[t] - injection[t] * prix_injection[t]) / chaleur_PAC[t]
+```
+
+Quand la PAC est ON. Montre a quel prix l'optimiseur chauffe. Les valeurs
+doivent etre concentrees aux heures creuses/PV. Des pics de prix thermique
+= opportunites manquees.
+
+**#8 — Cout marginal baseline vs optimiseur** (DIAGNOSTIC)
+
+Comparer le prix effectif du kWh thermique entre baseline et optimiseur,
+heure par heure. L'optimiseur devrait systematiquement chauffer moins cher.
+Les qt ou la baseline chauffe moins cher sont des anomalies a investiguer.
+
+### 9.4 Verification de la validite monde reel
+
+**#9 — Puissance PAC vs capacite physique** (MOYENNE)
+
+```
+puissance[t] = pac_load[t] * P_pac_kw
+```
+
+Doit etre <= P_pac_kw a chaque qt. Pour le MILP (binaire), puissance = 0
+ou P_pac_kw. Pour LP/QP, verifier pac_load ∈ [0, 1]. Des valeurs hors
+bornes = bug solveur.
+
+**#10 — Taux de variation de T_ballon** (MOYENNE)
+
+```
+dT_dt[t] = (T[t] - T[t-1]) / dt_h    [C/h]
+```
+
+Borne physique haute : chaleur_PAC_max / cap. Borne basse :
+-(ECS_max + pertes_max) / cap. Des variations extremes signalent un
+modele irrealiste ou des ECS synthetiques aberrants.
+
+**#11 — COP realise vs COP theorique** (DIAGNOSTIC)
+
+```
+COP_realise = chaleur_PAC_effective / elec_PAC
+COP_theorique = calc_cop(T_ext, T_ballon)
+```
+
+Si ca diverge → incoherence modele COP.
+
+**#12 — Autoconsommation PV reelle** (UTILE)
+
+```
+autoconso[t] = min(PV[t], conso_totale[t])
+pct = sum(autoconso) / sum(PV)
+```
+
+Comparer baseline vs optimiseur. L'optimiseur devrait augmenter
+l'autoconsommation (PAC vers heures PV). Si non → l'optimiseur
+privilegie le prix spot, ce qui peut etre correct en dynamique mais
+suspect en fixe.
+
+### 9.5 Resume des priorites
+
+| Priorite | # | Timeserie | Verifie |
+|---|---|---|---|
+| CRITIQUE | 4 | Bilan electrique residu | Conservation energie |
+| CRITIQUE | 5 | Bilan thermique residu | Coherence modele thermique |
+| HAUTE | 1 | Marge T_min / T_max | Respect contraintes confort |
+| HAUTE | 7 | Prix effectif kWh thermique | Qualite de l'optimisation |
+| MOYENNE | 9 | Puissance PAC vs capacite | Faisabilite physique |
+| MOYENNE | 10 | dT/dt taux de variation | Realisme physique |
+| UTILE | 2 | SOC residu | Coherence batterie |
+| UTILE | 12 | Autoconsommation PV | Strategie PV |
+| DIAGNOSTIC | 8 | Prix marginal baseline vs opti | Anomalies optimisation |
+| DIAGNOSTIC | 11 | COP realise vs theorique | Coherence modele COP |
+
+Les #4 et #5 sont les "smoke tests" — si ceux-la echouent, tout le reste
+est suspect. Les #1 et #7 sont les plus utiles pour evaluer la qualite
+de l'optimisation au quotidien.
