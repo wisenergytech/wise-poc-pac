@@ -295,7 +295,8 @@ run_simulation <- function(df, params, mode, poids_cout = 0.5) {
     
     # Bilan réseau après batterie
     if (surplus_elec >= 0) {
-      sim_off[i] <- 0; sim_inj[i] <- surplus_elec
+      sim_off[i] <- 0
+      sim_inj[i] <- min(surplus_elec, if (!is.null(params$curtail_kwh_per_qt)) params$curtail_kwh_per_qt else Inf)
     } else {
       sim_off[i] <- abs(surplus_elec); sim_inj[i] <- 0
     }
@@ -482,21 +483,21 @@ generer_demo <- function(date_start = as.Date("2025-02-01"), date_end = as.Date(
 }
 
 # =============================================================================
-# BASELINE — Thermostat classique (meme modele thermique que les optimiseurs)
+# BASELINE — Simulation de reference (meme modele thermique que les optimiseurs)
 # =============================================================================
-# Strategie : ON quand T < T_consigne - hysteresis, OFF quand T > T_consigne.
-# Ne regarde ni le PV, ni les prix. Sert de reference pour calculer les economies.
-# Utilise exactement les memes equations thermiques (cap, k_perte, COP) que les
-# optimiseurs → l'economie est toujours >= 0 par construction.
+# 4 modes de baseline :
+#   reactif       : thermostat ON/OFF pur (aveugle PV/prix)
+#   programmateur  : PAC forcee 11h-15h, sinon thermostat reactif
+#   surplus_pv     : PAC ON quand surplus PV > 50% P_pac, sinon thermostat reactif
+#   proactif       : thermostat + anticipation 1 pas (regarde si T tomberait sous T_min)
 # =============================================================================
-run_baseline <- function(df, params, proactif = FALSE) {
+run_baseline <- function(df, params, mode = "reactif") {
   n <- nrow(df)
   pac_qt <- params$p_pac_kw * params$dt_h
   cap <- params$capacite_kwh_par_degre
   k_perte <- 0.004 * params$dt_h
   t_amb <- 20
 
-  # Seuils thermostat : hysteresis entre T_min et T_consigne
   t_consigne_bas  <- params$t_min
   t_consigne_haut <- params$t_consigne
 
@@ -505,51 +506,108 @@ run_baseline <- function(df, params, proactif = FALSE) {
   ecs   <- df$soutirage_estime_kwh
   t_ext_v <- df$t_ext
 
-  # Simulation sequentielle
+  h <- if ("timestamp" %in% names(df)) hour(df$timestamp) + minute(df$timestamp) / 60 else rep(12, n)
+  surplus_pv_qt <- pv - conso
+
+  # COP moyen sur la periode (pour le mode ingenieur)
+  cop_moyen <- mean(calc_cop(t_ext_v, params$cop_nominal, params$t_ref_cop), na.rm = TRUE)
+
   t_bal  <- rep(NA_real_, n)
-  pac_on <- rep(0L, n)
+  pac_on <- rep(0, n)  # numerique [0,1] pour supporter la modulation (ingenieur)
   t_bal[1] <- params$t_consigne
 
-  # Premier qt — COP depends on T_ballon (condenser temperature)
-  cop_1 <- calc_cop(t_ext_v[1], params$cop_nominal, params$t_ref_cop, t_ballon = t_bal[1])
-  if (t_bal[1] < t_consigne_bas) pac_on[1] <- 1L
-  if (proactif) {
-    chaleur_pac_1 <- pac_qt * cop_1
-    t_min_1 <- if (ecs[1] > chaleur_pac_1) params$t_min - 10 else params$t_min
-    t_sans_pac <- (params$t_consigne * (cap - k_perte) + k_perte * t_amb - ecs[1]) / cap
-    if (t_sans_pac < t_min_1) pac_on[1] <- 1L
-  }
-  chaleur_1 <- pac_on[1] * pac_qt * cop_1
-  t_bal[1] <- (params$t_consigne * (cap - k_perte) + chaleur_1 + k_perte * t_amb - ecs[1]) / cap
-  t_bal[1] <- max(max(20, params$t_min - 10), min(params$t_max + 5, t_bal[1]))
-
-  for (i in 2:n) {
-    t_prev <- t_bal[i - 1]
+  for (i in seq_len(n)) {
+    t_prev <- if (i == 1) params$t_consigne else t_bal[i - 1]
     cop_i <- calc_cop(t_ext_v[i], params$cop_nominal, params$t_ref_cop, t_ballon = t_prev)
+    surplus_i <- surplus_pv_qt[i]
 
-    # Thermostat avec hysteresis
-    if (t_prev < t_consigne_bas) {
-      pac_on[i] <- 1L
-    } else if (t_prev > t_consigne_haut) {
-      pac_on[i] <- 0L
+    # T projetee sans chauffage (pour modes proactif/ingenieur)
+    t_sans_pac <- (t_prev * (cap - k_perte) + k_perte * t_amb - ecs[i]) / cap
+
+    # --- Decision selon le mode ---
+    if (mode == "programmateur") {
+      if (h[i] >= 11 & h[i] < 15 & t_prev < params$t_max) {
+        pac_on[i] <- 1
+      } else if (t_prev < t_consigne_bas) {
+        pac_on[i] <- 1
+      } else if (t_prev > t_consigne_haut) {
+        pac_on[i] <- 0
+      } else {
+        pac_on[i] <- if (i > 1) pac_on[i - 1] else 0
+      }
+
+    } else if (mode == "surplus_pv") {
+      seuil_surplus <- 0.5 * params$dt_h
+      if (surplus_i > seuil_surplus & t_prev < params$t_max) {
+        pac_on[i] <- 1
+      } else if (t_prev < t_consigne_bas) {
+        pac_on[i] <- 1
+      } else if (t_prev > t_consigne_haut) {
+        pac_on[i] <- 0
+      } else {
+        pac_on[i] <- if (i > 1) pac_on[i - 1] else 0
+      }
+
+    } else if (mode == "ingenieur") {
+      # ===========================================================
+      # Baseline "ingenieur" : le mieux qu'on peut faire SANS prix
+      # - Module la PAC pour coller au surplus PV
+      # - Proactif sur le confort (anticipe T_min)
+      # - Pre-chauffe quand le COP est bon (T_ext favorable)
+      # - Aveugle au Belpex
+      # ===========================================================
+
+      if (t_prev < t_consigne_bas) {
+        # Securite confort : pleine puissance
+        pac_on[i] <- 1
+
+      } else if (t_prev >= params$t_max) {
+        # Ballon plein
+        pac_on[i] <- 0
+
+      } else if (surplus_i > 0 & t_prev < params$t_max) {
+        # Surplus PV disponible → moduler pour matcher le surplus
+        pac_on[i] <- min(1, max(0.1, surplus_i / pac_qt))
+
+      } else if (t_sans_pac < t_consigne_bas) {
+        # Proactif : T tomberait sous T_min sans chauffer → forcer ON
+        pac_on[i] <- 1
+
+      } else if (t_prev < params$t_consigne & cop_i > cop_moyen * 1.05) {
+        # COP favorable (T_ext chaude) et ballon pas a la consigne
+        # Pre-chauffer doucement pour profiter du bon COP
+        pac_on[i] <- 0.3
+
+      } else {
+        # Pas de raison de chauffer — ne pas soutirer du reseau inutilement
+        pac_on[i] <- 0
+      }
+
     } else {
-      pac_on[i] <- pac_on[i - 1]
+      # Reactif ou proactif : thermostat pur avec hysteresis
+      if (t_prev < t_consigne_bas) {
+        pac_on[i] <- 1
+      } else if (t_prev > t_consigne_haut) {
+        pac_on[i] <- 0
+      } else {
+        pac_on[i] <- if (i > 1) pac_on[i - 1] else 0
+      }
     }
 
-    if (proactif) {
-      # Contrainte proactive : anticipe les chutes de T pour forcer ON/OFF
+    # Contraintes proactives (mode proactif uniquement)
+    if (mode == "proactif") {
       chaleur_pac_i <- pac_qt * cop_i
       t_min_i <- if (ecs[i] > chaleur_pac_i) params$t_min - 10 else params$t_min
-      if (pac_on[i] == 0L) {
-        t_sans_pac <- (t_prev * (cap - k_perte) + k_perte * t_amb - ecs[i]) / cap
-        if (t_sans_pac < t_min_i) pac_on[i] <- 1L
+      if (pac_on[i] == 0) {
+        if (t_sans_pac < t_min_i) pac_on[i] <- 1
       }
-      if (pac_on[i] == 1L) {
+      if (pac_on[i] == 1) {
         t_avec_pac <- (t_prev * (cap - k_perte) + pac_qt * cop_i + k_perte * t_amb - ecs[i]) / cap
-        if (t_avec_pac > params$t_max) pac_on[i] <- 0L
+        if (t_avec_pac > params$t_max) pac_on[i] <- 0
       }
     }
 
+    # Equation thermique (identique pour tous les modes)
     chaleur <- pac_on[i] * pac_qt * cop_i
     t_bal[i] <- (t_prev * (cap - k_perte) + chaleur + k_perte * t_amb - ecs[i]) / cap
     t_bal[i] <- max(max(20, params$t_min - 10), min(params$t_max + 5, t_bal[i]))
@@ -806,12 +864,15 @@ ui <- page_fillable(
         tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a simuler. Demo : donnees synthetiques. CSV : vos propres donnees.")),
         radioButtons("data_source", NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
         conditionalPanel("input.data_source=='csv'", fileInput("csv_file", NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv")),
-        conditionalPanel("input.data_source=='demo'",
-          radioButtons("thermostat_type", "Thermostat baseline",
-            choices = c("Reactif (classique)" = "reactif", "Proactif (anticipe)" = "proactif"),
-            selected = "reactif", inline = TRUE),
-          tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-            "Reactif = ON/OFF simple par hysteresis. Proactif = anticipe les chutes de temperature (avantage la baseline).")),
+        selectInput("baseline_type", tags$span("Baseline (votre situation actuelle)", tip("Choisissez le mode de pilotage qui correspond a votre installation actuelle. L'economie affichee sera l'ecart entre cette baseline et l'optimiseur.")),
+          choices = c(
+            "Thermostat reactif (ON/OFF bete)" = "reactif",
+            "Programmateur horaire (11h-15h)" = "programmateur",
+            "Surplus PV (chauffe quand surplus)" = "surplus_pv",
+            "Ingenieur (max autoconso, sans prix)" = "ingenieur",
+            "Thermostat proactif (anticipe)" = "proactif"),
+          selected = "ingenieur"),
+        uiOutput("baseline_description"),
         dateRangeInput("date_range", NULL, start = as.Date("2025-07-01"), end = as.Date("2025-08-31"), language = "fr",
           min = as.Date("2025-01-01"), max = as.Date("2025-12-31")),
         tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
@@ -839,6 +900,16 @@ ui <- page_fillable(
         conditionalPanel("input.approche=='optimiseur' || input.approche=='optimiseur_lp'",
           sliderInput("slack_penalty", tags$span("Penalite T_min (EUR/C)", tip("Cout de violation de T_min par degre par quart d'heure. Plus bas = l'optimiseur explore des temperatures proches de T_min (meilleur COP, plus d'economies). Plus haut = respect strict de T_min. A 2.5 EUR/C, l'optimiseur accepte de descendre legerement sous T_min si le gain economique le justifie.")),
             0.5, 20, 2.5, step = 0.5, post = " EUR/C")),
+        tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
+          tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strategies d'optimisation"),
+          tags$div(style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+            HTML("<b>TOU</b> (Time of Use) est toujours actif : l'optimiseur exploite les variations de prix Belpex. Activez le <b>curtailment</b> pour aussi limiter l'injection reseau.")),
+          checkboxInput("curtailment_active", tags$span("Curtailment (limiter l'injection)", tip("Ajoute une contrainte de puissance maximale d'injection. L'optimiseur decale alors la consommation PAC vers les periodes de surplus PV pour eviter de perdre l'energie ecretee. La baseline n'est PAS affectee — elle injecte librement. Le gain du curtailment = energie recuperee qui aurait ete perdue.")),
+            FALSE),
+          conditionalPanel("input.curtailment_active",
+            numericInput("curtail_kw", "Puissance max injection (kW)", 5, min = 0, max = 100, step = 0.5),
+            tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+              "0 kW = zero injection. 5 kW = limite prosumer typique."))),
         conditionalPanel("input.approche=='optimiseur_qp'",
           tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
             HTML("Optimisation <b>QP</b> (quadratique convexe, CVXR) : minimise le cout <i>et</i> penalise les ecarts de temperature a la consigne + les variations brusques de charge PAC. Resultat plus confortable et plus lisse.")),
@@ -1271,6 +1342,33 @@ sur 14 derniers jours    meilleur       ca continue"),
     )) # fin modalDialog + showModal
   })
 
+  # Description dynamique de la baseline selectionnee
+  output$baseline_description <- renderUI({
+    bt <- input$baseline_type
+    descs <- list(
+      reactif = list(
+        txt = "Thermostat classique : allume quand T < T_min, eteint quand T > consigne. Completement aveugle du PV, des prix et de l'ECS futur. Represente une installation sans aucun pilotage.",
+        ac = "~10-15%", marge = "maximale", col = cl$success),
+      programmateur = list(
+        txt = "L'installateur a programme la PAC entre 11h et 15h pour coincider avec le PV. En dehors de cette plage, thermostat reactif. Tres courant sur les installations recentes avec PV.",
+        ac = "~40-50%", marge = "moderee", col = "#f59e0b"),
+      surplus_pv = list(
+        txt = "Onduleur avec sortie surplus (Fronius, SMA, Huawei) : la PAC s'allume quand le surplus PV depasse un seuil. Sinon thermostat reactif. ON/OFF sans modulation.",
+        ac = "~30-50%", marge = "moderee", col = "#f59e0b"),
+      ingenieur = list(
+        txt = "Le mieux qu'on peut faire SANS signal prix. Module la PAC pour coller au surplus PV, anticipe le confort, pre-chauffe quand le COP est bon (T_ext favorable). Aveugle au Belpex. C'est la reference realiste pour mesurer la valeur ajoutee du pilotage par les prix spot.",
+        ac = "~60-80%", marge = "faible — gains = valeur du Belpex", col = cl$reel),
+      proactif = list(
+        txt = "Thermostat intelligent qui anticipe les chutes de temperature (regarde 1 pas en avant). N'utilise pas le PV ni les prix. Avantage la baseline et reduit les gains affiches.",
+        ac = "~15-20%", marge = "elevee", col = cl$success)
+    )
+    d <- descs[[bt]]
+    if (is.null(d)) return(NULL)
+    tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
+      HTML(sprintf("%s<br><span style='color:%s;font-weight:600;'>Autoconso typique : %s</span> &middot; Marge d'optimisation : <b>%s</b>",
+        d$txt, d$col, d$ac, d$marge)))
+  })
+
   # Volume ballon : auto (dimensionne pour 2h de stockage thermique) ou manuel
   # Formule : V = P_pac * COP * heures_stockage / (delta_T * 0.001163)
   # delta_T = 2 * tolerance (plage complete T_min → T_max)
@@ -1380,6 +1478,8 @@ sur 14 derniers jours    meilleur       ca continue"),
       batt_soc_max = input$batt_soc_range[2] / 100,
       poids_cout = 0.5,
       slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
+      curtailment_active = isTRUE(input$curtailment_active),
+      curtail_kwh_per_qt = if (isTRUE(input$curtailment_active)) input$curtail_kw * 0.25 else Inf,
       optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 4)
   })
   
@@ -1443,9 +1543,9 @@ sur 14 derniers jours    meilleur       ca continue"),
       df_prep <- prep$df; p <- prep$params
 
       # Baseline : thermostat (reactif ou proactif selon choix utilisateur)
-      proactif <- !is.null(input$thermostat_type) && input$thermostat_type == "proactif"
-      setProgress(0.2, detail = paste0("Calcul baseline thermostat ", if (proactif) "proactif" else "reactif", "..."))
-      df_prep <- run_baseline(df_prep, p, proactif = proactif)
+      baseline_mode <- if (!is.null(input$baseline_type)) input$baseline_type else "reactif"
+      setProgress(0.2, detail = paste0("Calcul baseline ", baseline_mode, "..."))
+      df_prep <- run_baseline(df_prep, p, mode = baseline_mode)
 
       # Filet de securite : si l'optimisation fait pire que la baseline, garder la baseline
       guard_baseline <- function(sim, df_prep, p, mode_label) {
@@ -1540,7 +1640,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     cr <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm=TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm=TRUE)
     co <- sum(sim$sim_offtake * sim$prix_offtake, na.rm=TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm=TRUE)
     jours <- round(as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days")), 1)
-    thermostat <- if (!is.null(input$thermostat_type)) input$thermostat_type else "n/a"
+    thermostat <- if (!is.null(input$baseline_type)) input$baseline_type else "n/a"
     contrat <- if (p$type_contrat == "fixe") {
       sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
     } else {
@@ -1755,7 +1855,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     }
     if (is.na(mode_label) || is.null(mode_label)) mode_label <- "?"
 
-    thermostat <- if (!is.null(input$thermostat_type)) input$thermostat_type else "n/a"
+    thermostat <- if (!is.null(input$baseline_type)) input$baseline_type else "n/a"
     contrat <- if (p$type_contrat == "fixe") {
       sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
     } else {
@@ -1798,8 +1898,12 @@ sur 14 derniers jours    meilleur       ca continue"),
       line_tag("RUN ", as.character(header)),
       line_tag("DIM ", sprintf("PV=<b>%s kWc</b> (ref=%s) &middot; PAC=<b>%s kW</b> COP=%s &middot; Ballon=<b>%s L</b> [%s..%s]&deg;C consigne=%s",
         p$pv_kwc, p$pv_kwc_ref, p$p_pac_kw, p$cop_nominal, p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne)),
-      line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b>",
-        contrat, batt, bloc, if (!is.null(input$slack_penalty)) input$slack_penalty else "n/a", thermostat, input$data_source))
+      line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; Curtail=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b> &middot; <b>%s</b> &rarr; <b>%s</b>",
+        contrat, batt,
+        if (isTRUE(input$curtailment_active)) paste0(input$curtail_kw, "kW") else "off",
+        bloc, if (!is.null(input$slack_penalty)) input$slack_penalty else "n/a",
+        thermostat, input$data_source,
+        format(input$date_range[1], "%d/%m/%Y"), format(input$date_range[2], "%d/%m/%Y")))
     )
   })
   outputOptions(output, "status_bar", suspendWhenHidden = FALSE)
@@ -1855,10 +1959,10 @@ sur 14 derniers jours    meilleur       ca continue"),
           tooltip = "Cycles complets de charge/decharge. = energie chargee totale / capacite batterie.")))
     }
 
-    ncols <- length(kpis)
-    cw <- rep(floor(12 / ncols), ncols)
-    cw[1] <- 12 - sum(cw[-1])
-    do.call(layout_columns, c(list(col_widths = cw, style = "margin-bottom:12px;"), kpis))
+    do.call(tags$div, c(
+      list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
+      lapply(kpis, function(k) tags$div(style = "flex:1;", k))
+    ))
   })
 
   # ---- KPIs FINANCES (onglet Finances) ----
@@ -1880,7 +1984,7 @@ sur 14 derniers jours    meilleur       ca continue"),
 
     prix_moy <- mean(sim$prix_offtake, na.rm = TRUE)
 
-    layout_columns(col_widths = c(2, 2, 2, 2, 2, 2), style = "margin-bottom:12px;",
+    kpis <- list(
       kpi_card(paste0(round(facture_base), " EUR"),
         "Facture baseline", "", cl$reel,
         tooltip = "Cout net baseline = somme(soutirage x prix) - somme(injection x prix). Sans optimisation."),
@@ -1902,6 +2006,10 @@ sur 14 derniers jours    meilleur       ca continue"),
         "Delta injection", "", cl$pv,
         tooltip = "Variation du revenu d'injection = revenu injection optimise - revenu injection baseline. Negatif si l'optimisation reduit l'injection (normal : on autoconsomme plus).")
     )
+    do.call(tags$div, c(
+      list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
+      lapply(kpis, function(k) tags$div(style = "flex:1;", k))
+    ))
   })
   
   # --- Helpers pour les 3 charts energie ---
@@ -2194,7 +2302,7 @@ sur 14 derniers jours    meilleur       ca continue"),
     co2_base_kg <- sum(impact$co2_baseline_g, na.rm = TRUE) / 1000
     co2_opti_kg <- sum(impact$co2_opti_g, na.rm = TRUE) / 1000
 
-    layout_columns(col_widths = c(2, 2, 2, 2, 2, 2), style = "margin-bottom:12px;",
+    kpis <- list(
       kpi_card(sprintf("%.1f", impact$co2_saved_kg),
         "CO2 evite", "kg", cl$success,
         baseline_val = co2_base_kg, opti_val = co2_opti_kg, gain_invert = TRUE,
@@ -2218,6 +2326,10 @@ sur 14 derniers jours    meilleur       ca continue"),
         "Equiv. arbres", "/an", "#fbbf24",
         tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite en 1 an. Facteur : 25 kg CO2/arbre/an (FAO).")
     )
+    do.call(tags$div, c(
+      list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
+      lapply(kpis, function(k) tags$div(style = "flex:1;", k))
+    ))
   })
 
   # Hourly CO2 impact chart (bars = saved/added, line = intensity)
@@ -2686,8 +2798,8 @@ sur 14 derniers jours    meilleur       ca continue"),
           ratio <- pv_kwc / p$pv_kwc_ref
           df_prep$pv_kwh <- df_raw$pv_kwh * ratio
           # Baseline thermostat (meme type que la simulation principale)
-          proactif_am <- !is.null(input$thermostat_type) && input$thermostat_type == "proactif"
-          df_prep <- run_baseline(df_prep, p_ct, proactif = proactif_am)
+          baseline_mode_am <- if (!is.null(input$baseline_type)) input$baseline_type else "reactif"
+          df_prep <- run_baseline(df_prep, p_ct, mode = baseline_mode_am)
           
           for (bkwh in batt_range) {
             p_sim <- p_ct
