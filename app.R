@@ -19,6 +19,11 @@ library(ompr)
 library(ompr.roi)
 library(ROI.plugin.glpk)
 library(ROI.plugin.highs)
+library(future)
+library(promises)
+
+# Lancer les futures en background (multicore si dispo, sinon multisession)
+plan(multisession)
 
 # Charger les modules
 source("R/belpex.R", local = TRUE)
@@ -2274,18 +2279,60 @@ sur 14 derniers jours    meilleur       ca continue"),
   })
 
 
-  # ---- IMPACT CO2 ----
+  # ---- IMPACT CO2 (pre-fetch en background) ----
 
-  # Reactive: fetch CO2 intensity once per simulation run
+  # ReactiveVal pour stocker les donnees CO2 pre-fetchees
+  co2_prefetched <- reactiveVal(NULL)
+
+  # Lancer le fetch CO2 en background des que la simulation est prete
+  observeEvent(sim_result(), {
+    res <- sim_result()
+    sim <- res$sim
+    start_d <- min(sim$timestamp, na.rm = TRUE)
+    end_d   <- max(sim$timestamp, na.rm = TRUE)
+
+    # Lancer le fetch API Elia dans un thread background (future)
+    co2_future <- future({
+      # Charger les dependances dans le worker (contexte isole)
+      suppressPackageStartupMessages({
+        library(dplyr)
+        library(lubridate)
+        library(httr)
+      })
+      source("R/co2_elia.R", local = TRUE)
+      fetch_co2_intensity(start_d, end_d)
+    }, seed = TRUE)
+
+    # Quand le future se resout, stocker le resultat
+    promises::then(co2_future,
+      onFulfilled = function(result) {
+        co2_prefetched(result)
+        message(sprintf("[CO2] Pre-fetch termine : %s (%d pts)",
+          result$source, nrow(result$df)))
+      },
+      onRejected = function(err) {
+        message(sprintf("[CO2] Pre-fetch echoue : %s — fallback", err$message))
+        # Fallback synchrone
+        source("R/co2_elia.R", local = TRUE)
+        co2_prefetched(build_fallback_co2(start_d, end_d) |>
+          (\(df) list(df = df, source = "fallback"))())
+      }
+    )
+  })
+
+  # Reactive: utilise les donnees pre-fetchees ou fetch synchrone en fallback
   co2_data <- reactive({
     req(sim_filtered())
+    prefetched <- co2_prefetched()
+    if (!is.null(prefetched)) return(prefetched)
+    # Fallback synchrone si le pre-fetch n'est pas encore arrive
     sim <- sim_filtered()
     start_d <- min(sim$timestamp, na.rm = TRUE)
     end_d   <- max(sim$timestamp, na.rm = TRUE)
     fetch_co2_intensity(start_d, end_d)
   })
 
-  # Reactive: compute CO2 impact
+  # Reactive: compute CO2 impact (calcul pur, quasi-instantane)
   co2_impact <- reactive({
     req(sim_filtered(), co2_data())
     sim <- sim_filtered()
