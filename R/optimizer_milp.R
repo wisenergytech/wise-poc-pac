@@ -165,7 +165,8 @@ solve_block <- function(block_data, params, t_init, soc_init = NULL, prix_termin
       lb = 20,
       ub = params$t_max + 5) |>
     add_variable(offt[t], t = 1:n, lb = 0) |>
-    add_variable(inj[t], t = 1:n, lb = 0)
+    add_variable(inj[t], t = 1:n, lb = 0,
+      ub = if (!is.null(params$curtail_kwh_per_qt) && is.finite(params$curtail_kwh_per_qt)) params$curtail_kwh_per_qt else Inf)
 
   # Battery variables (conditional)
   if (has_batt) {

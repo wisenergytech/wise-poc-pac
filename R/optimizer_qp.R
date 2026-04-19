@@ -112,6 +112,11 @@ solve_block_qp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
     t_bal <= params$t_max + 5
   )
 
+  # Curtailment: cap injection power
+  if (!is.null(params$curtail_kwh_per_qt) && is.finite(params$curtail_kwh_per_qt)) {
+    constraints <- c(constraints, list(inj <= params$curtail_kwh_per_qt))
+  }
+
   # C1: Energy balance
   if (has_batt) {
     constraints <- c(constraints, list(

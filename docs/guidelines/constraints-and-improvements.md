@@ -149,20 +149,32 @@ PAC tourne en meme temps que le PV produit, le soutirage reseau est
 mecaniquement reduit. La baseline "autoconsomme" **par accident** (coincidence
 temporelle), pas par intelligence.
 
-### Mode reactif vs proactif
+### Les 4 modes de baseline
 
-| Aspect | Reactif | Proactif |
-|---|---|---|
-| Decision | T < T_min → ON, T > consigne → OFF | Idem + anticipation 1 pas |
-| Connaissance | T_ballon uniquement | T_ballon + modele thermique |
-| Violations T_min | Frequentes (reaction retardee) | Rares (anticipation) |
-| Realisme | Thermostat classique | Thermostat "intelligent" |
-| Impact | Plus d'ecart avec optimiseurs | Moins d'ecart (baseline avantagee) |
+| Mode | Decision | Connait le PV ? | Connait les prix ? | Autoconso typique |
+|---|---|---|---|---|
+| **Reactif** | T < T_min → ON, T > consigne → OFF | Non | Non | ~10-15% |
+| **Programmateur** | PAC forcee 11h-15h, sinon reactif | Indirect (l'installateur sait) | Non | ~40-50% |
+| **Surplus PV** | PAC ON quand surplus > 50% P_pac, sinon reactif | Oui (capteur onduleur) | Non | ~50-70% |
+| **Proactif** | Reactif + anticipation 1 pas (T tomberait sous T_min ?) | Non | Non | ~15-20% |
 
-Le mode reactif est recommande pour une comparaison honnete : il represente
-ce qu'un utilisateur obtiendrait sans aucun systeme de pilotage intelligent.
-Le mode proactif avantage la baseline et reduit artificiellement les gains
-affiches.
+**Reactif** : thermostat classique des annees 80. Pire cas, gains affiches
+maximaux mais peu realistes pour une installation recente avec PV.
+
+**Programmateur** : l'installateur a regle "chauffer entre 11h et 15h".
+Tres courant. Le plus realiste pour un client typique avec PV et un
+installateur competent.
+
+**Surplus PV** : onduleur avec sortie surplus (Fronius, SMA, Huawei).
+Represente un client qui a investi dans un boitier de gestion basique.
+Bonne autoconsommation sans aucune optimisation de prix.
+
+**Proactif** : thermostat intelligent qui anticipe les chutes de T.
+Avantage la baseline, gains affiches minimaux.
+
+Le choix de baseline est critique pour la credibilite des resultats.
+Recommandation : demander au client quel mode correspond a son installation
+actuelle.
 
 ## 5. Filets de securite
 

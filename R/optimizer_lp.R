@@ -75,7 +75,8 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
     add_variable(pac_load[t], t = 1:n, lb = 0, ub = 1, type = "continuous") |>
     add_variable(t_bal[t], t = 1:n, lb = 20, ub = params$t_max + 5) |>
     add_variable(offt[t], t = 1:n, lb = 0) |>
-    add_variable(inj[t], t = 1:n, lb = 0) |>
+    add_variable(inj[t], t = 1:n, lb = 0,
+      ub = if (!is.null(params$curtail_kwh_per_qt) && is.finite(params$curtail_kwh_per_qt)) params$curtail_kwh_per_qt else Inf) |>
     add_variable(slack[t], t = 1:n, lb = 0)
 
   if (has_batt) {
