@@ -81,9 +81,9 @@
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Verifier que toutes les classes R6 n'importent PAS shiny : grep -r "library(shiny)\|require(shiny)\|shiny::" R/R6_*.R doit retourner 0 resultat
-- [ ] T026 [US2] Creer un script de validation scripts/validate_r6_standalone.R qui instancie Simulation, lance un workflow complet et affiche les KPI — sans library(shiny)
-- [ ] T027 [US2] Executer devtools::test() et verifier que tous les tests passent
+- [X] T025 [US2] Verifier que toutes les classes R6 n'importent PAS shiny : grep -r "library(shiny)\|require(shiny)\|shiny::" R/R6_*.R doit retourner 0 resultat
+- [X] T026 [US2] Creer un script de validation scripts/validate_r6_standalone.R qui instancie Simulation, lance un workflow complet et affiche les KPI — sans library(shiny)
+- [X] T027 [US2] Executer devtools::test() et verifier que tous les tests passent
 
 **Checkpoint**: Les classes R6 sont entierement independantes de Shiny. Script standalone fonctionne.
 
