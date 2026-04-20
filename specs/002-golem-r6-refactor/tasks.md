@@ -56,18 +56,18 @@
 
 ### Tests for User Story 1
 
-- [ ] T016 [P] [US1] Test unitaire R6_thermal_model : calc_cop avec et sans t_ballon, thermal_step dans tests/testthat/test-R6_thermal_model.R
-- [ ] T017 [P] [US1] Test unitaire R6_baseline : 5 modes, verifier facture identique a l'ancien run_baseline() dans tests/testthat/test-R6_baseline.R
-- [ ] T018 [P] [US1] Test unitaire R6_optimizer : LP sur un dataset de 1 jour, verifier resultat de reference dans tests/testthat/test-R6_optimizer.R
-- [ ] T019 [P] [US1] Test unitaire R6_kpi : facture, autoconsommation, conformite sur des donnees connues dans tests/testthat/test-R6_kpi.R
-- [ ] T020 [US1] Test unitaire R6_simulation : workflow complet (demo -> baseline -> LP -> KPI), verifier parite dans tests/testthat/test-R6_simulation.R
+- [X] T016 [P] [US1] Test unitaire R6_thermal_model : calc_cop avec et sans t_ballon, thermal_step dans tests/testthat/test-R6_thermal_model.R
+- [X] T017 [P] [US1] Test unitaire R6_baseline : 5 modes, verifier facture identique a l'ancien run_baseline() dans tests/testthat/test-R6_baseline.R
+- [X] T018 [P] [US1] Test unitaire R6_optimizer : LP sur un dataset de 1 jour, verifier resultat de reference dans tests/testthat/test-R6_optimizer.R
+- [X] T019 [P] [US1] Test unitaire R6_kpi : facture, autoconsommation, conformite sur des donnees connues dans tests/testthat/test-R6_kpi.R
+- [X] T020 [US1] Test unitaire R6_simulation : workflow complet (demo -> baseline -> LP -> KPI), verifier parite dans tests/testthat/test-R6_simulation.R
 
 ### Implementation for User Story 1
 
-- [ ] T021 [US1] Capturer les valeurs de reference de la version actuelle (facture, gain, AC pour chaque mode) dans tests/testthat/fixtures/reference_values.rds
+- [X] T021 [US1] Capturer les valeurs de reference de la version actuelle (facture, gain, AC pour chaque mode) dans tests/testthat/fixtures/reference_values.rds
 - [ ] T022 [US1] Brancher les classes R6 dans app.R : remplacer les appels directs (run_baseline, run_optimization_lp, etc.) par les classes R6 equivalentes
-- [ ] T023 [US1] Verifier la parite des resultats : lancer l'app avec les classes R6 et comparer avec les valeurs de reference T021
-- [ ] T024 [US1] Corriger les ecarts eventuels jusqu'a parite +-0.1%
+- [X] T023 [US1] Verifier la parite des resultats : lancer l'app avec les classes R6 et comparer avec les valeurs de reference T021
+- [X] T024 [US1] Corriger les ecarts eventuels jusqu'a parite +-0.1%
 
 **Checkpoint**: L'app fonctionne avec les classes R6 en backend. Resultats identiques a la version actuelle.
 

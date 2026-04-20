@@ -169,6 +169,7 @@ to_quarter_hourly <- function(df) {
 # -----------------------------------------------------------------------------
 load_belpex_prices <- function(start_date, end_date, api_key = NULL, data_dir = "data") {
   source_used <- "none"
+  local_filtered <- NULL
 
   # 1) Essayer les CSV locaux
   local <- load_local_belpex(data_dir)
@@ -196,7 +197,7 @@ load_belpex_prices <- function(start_date, end_date, api_key = NULL, data_dir = 
       source_used <- if (source_used == "local") "local+api" else "api"
       message(sprintf("[Belpex] %d points charges depuis l'API ENTSO-E", nrow(api_data)))
 
-      combined <- bind_rows(local_filtered %||% tibble(), api_data) %>%
+      combined <- bind_rows(if (!is.null(local_filtered)) local_filtered else tibble(), api_data) %>%
         distinct(datetime, .keep_all = TRUE) %>%
         arrange(datetime) %>%
         filter(datetime >= start_date, datetime <= end_date)
@@ -207,7 +208,7 @@ load_belpex_prices <- function(start_date, end_date, api_key = NULL, data_dir = 
   }
 
   # 3) Retourner ce qu'on a (local partiel ou NULL)
-  if (!is.null(local) && nrow(local_filtered %||% tibble()) > 0) {
+  if (!is.null(local_filtered) && nrow(local_filtered) > 0) {
     result <- to_quarter_hourly(local_filtered)
     return(list(data = result, source = source_used))
   }
