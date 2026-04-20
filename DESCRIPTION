@@ -25,7 +25,11 @@ Imports:
     ROI.plugin.glpk,
     golem,
     R6,
-    config
+    config,
+    future,
+    promises,
+    rlang,
+    tibble
 Suggests:
     testthat (>= 3.0.0),
     renv

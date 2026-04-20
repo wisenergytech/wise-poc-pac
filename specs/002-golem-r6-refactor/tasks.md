@@ -97,10 +97,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T028 [US3] Creer R/app_ui.R : assembler l'UI principale (sidebar + navset_card_tab) a partir de app.R actuel, en utilisant les modules
-- [ ] T029 [US3] Creer R/app_server.R : server principal avec reactiveVal(NULL) pour sim_state, appels aux modules
-- [ ] T030 [US3] Verifier que golem::run_app() lance l'app correctement
-- [ ] T031 [US3] Mettre a jour DESCRIPTION avec toutes les dependances (Imports, Suggests)
+- [X] T028 [US3] Creer R/app_ui.R : assembler l'UI principale (sidebar + navset_card_tab) a partir de app.R actuel, en utilisant les modules
+- [X] T029 [US3] Creer R/app_server.R : server principal avec reactiveVal(NULL) pour sim_state, appels aux modules
+- [X] T030 [US3] Verifier que golem::run_app() lance l'app correctement
+- [X] T031 [US3] Mettre a jour DESCRIPTION avec toutes les dependances (Imports, Suggests)
 
 **Checkpoint**: golem::run_app() fonctionne. La structure est reconnue par un developpeur R.
 
