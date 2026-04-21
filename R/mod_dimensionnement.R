@@ -89,12 +89,10 @@ mod_dimensionnement_server <- function(id, sidebar) {
 
           for (pv_kwc in pv_range) {
             p_ct$pv_kwc <- pv_kwc
-            prep_ct <- prepare_df(df_raw, p_ct)
-            df_prep <- prep_ct$df; p_ct <- prep_ct$params
+            df_pv <- df_raw
             ratio <- pv_kwc / p$pv_kwc_ref
-            df_prep$pv_kwh <- df_raw$pv_kwh * ratio
+            df_pv$pv_kwh <- df_raw$pv_kwh * ratio
             baseline_mode_am <- if (!is.null(baseline_type())) baseline_type() else "reactif"
-            df_prep <- run_baseline(df_prep, p_ct, mode = baseline_mode_am)
 
             for (bkwh in batt_range) {
               p_sim <- p_ct
@@ -107,18 +105,19 @@ mod_dimensionnement_server <- function(id, sidebar) {
                 shiny::setProgress(k / total, detail = sprintf("%d/%d -- PV %dkWc Batt %dkWh %s %s",
                   k, total, pv_kwc, bkwh, m, ct))
 
+                r6_m <- switch(m,
+                  optimizer = "milp", optimizer_lp = "lp", optimizer_qp = "qp", "smart")
+
                 tryCatch({
-                  sim <- if (m == "optimizer") {
-                    run_optimization_milp(df_prep, p_sim)
-                  } else if (m == "optimizer_lp") {
-                    run_optimization_lp(df_prep, p_sim)
-                  } else if (m == "optimizer_qp") {
+                  if (m == "optimizer_qp") {
                     p_sim$qp_w_comfort <- 0.1
                     p_sim$qp_w_smooth <- 0.05
-                    run_optimization_qp(df_prep, p_sim)
-                  } else {
-                    run_simulation(df_prep, p_sim, "smart", 0.5)
                   }
+                  sim_sc <- Simulation$new(p_sim)
+                  sim_sc$load_raw_dataframe(df_pv)
+                  sim_sc$run_baseline(mode = baseline_mode_am)
+                  sim_sc$run_optimization(r6_m)
+                  sim <- sim_sc$get_results()
 
                   pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
                   inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
@@ -267,7 +266,11 @@ mod_dimensionnement_server <- function(id, sidebar) {
       scenarii <- dplyr::bind_rows(lapply(kwc_range, function(kwc) {
         p_sc <- p; p_sc$pv_kwc <- kwc; p_sc$pv_kwc_ref <- p$pv_kwc
         df_sc <- df_base %>% dplyr::mutate(pv_kwh = pv_kwh * kwc / kwc_ref)
-        sim_sc <- run_simulation(df_sc, p_sc, "smart", 0.5)
+        sim_obj <- Simulation$new(p_sc)
+        sim_obj$load_raw_dataframe(df_sc)
+        sim_obj$run_baseline()
+        sim_obj$run_optimization("smart")
+        sim_sc <- sim_obj$get_results()
         tibble::tibble(
           kWc = kwc,
           `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
@@ -312,7 +315,11 @@ mod_dimensionnement_server <- function(id, sidebar) {
         p_sc <- p
         p_sc$batterie_active <- cap > 0
         p_sc$batt_kwh <- cap
-        sim_sc <- run_simulation(df_base, p_sc, "smart", 0.5)
+        sim_obj <- Simulation$new(p_sc)
+        sim_obj$load_raw_dataframe(df_base)
+        sim_obj$run_baseline()
+        sim_obj$run_optimization("smart")
+        sim_sc <- sim_obj$get_results()
         tibble::tibble(
           `Batterie (kWh)` = cap,
           `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),

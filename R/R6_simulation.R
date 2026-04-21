@@ -76,6 +76,24 @@ Simulation <- R6::R6Class("Simulation",
       invisible(self)
     },
 
+    #' @description Load a pre-existing raw dataframe (e.g. from a Shiny reactive).
+    #'   Runs prepare_df() internally to produce the prepared data.
+    #' @param df A raw dataframe (from generer_demo, CSV upload, or any source)
+    #' @param data_provider Optional DataProvider instance
+    #' @return self (for chaining)
+    load_raw_dataframe = function(df, data_provider = NULL) {
+      private$status <- "loading"
+      private$raw_data <- df
+
+      gen <- DataGenerator$new(data_provider)
+      result <- gen$prepare_df(private$raw_data, private$params)
+      private$prepared_data <- result$df
+      private$params <- result$params
+
+      private$status <- "data_loaded"
+      invisible(self)
+    },
+
     #' @description Run the baseline simulation.
     #' @param mode Baseline mode: "reactif", "programmateur", "surplus_pv",
     #'   "ingenieur" (default from params), or "proactif"

@@ -66,6 +66,7 @@ This updates guidelines, templates, CSS theme, CLAUDE.md, and constitution base 
 - N/A (in-memory simulation) (001-milp-optimizer)
 - R 4.5+ (Shiny) + golem >= 0.4.0, R6 >= 2.5.0, shiny, bslib, dplyr, plotly, DT, ompr, ompr.roi, ROI.plugin.glpk, CVXR, lubridate, httr (002-golem-r6-refactor)
 - N/A (in-memory simulation, CSV data files) (002-golem-r6-refactor)
+- R 4.5+ (Shiny) + golem >= 0.4.0, R6 >= 2.5.0, shiny, bslib, dplyr, plotly, ompr, CVXR (003-wire-r6-modules)
 
 ## Recent Changes
 - 001-milp-optimizer: Added R 4.5+ (Shiny) + ompr 1.0.4, ompr.roi 1.0.2, ROI.plugin.glpk 1.0-0 (nouveaux) + stack existante (shiny, bslib, dplyr, plotly, DT)

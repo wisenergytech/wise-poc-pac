@@ -377,7 +377,9 @@ DONNEES CALCULEES
         df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE) %>% dplyr::mutate(timestamp = lubridate::ymd_hms(timestamp))
       } else {
         shiny::req(input$date_range)
-        df <- generer_demo(input$date_range[1], input$date_range[2],
+        gen <- DataGenerator$new()
+        df <- gen$generate_demo(
+          date_start = input$date_range[1], date_end = input$date_range[2],
           p_pac_kw = input$p_pac_kw, volume_ballon_l = volume_ballon_eff(),
           pv_kwc = pv_kwc_eff(),
           ecs_kwh_jour = input$ecs_kwh_jour,
@@ -428,12 +430,15 @@ DONNEES CALCULEES
       approche <- input$approche
 
       shiny::withProgress(message = "Preparation...", value = 0.1, {
-        prep <- prepare_df(df, p)
-        df_prep <- prep$df; p <- prep$params
+        # R6 workflow: Simulation orchestrates prepare + baseline + optimization
+        sim_obj <- Simulation$new(p)
+        sim_obj$load_raw_dataframe(df)
+        p <- sim_obj$get_params()
 
         baseline_mode <- if (!is.null(input$baseline_type)) input$baseline_type else "reactif"
         shiny::setProgress(0.2, detail = paste0("Calcul baseline ", baseline_mode, "..."))
-        df_prep <- run_baseline(df_prep, p, mode = baseline_mode)
+        sim_obj$run_baseline(mode = baseline_mode)
+        df_prep <- sim_obj$get_baseline()
 
         # Safety net
         guard_baseline <- function(sim, df_prep, p, mode_label) {
@@ -452,63 +457,49 @@ DONNEES CALCULEES
           sim
         }
 
-        if (approche == "optimiseur") {
-          shiny::setProgress(0.3, detail = "Optimisation MILP en cours...")
-          sim <- tryCatch({ run_optimization_milp(df_prep, p) }, error = function(e) {
-            shiny::showNotification(paste("Erreur optimiseur MILP:", e$message), type = "error", duration = 10)
-            NULL
-          })
-          if (is.null(sim)) {
-            shiny::showNotification("Optimisation MILP infaisable", type = "error")
-            sim <- run_simulation(df_prep, p, "smart", 0.5)
-            sim$mode_actif <- "smart_fallback"
-          } else {
-            sim <- guard_baseline(sim, df_prep, p, "MILP")
-          }
-          shiny::setProgress(1, detail = "Termine!")
-          list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer")
-        } else if (approche == "optimiseur_lp") {
-          p$optim_bloc_h <- input$optim_bloc_h_lp
-          shiny::setProgress(0.3, detail = "Optimisation LP en cours...")
-          sim <- tryCatch({ run_optimization_lp(df_prep, p) }, error = function(e) {
-            shiny::showNotification(paste("Erreur optimiseur LP:", e$message), type = "error", duration = 10)
-            NULL
-          })
-          if (is.null(sim)) {
-            shiny::showNotification("Optimisation LP infaisable", type = "error")
-            sim <- run_simulation(df_prep, p, "smart", 0.5)
-            sim$mode_actif <- "smart_fallback"
-          } else {
-            sim <- guard_baseline(sim, df_prep, p, "LP")
-          }
-          shiny::setProgress(1, detail = "Termine!")
-          list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer_lp")
-        } else if (approche == "optimiseur_qp") {
+        # Map sidebar approche to R6 optimization mode
+        r6_mode <- switch(approche,
+          optimiseur = "milp",
+          optimiseur_lp = "lp",
+          optimiseur_qp = "qp",
+          "smart"  # default: rulebased / smart
+        )
+        mode_label <- toupper(r6_mode)
+
+        # Set mode-specific params before optimization
+        if (approche == "optimiseur_lp") p$optim_bloc_h <- input$optim_bloc_h_lp
+        if (approche == "optimiseur_qp") {
           p$optim_bloc_h <- input$optim_bloc_h_qp
           p$qp_w_comfort <- input$qp_w_comfort
           p$qp_w_smooth <- input$qp_w_smooth
-          shiny::setProgress(0.3, detail = "Optimisation QP (CVXR) en cours...")
-          sim <- tryCatch({ run_optimization_qp(df_prep, p) }, error = function(e) {
-            shiny::showNotification(paste("Erreur optimiseur QP:", e$message), type = "error", duration = 10)
-            NULL
-          })
-          if (is.null(sim)) {
-            shiny::showNotification("Optimisation QP infaisable", type = "error")
-            sim <- run_simulation(df_prep, p, "smart", 0.5)
-            sim$mode_actif <- "smart_fallback"
-          } else {
-            sim <- guard_baseline(sim, df_prep, p, "QP")
-          }
-          shiny::setProgress(1, detail = "Termine!")
-          list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "optimizer_qp")
-        } else {
-          shiny::setProgress(0.3, detail = "Simulation Smart en cours...")
-          sim <- run_simulation(df_prep, p, "smart", 0.5)
-          sim$mode_actif <- "smart"
-          sim <- guard_baseline(sim, df_prep, p, "Smart")
-          shiny::setProgress(1, detail = "Termine!")
-          list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = "smart")
         }
+        # Re-create sim_obj with updated params (for QP/LP bloc_h overrides)
+        sim_obj <- Simulation$new(p)
+        sim_obj$load_raw_dataframe(df)
+        p <- sim_obj$get_params()
+        sim_obj$run_baseline(mode = baseline_mode)
+        df_prep <- sim_obj$get_baseline()
+
+        shiny::setProgress(0.3, detail = sprintf("Optimisation %s en cours...", mode_label))
+        sim <- tryCatch({
+          sim_obj$run_optimization(r6_mode)
+          sim_obj$get_results()
+        }, error = function(e) {
+          shiny::showNotification(paste("Erreur optimiseur", mode_label, ":", e$message), type = "error", duration = 10)
+          NULL
+        })
+
+        if (is.null(sim)) {
+          shiny::showNotification(sprintf("Optimisation %s infaisable — fallback Smart", mode_label), type = "error")
+          sim_obj$run_optimization("smart")
+          sim <- sim_obj$get_results()
+          sim$mode_actif <- "smart_fallback"
+        } else {
+          sim <- guard_baseline(sim, df_prep, p, mode_label)
+        }
+
+        shiny::setProgress(1, detail = "Termine!")
+        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = r6_mode)
       })
     })
 
@@ -590,12 +581,17 @@ DONNEES CALCULEES
 
           for (pv_kwc in pv_range) {
             p_ct$pv_kwc <- pv_kwc
-            prep_ct <- prepare_df(df_raw, p_ct)
-            df_prep <- prep_ct$df; p_ct <- prep_ct$params
+            # Create R6 Simulation for this PV scenario
+            sim_am <- Simulation$new(p_ct)
+            # Adjust PV in raw data before loading
+            df_pv <- df_raw
             ratio <- pv_kwc / p$pv_kwc_ref
-            df_prep$pv_kwh <- df_raw$pv_kwh * ratio
+            df_pv$pv_kwh <- df_raw$pv_kwh * ratio
+            sim_am$load_raw_dataframe(df_pv)
+            p_ct <- sim_am$get_params()
             baseline_mode_am <- if (!is.null(input$baseline_type)) input$baseline_type else "reactif"
-            df_prep <- run_baseline(df_prep, p_ct, mode = baseline_mode_am)
+            sim_am$run_baseline(mode = baseline_mode_am)
+            df_prep <- sim_am$get_baseline()
 
             for (bkwh in batt_range) {
               p_sim <- p_ct
@@ -608,18 +604,20 @@ DONNEES CALCULEES
                 shiny::setProgress(k / total, detail = sprintf("%d/%d -- PV %dkWc Batt %dkWh %s %s",
                   k, total, pv_kwc, bkwh, m, ct))
 
+                # Map automagic mode names to R6 optimizer modes
+                r6_m <- switch(m,
+                  optimizer = "milp", optimizer_lp = "lp", optimizer_qp = "qp", "smart")
+
                 tryCatch({
-                  sim <- if (m == "optimizer") {
-                    run_optimization_milp(df_prep, p_sim)
-                  } else if (m == "optimizer_lp") {
-                    run_optimization_lp(df_prep, p_sim)
-                  } else if (m == "optimizer_qp") {
+                  if (m == "optimizer_qp") {
                     p_sim$qp_w_comfort <- 0.1
                     p_sim$qp_w_smooth <- 0.05
-                    run_optimization_qp(df_prep, p_sim)
-                  } else {
-                    run_simulation(df_prep, p_sim, "smart", 0.5)
                   }
+                  sim_sc <- Simulation$new(p_sim)
+                  sim_sc$load_raw_dataframe(df_pv)
+                  sim_sc$run_baseline(mode = baseline_mode_am)
+                  sim_sc$run_optimization(r6_m)
+                  sim <- sim_sc$get_results()
 
                   pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
                   inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
