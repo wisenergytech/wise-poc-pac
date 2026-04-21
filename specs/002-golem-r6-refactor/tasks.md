@@ -136,9 +136,9 @@
 
 ### Implementation for User Story 5
 
-- [ ] T041 [US5] Verifier l'isolation : creer 2 instances Simulation dans le script validate_r6_standalone.R, confirmer resultats independants
-- [ ] T042 [US5] Implementer Simulation$export_csv(path) qui ecrit les resultats avec la structure de colonnes actuelle dans R/R6_simulation.R
-- [ ] T043 [US5] Connecter le downloadHandler du module sidebar a Simulation$export_csv()
+- [X] T041 [US5] Verifier l'isolation : creer 2 instances Simulation dans le script validate_r6_standalone.R, confirmer resultats independants
+- [X] T042 [US5] Implementer Simulation$export_csv(path) qui ecrit les resultats avec la structure de colonnes actuelle dans R/R6_simulation.R
+- [X] T043 [US5] Connecter le downloadHandler du module sidebar a Simulation$export_csv()
 
 **Checkpoint**: Etat encapsule. Deux simulations simultanees possibles. Export CSV fonctionne.
 
