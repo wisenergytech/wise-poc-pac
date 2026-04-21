@@ -49,7 +49,7 @@ mod_co2_server <- function(id, sidebar) {
           library(lubridate)
           library(httr)
         })
-        source("R/co2_elia.R", local = TRUE)
+        source("R/data_co2_elia.R", local = TRUE)
         fetch_co2_intensity(start_d, end_d)
       }, seed = TRUE)
 
@@ -61,7 +61,7 @@ mod_co2_server <- function(id, sidebar) {
         },
         onRejected = function(err) {
           message(sprintf("[CO2] Pre-fetch echoue : %s -- fallback", err$message))
-          source("R/co2_elia.R", local = TRUE)
+          source("R/data_co2_elia.R", local = TRUE)
           co2_prefetched(build_fallback_co2(start_d, end_d) |>
             (\(df) list(df = df, source = "fallback"))())
         }

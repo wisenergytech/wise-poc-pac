@@ -3,7 +3,7 @@
 # =============================================================================
 # Wraps the existing data loading functions for Belpex prices, Open-Meteo
 # temperature, and Elia CO2 intensity. Delegates to the standalone functions
-# in R/belpex.R, R/openmeteo.R, R/co2_elia.R.
+# in R/data_belpex.R, R/data_openmeteo.R, R/data_co2_elia.R.
 # =============================================================================
 
 #' @title Data Provider

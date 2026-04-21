@@ -26,12 +26,12 @@ library(promises)
 plan(multisession)
 
 # Charger les modules
-source("R/belpex.R", local = TRUE)
+source("R/data_belpex.R", local = TRUE)
 source("R/optimizer_milp.R", local = TRUE)
 source("R/optimizer_lp.R", local = TRUE)
 source("R/optimizer_qp.R", local = TRUE)
-source("R/openmeteo.R", local = TRUE)
-source("R/co2_elia.R", local = TRUE)
+source("R/data_openmeteo.R", local = TRUE)
+source("R/data_co2_elia.R", local = TRUE)
 
 # Charger les variables d'environnement depuis .env
 if (file.exists(".env")) {
@@ -2299,7 +2299,7 @@ sur 14 derniers jours    meilleur       ca continue"),
         library(lubridate)
         library(httr)
       })
-      source("R/co2_elia.R", local = TRUE)
+      source("R/data_co2_elia.R", local = TRUE)
       fetch_co2_intensity(start_d, end_d)
     }, seed = TRUE)
 
@@ -2313,7 +2313,7 @@ sur 14 derniers jours    meilleur       ca continue"),
       onRejected = function(err) {
         message(sprintf("[CO2] Pre-fetch echoue : %s — fallback", err$message))
         # Fallback synchrone
-        source("R/co2_elia.R", local = TRUE)
+        source("R/data_co2_elia.R", local = TRUE)
         co2_prefetched(build_fallback_co2(start_d, end_d) |>
           (\(df) list(df = df, source = "fallback"))())
       }

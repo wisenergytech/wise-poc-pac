@@ -203,9 +203,9 @@ R/
 ├── optimizer_milp.R          # MILP solver (ompr/HiGHS)
 ├── optimizer_lp.R            # LP solver (ompr/GLPK)
 ├── optimizer_qp.R            # QP solver (CVXR/CLARABEL)
-├── belpex.R                  # Belpex price loading
-├── openmeteo.R               # OpenMeteo temperature loading
-├── co2_elia.R                # CO2 intensity (Elia)
+├── data_belpex.R             # Belpex price loading
+├── data_openmeteo.R          # OpenMeteo temperature loading
+├── data_co2_elia.R           # CO2 intensity (Elia)
 │
 ├── fct_helpers.R             # Shared utilities (calc_cop, pl_layout, etc.)
 ├── fct_ui_theme.R            # Colors, theme, UI helpers

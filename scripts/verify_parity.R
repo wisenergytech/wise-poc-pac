@@ -35,8 +35,8 @@ if (file.exists(".env")) {
 
 # Source R6 classes and dependencies
 source("R/fct_helpers.R")
-source("R/belpex.R")
-source("R/openmeteo.R")
+source("R/data_belpex.R")
+source("R/data_openmeteo.R")
 source("R/optimizer_lp.R")
 tryCatch(source("R/optimizer_milp.R"), error = function(e) message("[skip] optimizer_milp.R: ", e$message))
 source("R/optimizer_qp.R")
