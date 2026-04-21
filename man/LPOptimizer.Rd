@@ -8,7 +8,7 @@ R6 optimizer using pure Linear Programming (continuous PAC load).
   Delegates block solving to solve_block_lp() from R/optimizer_lp.R.
 }
 \section{Super class}{
-\code{wisepocpac::BaseOptimizer} -> \code{LPOptimizer}
+\code{\link[wisepocpac:BaseOptimizer]{wisepocpac::BaseOptimizer}} -> \code{LPOptimizer}
 }
 \section{Methods}{
 \subsection{Public methods}{

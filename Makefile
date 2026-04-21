@@ -28,7 +28,7 @@ PORT ?= 3838
 
 # ─────────────────────────────────────────────────────────────────────────────
 
-.PHONY: help dev test snapshot lint document check-env \
+.PHONY: help dev test snapshot lint document docs check-env \
 	docker-build docker-run deploy setup-gcp secrets-create \
 	check-deploy-coverage sync-standards
 
@@ -51,6 +51,9 @@ lint: ## Run lintr on R/ directory
 
 document: ## Regenerate NAMESPACE and man/ via roxygen2
 	Rscript -e "devtools::document()"
+
+docs: ## Build pkgdown site into docs/
+	Rscript -e "pkgdown::build_site(preview = FALSE)"
 
 # ── Docker ───────────────────────────────────────────────────────────────────
 

@@ -8,7 +8,7 @@ R6 optimizer using Mixed Integer Linear Programming.
   Delegates block solving to solve_block() from R/optimizer_milp.R.
 }
 \section{Super class}{
-\code{wisepocpac::BaseOptimizer} -> \code{MILPOptimizer}
+\code{\link[wisepocpac:BaseOptimizer]{wisepocpac::BaseOptimizer}} -> \code{MILPOptimizer}
 }
 \section{Methods}{
 \subsection{Public methods}{

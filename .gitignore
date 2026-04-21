@@ -17,5 +17,8 @@ renv/staging/
 .DS_Store
 Thumbs.db
 
+# pkgdown generated site
+docs/
+
 # Claude Code
 .claude/

@@ -1,0 +1,62 @@
+url: https://wise-energy.github.io/wise-poc-pac/
+
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, articles]
+    right: [search, github]
+
+reference:
+  - title: Simulation
+    desc: Core orchestration and parameters
+    contents:
+      - Simulation
+      - SimulationParams
+
+  - title: Thermal Model
+    desc: COP calculation and thermal dynamics
+    contents:
+      - ThermalModel
+
+  - title: Baseline
+    desc: 5 baseline operating modes
+    contents:
+      - Baseline
+
+  - title: Optimizers
+    desc: LP, MILP, QP solvers and smart selection
+    contents:
+      - BaseOptimizer
+      - LPOptimizer
+      - MILPOptimizer
+      - QPOptimizer
+      - SmartOptimizer
+
+  - title: KPI
+    desc: Financial and energy KPI calculation
+    contents:
+      - KPICalculator
+
+  - title: Data
+    desc: External data loading and generation
+    contents:
+      - DataProvider
+      - DataGenerator
+      - load_openmeteo_temperature
+      - interpolate_temperature_15min
+      - fetch_co2_intensity
+      - interpolate_co2_15min
+      - compute_co2_impact
+
+  - title: App
+    desc: Shiny application entry point
+    contents:
+      - run_app
+
+articles:
+  - title: Guides
+    contents:
+      - comprendre-les-optimizers
+      - comprendre-votre-installation

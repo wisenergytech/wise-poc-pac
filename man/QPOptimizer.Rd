@@ -8,7 +8,7 @@ R6 optimizer using Quadratic Programming with comfort and
   smoothing penalties. Delegates to solve_block_qp() from R/optimizer_qp.R.
 }
 \section{Super class}{
-\code{wisepocpac::BaseOptimizer} -> \code{QPOptimizer}
+\code{\link[wisepocpac:BaseOptimizer]{wisepocpac::BaseOptimizer}} -> \code{QPOptimizer}
 }
 \section{Methods}{
 \subsection{Public methods}{

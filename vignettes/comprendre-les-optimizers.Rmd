@@ -1,0 +1,367 @@
+---
+title: "Comprendre les optimizers : comment l'app réduit votre facture énergétique"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Comprendre les optimizers : comment l'app réduit votre facture énergétique}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4
+)
+```
+
+## Le problème, en une phrase
+
+Vous avez une pompe à chaleur (PAC), des panneaux solaires, un ballon d'eau chaude,
+peut-être une batterie, et une facture d'électricité qui varie d'heure en heure.
+**Quand faut-il allumer la PAC pour payer le moins possible, sans jamais manquer
+d'eau chaude ?**
+
+C'est exactement la question à laquelle répondent les *optimizers* de cette
+application.
+
+---
+
+## Avant d'optimiser : comprendre le terrain de jeu
+
+### Les pièces du puzzle
+
+Imaginez votre installation comme une petite économie domestique avec ses propres
+règles :
+
+| Élément | Rôle | Analogie |
+|---------|------|----------|
+| **Panneaux PV** | Produisent de l'électricité gratuite quand le soleil brille | Un potager qui produit des légumes gratuits, mais seulement en saison |
+| **PAC** | Transforme l'électricité en chaleur (avec un rendement > 100 % grâce au COP) | Un cuisinier qui, avec 1 kg de pâtes, nourrit 3-4 personnes |
+| **Ballon d'eau chaude** | Stocke la chaleur pour plus tard | Un thermos géant — on peut le remplir quand l'énergie est bon marché |
+| **Batterie** (optionnelle) | Stocke l'électricité pour plus tard | Un congélateur pour vos légumes du potager |
+| **Réseau électrique** | Achat (soutirage) et vente (injection) d'électricité | Le supermarché — vous y achetez ce qui manque, vous y vendez le surplus |
+| **Prix spot (Belpex)** | Le prix de l'électricité change tous les quarts d'heure | Comme le prix des fruits au marché : les fraises en hiver coûtent cher, en été elles sont données |
+
+### Le COP : le super-pouvoir de votre PAC
+
+Le **COP** (*Coefficient de Performance*) est le multiplicateur magique de votre PAC.
+Un COP de 3,5 signifie que pour chaque kWh d'électricité consommé, la PAC produit
+3,5 kWh de chaleur. C'est comme si, pour chaque euro dépensé au supermarché, on
+obtenait 3,50 EUR de nourriture.
+
+Mais le COP n'est pas fixe :
+
+- **Quand il fait doux dehors** (15 °C) → COP ≈ 4,3 — la PAC est très efficace
+- **Quand il fait froid** (-5 °C) → COP ≈ 2,3 — la PAC doit travailler plus dur
+
+C'est pourquoi il est plus malin de chauffer l'eau quand il fait doux et que le soleil
+brille, plutôt que pendant une nuit glaciale.
+
+### La contrainte de confort
+
+Le ballon doit rester entre deux températures :
+
+- **T~min~** : en dessous, l'eau est trop froide (inconfort, risque sanitaire)
+- **T~max~** : au-dessus, c'est du gaspillage (pertes thermiques accrues)
+
+C'est comme un frigo : il doit rester entre 2 °C et 8 °C. Trop chaud, les aliments
+s'abîment. Trop froid, tout gèle.
+
+---
+
+## L'approche naïve : le thermostat
+
+La façon la plus simple de piloter une PAC, c'est le thermostat classique :
+
+> *"Si le ballon descend sous T~min~, allume la PAC. Si le ballon atteint T~max~, éteins-la."*
+
+C'est fiable. C'est simple. Mais c'est **aveugle** : le thermostat ne sait pas que
+l'électricité coûte 0,35 EUR/kWh maintenant et seulement 0,05 EUR/kWh dans deux
+heures. Il ne sait pas qu'un pic de soleil arrive à 13h. Il ne sait pas que la
+température extérieure va chuter cette nuit, dégradant le COP.
+
+C'est comme faire ses courses sans regarder les prix ni les promotions : on remplit
+le frigo quand il est vide, point final.
+
+**Les optimizers font mieux.** Ils regardent les prévisions (prix, météo, production
+PV, consommation) et planifient à l'avance.
+
+---
+
+## L'optimisation, c'est quoi au juste ?
+
+### Une métaphore : le road trip
+
+Imaginez que vous planifiez un road trip de 500 km. Vous avez :
+
+- Une carte avec les **stations-service** et leurs prix (qui varient)
+- La **jauge** de votre réservoir (ne doit jamais tomber à zéro)
+- La **consommation** de votre voiture (varie selon la vitesse et le relief)
+
+**Question** : à quelles stations vous arrêter, et combien de litres prendre à
+chacune, pour minimiser le coût total du carburant sans jamais tomber en panne ?
+
+C'est *exactement* le même type de problème que l'optimisation de votre PAC :
+
+| Road trip | Installation PAC |
+|-----------|-----------------|
+| Jauge du réservoir | Température du ballon |
+| Stations-service | Quarts d'heure de la journée |
+| Prix du carburant | Prix spot de l'électricité |
+| Consommation du véhicule | Pertes thermiques + tirages d'eau chaude |
+| Faire le plein | Allumer la PAC |
+| Tomber en panne | Eau trop froide (T < T~min~) |
+
+Un humain pourrait résoudre ce problème pour 5 stations. Mais pour **2 880
+quarts d'heure** (un mois entier), avec des contraintes de batterie, de COP
+variable, et d'injection sur le réseau... il faut un algorithme.
+
+### Le principe fondamental
+
+Tous nos optimizers partagent la même logique :
+
+1. **Objectif** : minimiser la facture nette (soutirage payé − injection vendue)
+2. **Décision** : pour chaque quart d'heure, allumer ou non la PAC (et à quelle
+   puissance)
+3. **Contraintes** : température du ballon entre T~min~ et T~max~, limites de la
+   batterie, bilan énergétique équilibré
+
+En langage mathématique, on appelle ça un **problème d'optimisation sous
+contraintes**. Mais pas de panique — vous n'avez pas besoin de comprendre les maths
+pour utiliser l'app. Ce qui suit explique *comment* chaque optimizer s'y prend.
+
+---
+
+## Les quatre approches d'optimisation
+
+L'application propose quatre stratégies, du plus intuitif au plus sophistiqué.
+Pensez-y comme quatre niveaux de pilotage automatique :
+
+```
+ Simplicité                                              Sophistication
+ ──────────────────────────────────────────────────────────────────────►
+
+  Smart          LP              MILP             QP
+  (règles)    (continu)      (tout-ou-rien)   (confort+)
+```
+
+### 1. Smart (règles expertes)
+
+**Analogie** : un conducteur expérimenté qui prend ses décisions au feeling.
+
+Le Smart optimizer applique des **règles de bon sens**, une par une, à chaque quart
+d'heure :
+
+- Le ballon est trop froid ? → PAC ON (urgence)
+- Le prix est négatif et il y a du surplus PV ? → PAC ON (autant en profiter)
+- Le prix actuel est bien en dessous de la médiane des prochaines heures ? → PAC ON
+  (c'est le moment)
+- Il y a du surplus PV gratuit ? → PAC ON
+- Sinon → PAC OFF
+
+**Forces** : rapide, transparent, facile à comprendre.
+**Limites** : il décide quart d'heure par quart d'heure, sans vision globale. C'est
+comme conduire en ne regardant que 50 m devant soi. Il ne peut pas anticiper qu'il
+vaudrait mieux attendre 2 h pour un prix encore meilleur.
+
+### 2. LP (Programmation Linéaire)
+
+**Analogie** : un GPS qui calcule le trajet optimal sur toute la journée.
+
+Le LP est le premier "vrai" optimizer mathématique. Il considère **toute la période
+d'un coup** et trouve la solution qui coûte le moins cher *globalement*.
+
+**Comment il fonctionne** :
+
+Imaginez que vous pouvez régler votre PAC comme un variateur de lumière : pas juste
+ON/OFF, mais n'importe quelle puissance entre 0 % et 100 %. Le LP cherche, pour
+chaque quart d'heure, le réglage idéal de ce variateur.
+
+Mathématiquement, c'est un problème **convexe** : il n'y a qu'un seul minimum, et
+l'algorithme le trouve à coup sûr. C'est comme chercher le point le plus bas d'un
+bol — peu importe d'où vous partez, vous arriverez toujours au fond.
+
+**Forces** : garanti optimal, très rapide (peut traiter 24 h d'un coup).
+**Limites** : suppose que la PAC peut moduler en continu. Si votre PAC est purement
+ON/OFF (sans variateur de fréquence), le résultat reste une très bonne approximation,
+mais pas exactement réalisable tel quel.
+
+> **Recommandé pour** : une première analyse rapide, ou si votre PAC dispose d'un
+> variateur (inverter).
+
+### 3. MILP (Programmation Linéaire en Nombres Entiers Mixtes)
+
+**Analogie** : le même GPS, mais qui respecte la contrainte que votre PAC est soit
+allumée, soit éteinte — pas de demi-mesure.
+
+Le MILP ajoute une contrainte fondamentale : la décision est **binaire**. Pour chaque
+quart d'heure, c'est 1 (ON) ou 0 (OFF). Pas de 37 % ou 82 %.
+
+Pourquoi c'est plus difficile ? Reprenons la métaphore du bol. Avec le LP, vous
+pouvez glisser n'importe où dans le bol. Avec le MILP, vous ne pouvez vous tenir que
+sur des **marches d'escalier** — et il faut trouver la marche la plus basse. Il y a
+potentiellement 2^n^ combinaisons possibles (où n = nombre de quarts d'heure). Pour
+une journée de 96 quarts d'heure, ça fait plus de combinaisons qu'il n'y a d'atomes
+dans l'univers.
+
+Heureusement, des algorithmes spécialisés (*branch-and-bound*) évitent d'explorer
+toutes ces combinaisons. L'app découpe aussi le problème en **blocs** (par défaut
+4 h = 16 quarts d'heure) pour garder des temps de calcul raisonnables.
+
+**Forces** : modélise fidèlement une PAC ON/OFF, résultats directement applicables.
+**Limites** : plus lent que le LP (quelques secondes par bloc), légèrement
+sous-optimal à cause du découpage en blocs.
+
+> **Recommandé pour** : les PAC sans variateur de fréquence (la majorité des
+> installations résidentielles).
+
+### 4. QP (Programmation Quadratique)
+
+**Analogie** : le GPS qui optimise non seulement le coût du carburant, mais aussi
+le **confort du trajet** (éviter les accélérations brusques, maintenir une vitesse
+stable).
+
+Le QP part du LP (puissance continue 0-100 %) et ajoute deux objectifs
+supplémentaires :
+
+1. **Confort thermique** : pénalise les écarts par rapport à la température de
+   consigne. Le LP et le MILP se contentent de rester entre T~min~ et T~max~ ; le
+   QP essaie de rester *proche de la température idéale*.
+
+2. **Lissage de la charge** : pénalise les changements brusques de puissance de la
+   PAC. Plutôt que de passer de 0 % à 100 % d'un quart d'heure à l'autre, le QP
+   préfère des transitions douces. C'est meilleur pour la longévité de l'équipement.
+
+Vous contrôlez l'importance de ces objectifs avec deux curseurs :
+
+- **Poids confort** : plus il est élevé, plus la température reste proche de la
+  consigne (au prix d'une facture légèrement plus élevée)
+- **Poids lissage** : plus il est élevé, plus la PAC fonctionne en douceur (au prix
+  d'une petite perte d'optimalité économique)
+
+**Forces** : le meilleur compromis entre coût, confort et préservation du matériel.
+**Limites** : légèrement plus coûteux que le LP pur (mais reste rapide).
+
+> **Recommandé pour** : les utilisateurs qui veulent un pilotage fin et qui acceptent
+> de payer quelques centimes de plus pour un confort supérieur.
+
+---
+
+## Tableau comparatif
+
+| Critère | Smart | LP | MILP | QP |
+|---------|-------|----|------|----|
+| **Type de décision** | Règles si/alors | PAC 0-100 % | PAC ON/OFF | PAC 0-100 % |
+| **Vision temporelle** | 1 quart d'heure | 24 h (un bloc) | 4 h (un bloc) | 24 h (un bloc) |
+| **Optimalité** | Bonne | Optimale (globale) | Optimale (par bloc) | Optimale (par bloc) |
+| **Vitesse** | Instantané | Rapide (~1 s) | Modéré (~50 s/mois) | Rapide (~2 s) |
+| **Confort** | Basique | T entre min/max | T entre min/max | T proche consigne |
+| **PAC ON/OFF compatible** | Oui | Approximation | Oui | Approximation |
+| **Batterie supportée** | Non | Oui | Oui | Oui |
+
+---
+
+## Comment l'app résout concrètement le problème
+
+### Le découpage en blocs
+
+Optimiser un mois entier d'un coup serait trop lourd. L'app découpe la période en
+**blocs** qui se chevauchent légèrement :
+
+```
+Jour 1                    Jour 2                    Jour 3
+├──Bloc 1──┤
+         ├──Bloc 2──┤
+                  ├──Bloc 3──┤
+                           ├──Bloc 4──┤
+                                    ...
+```
+
+Chaque bloc est résolu indépendamment, mais la **température du ballon à la fin d'un
+bloc** devient la condition initiale du bloc suivant. C'est comme un relais : chaque
+coureur passe le témoin au suivant.
+
+Le chevauchement permet d'éviter les effets de bord : le solver "voit" un peu dans
+le futur au-delà de la fin du bloc, ce qui évite les décisions à courte vue.
+
+### Le garde-fou économique
+
+Après optimisation, l'app compare systématiquement la facture optimisée à la facture
+du scénario de référence (baseline). Si l'optimisation *augmente* la facture (ce qui
+peut arriver dans des cas limites), elle revient automatiquement au comportement de
+référence. Vous ne pouvez pas "perdre" par rapport au thermostat classique.
+
+### Le raffinement itératif du COP
+
+Comme le COP dépend de la température du ballon (qui est elle-même un résultat de
+l'optimisation), l'app utilise une boucle itérative :
+
+1. Résoudre avec un COP estimé
+2. Extraire la trajectoire de température résultante
+3. Recalculer le COP à chaque pas de temps avec cette trajectoire
+4. Re-résoudre avec le COP mis à jour
+
+Deux itérations suffisent en pratique pour converger.
+
+---
+
+## Comment choisir son optimizer ?
+
+```
+Votre PAC a-t-elle un variateur (inverter) ?
+│
+├─ OUI → Utilisez LP (rapide, optimal)
+│        └─ Vous voulez aussi du confort ? → Utilisez QP
+│
+└─ NON (ON/OFF uniquement) → Utilisez MILP
+                              └─ Trop lent ? → Essayez LP comme approximation
+
+Dans tous les cas, Smart est un bon point de départ pour comparer.
+```
+
+---
+
+## Ce que vous contrôlez
+
+### Paramètres principaux
+
+- **Température de consigne** : la température cible du ballon (ex. 50 °C)
+- **Tolérance** : la marge autour de la consigne (ex. ± 5 °C → ballon entre 45 et
+  55 °C)
+- **Type de contrat** : fixe ou dynamique (spot Belpex) — c'est le contrat dynamique
+  qui permet les gains les plus importants
+
+### Paramètres avancés
+
+- **Pénalité de slack** : combien l'optimizer "paie" virtuellement pour chaque degré
+  en dessous de T~min~. Plus cette valeur est élevée, plus le confort est prioritaire
+  sur le coût. À 20 EUR/°C, l'optimizer ne descendra *jamais* sous T~min~ sauf
+  impossibilité physique.
+- **Taille de bloc** : la fenêtre de temps que l'optimizer considère d'un coup. Plus
+  c'est grand, meilleure est la vision d'ensemble, mais plus c'est lent (surtout en
+  MILP).
+- **Curtailment** : limite d'injection sur le réseau (imposée par certains contrats
+  ou gestionnaires de réseau).
+
+---
+
+## En résumé
+
+L'optimisation de votre PAC, c'est comme avoir un assistant qui :
+
+- Consulte les prévisions météo et les prix de l'électricité
+- Connaît parfaitement votre installation (puissance PAC, volume du ballon, COP)
+- Planifie quand chauffer pour payer le moins possible
+- S'assure que vous ne manquerez jamais d'eau chaude
+- Vérifie à la fin qu'il n'a pas fait pire que le thermostat basique
+
+Les différents optimizers ne sont que des degrés de sophistication dans cette
+planification. Le Smart raisonne au quart d'heure. Le LP, le MILP et le QP
+raisonnent sur des heures, voire des journées entières, en tenant compte de toutes
+les contraintes simultanément.
+
+Le résultat ? Des économies typiques de **10 à 30 %** sur la facture électrique
+liée à la PAC, selon le type de contrat et les conditions météo — sans aucun
+sacrifice de confort.

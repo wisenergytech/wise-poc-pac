@@ -9,7 +9,7 @@ R6 optimizer using the rule-based Smart mode from app.R.
   optimizers, this processes one quarter-hour at a time sequentially.
 }
 \section{Super class}{
-\code{wisepocpac::BaseOptimizer} -> \code{SmartOptimizer}
+\code{\link[wisepocpac:BaseOptimizer]{wisepocpac::BaseOptimizer}} -> \code{SmartOptimizer}
 }
 \section{Methods}{
 \subsection{Public methods}{
