@@ -29,10 +29,14 @@ Imports:
     future,
     promises,
     rlang,
-    tibble
+    tibble,
+    pkgload
 Suggests:
     testthat (>= 3.0.0),
-    renv
+    renv,
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
 Config/testthat/edition: 3
 Encoding: UTF-8
 RoxygenNote: 7.3.3

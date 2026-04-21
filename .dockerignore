@@ -1,0 +1,12 @@
+.git/
+.Rproj.user/
+.Rhistory
+.RData
+renv/
+node_modules/
+specs/
+docs/
+vignettes/
+fetch.log
+*.Rproj
+app_legacy.R
