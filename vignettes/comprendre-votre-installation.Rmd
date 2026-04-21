@@ -219,6 +219,39 @@ permet des ajustements souples. Trop peu, et le moindre mouvement est une secous
 
 **Reglage dans l'app** : `Tolerance +/- C`. Valeur par defaut : 5 C.
 
+### Pourquoi une temperature maximale ?
+
+La T~max~ du ballon (consigne + tolerance) n'est pas un choix arbitraire de
+l'optimiseur. C'est une contrainte physique et de securite imposee par la PAC
+elle-meme :
+
+1. **Pression dans le ballon** — L'eau qui chauffe se dilate. Au-dela de ~60-65 C,
+   la pression monte et les soupapes de securite s'ouvrent, causant des pertes
+   d'eau et d'energie.
+
+2. **Degradation du COP** — Plus la temperature du ballon est elevee, plus le
+   compresseur travaille dur. Le COP chute rapidement au-dessus de 55 C
+   (typiquement de 3,5 a moins de 2). Chauffer au-dela devient economiquement
+   absurde.
+
+3. **Limite du refrigerant** — Le fluide frigorigene a une temperature de
+   condensation maximale. Les PAC residentielles classiques (R410A, R32)
+   plafonnent a 55-65 C. Les PAC "haute temperature" (R744/CO2) montent a 80 C
+   mais sont plus couteuses.
+
+4. **Entartrage** — Au-dessus de 55 C, le calcaire se depose massivement dans
+   l'echangeur, reduisant la duree de vie de l'installation.
+
+5. **Securite brulure** — La norme NF impose que l'eau distribuee ne depasse pas
+   50 C aux points de puisage (60 C maximum dans le ballon pour le traitement
+   anti-legionelle).
+
+Dans l'application, la contrainte T~max~ empeche l'optimiseur de "surcharger" le
+ballon au-dela de ce que la PAC peut physiquement produire de maniere efficace.
+C'est une des raisons pour lesquelles la tolerance ne doit pas etre trop large :
+une T~max~ de 65 C avec une PAC classique donnerait un COP catastrophique sur les
+derniers degres.
+
 ---
 
 ## L'eau chaude sanitaire (ECS) : la demande a satisfaire
