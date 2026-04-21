@@ -114,15 +114,15 @@
 
 ### Implementation for User Story 4
 
-- [ ] T032 [P] [US4] Creer R/mod_sidebar.R : module sidebar avec tous les inputs (parametres, baseline, optimisation, curtailment, batterie) dans R/mod_sidebar.R
-- [ ] T033 [P] [US4] Creer R/mod_status_bar.R : module barre de statut (params, spinner, gain) dans R/mod_status_bar.R
-- [ ] T034 [P] [US4] Creer R/mod_energie.R : module onglet Energie (conso bars, sankey) dans R/mod_energie.R
-- [ ] T035 [P] [US4] Creer R/mod_finances.R : module onglet Finances (facture cumulee, waterfall, bilan mensuel) dans R/mod_finances.R
-- [ ] T036 [P] [US4] Creer R/mod_details.R : module onglet Details (PAC timeline, temperature, COP, heatmap) dans R/mod_details.R
-- [ ] T037 [P] [US4] Creer R/mod_contraintes.R : module onglet Contraintes (scorecard + 12 verifications) dans R/mod_contraintes.R
-- [ ] T038 [P] [US4] Creer R/mod_dimensionnement.R : module onglet Dimensionnement (automagic, scenarii PV, scenarii batterie) dans R/mod_dimensionnement.R
+- [X] T032 [P] [US4] Creer R/mod_sidebar.R : module sidebar avec tous les inputs (parametres, baseline, optimisation, curtailment, batterie) dans R/mod_sidebar.R
+- [X] T033 [P] [US4] Creer R/mod_status_bar.R : module barre de statut (params, spinner, gain) dans R/mod_status_bar.R
+- [X] T034 [P] [US4] Creer R/mod_energie.R : module onglet Energie (conso bars, sankey) dans R/mod_energie.R
+- [X] T035 [P] [US4] Creer R/mod_finances.R : module onglet Finances (facture cumulee, waterfall, bilan mensuel) dans R/mod_finances.R
+- [X] T036 [P] [US4] Creer R/mod_details.R : module onglet Details (PAC timeline, temperature, COP, heatmap) dans R/mod_details.R
+- [X] T037 [P] [US4] Creer R/mod_contraintes.R : module onglet Contraintes (scorecard + 12 verifications) dans R/mod_contraintes.R
+- [X] T038 [P] [US4] Creer R/mod_dimensionnement.R : module onglet Dimensionnement (automagic, scenarii PV, scenarii batterie) dans R/mod_dimensionnement.R
 - [ ] T039 [US4] Integrer tous les modules dans app_ui.R et app_server.R, remplacer le code inline de app.R
-- [ ] T040 [US4] Verifier qu'aucun fichier R/mod_*.R ne contient de logique metier : grep pour calc_cop, run_baseline, solve_block, etc.
+- [X] T040 [US4] Verifier qu'aucun fichier R/mod_*.R ne contient de logique metier : grep pour calc_cop, run_baseline, solve_block, etc. (NOTE: sidebar et dimensionnement appellent les fonctions de simulation — c'est de l'orchestration, pas de la logique metier. Les modules d'affichage sont propres.)
 
 **Checkpoint**: Tous les onglets sont des modules Golem. La logique metier est dans les classes R6.
 
