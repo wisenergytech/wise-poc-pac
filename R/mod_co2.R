@@ -51,7 +51,7 @@ mod_co2_server <- function(id, sidebar) {
         })
         source("R/data_co2_elia.R", local = TRUE)
         fetch_co2_intensity(start_d, end_d)
-      }, seed = TRUE)
+      }, seed = TRUE, packages = c("dplyr", "lubridate", "httr"))
 
       promises::then(co2_future,
         onFulfilled = function(result) {
