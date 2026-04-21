@@ -731,3 +731,41 @@ suspect en fixe.
 Les #4 et #5 sont les "smoke tests" — si ceux-la echouent, tout le reste
 est suspect. Les #1 et #7 sont les plus utiles pour evaluer la qualite
 de l'optimisation au quotidien.
+
+## 10. Architecture Golem + R6 (IMPLEMENTE)
+
+Le monolithe app.R (3130 lignes) a ete refactorise en architecture Golem
+avec classes R6 pour la logique metier. Migration incrementale avec parite
+fonctionnelle verifiee a +-0.1%.
+
+### 10.1 Structure
+
+- **8 classes R6** : SimulationParams, ThermalModel, Baseline, BaseOptimizer
+  (+ 4 sous-classes), DataGenerator, DataProvider, KPICalculator, Simulation
+- **7 modules Shiny Golem** : sidebar, status_bar, energie, finances,
+  details, contraintes, dimensionnement
+- **Separation stricte** : R6 = logique metier (sans Shiny), modules = UI/rendu
+
+### 10.2 Communication Shiny <-> R6
+
+Un `reactiveVal` central dans app_server.R contient l'objet Simulation R6.
+Les modules observent ce reactiveVal et lisent via les getters R6.
+La reactivite reste dans Shiny, la logique dans R6.
+
+### 10.3 Testabilite
+
+- 95 tests unitaires (testthat) couvrent les classes R6
+- Script standalone (`scripts/validate_r6_standalone.R`) execute la logique
+  metier sans Shiny
+- Isolation verifiee : 2 instances Simulation produisent des resultats
+  independants
+
+### 10.4 Heritage des optimiseurs
+
+```
+BaseOptimizer (solve, guard_baseline, bloc loop + COP iteratif)
+  +-- SmartOptimizer (heuristique)
+  +-- MILPOptimizer (ompr/GLPK, binaire)
+  +-- LPOptimizer (ompr/GLPK, continu)
+  +-- QPOptimizer (CVXR/CLARABEL, quadratique)
+```

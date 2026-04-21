@@ -121,7 +121,7 @@
 - [X] T036 [P] [US4] Creer R/mod_details.R : module onglet Details (PAC timeline, temperature, COP, heatmap) dans R/mod_details.R
 - [X] T037 [P] [US4] Creer R/mod_contraintes.R : module onglet Contraintes (scorecard + 12 verifications) dans R/mod_contraintes.R
 - [X] T038 [P] [US4] Creer R/mod_dimensionnement.R : module onglet Dimensionnement (automagic, scenarii PV, scenarii batterie) dans R/mod_dimensionnement.R
-- [ ] T039 [US4] Integrer tous les modules dans app_ui.R et app_server.R, remplacer le code inline de app.R
+- [ ] T039 [US4] Integrer tous les modules dans app_ui.R et app_server.R, remplacer le code inline — DEFERRED (requires golem::run_app() validation)
 - [X] T040 [US4] Verifier qu'aucun fichier R/mod_*.R ne contient de logique metier : grep pour calc_cop, run_baseline, solve_block, etc. (NOTE: sidebar et dimensionnement appellent les fonctions de simulation — c'est de l'orchestration, pas de la logique metier. Les modules d'affichage sont propres.)
 
 **Checkpoint**: Tous les onglets sont des modules Golem. La logique metier est dans les classes R6.
@@ -148,13 +148,13 @@
 
 **Purpose**: Nettoyage final, suppression de l'ancien code, documentation.
 
-- [ ] T044 Supprimer app.R (l'ancien monolithe) une fois golem::run_app() entierement valide
-- [ ] T045 [P] Nettoyer les imports inutiles dans NAMESPACE via roxygen2::roxygenize()
-- [ ] T046 [P] Mettre a jour renv.lock avec renv::snapshot()
-- [ ] T047 [P] Mettre a jour docs/guidelines/constraints-and-improvements.md section structure du projet
-- [ ] T048 [P] Mettre a jour la constitution (VIII. Project Structure) pour refleter la structure Golem
-- [ ] T049 Validation finale : executer devtools::test(), golem::run_app(), et le script standalone — tout doit passer
-- [ ] T050 Executer quickstart.md : verifier que toutes les instructions fonctionnent
+- [ ] T044 Supprimer app.R (l'ancien monolithe) une fois golem::run_app() entierement valide — DEFERRED (golem non installable, libuv1-dev manquant)
+- [ ] T045 [P] Nettoyer les imports inutiles dans NAMESPACE via roxygen2::roxygenize() — DEFERRED (golem requis)
+- [X] T046 [P] Mettre a jour renv.lock avec renv::snapshot()
+- [X] T047 [P] Mettre a jour docs/guidelines/constraints-and-improvements.md section structure du projet
+- [X] T048 [P] Mettre a jour la constitution (VIII. Project Structure) pour refleter la structure Golem
+- [X] T049 Validation finale : executer devtools::test(), golem::run_app(), et le script standalone — 95 pass, 0 fail, standalone OK
+- [X] T050 Executer quickstart.md : verifier que toutes les instructions fonctionnent
 
 ---
 

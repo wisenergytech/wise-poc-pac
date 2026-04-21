@@ -173,23 +173,51 @@ This project is a **POC (Proof of Concept) for heat pump (PAC) optimization**. T
 
 **Rationale**: The PAC optimization domain relies heavily on time-series simulation, statistical modeling, and interactive parameter exploration. R's ecosystem (tidyverse, Plotly bindings, Shiny reactivity) provides superior expressiveness for this type of numerical/analytical POC compared to Streamlit. This deviation is scoped to this POC only and does not set precedent for other Wise projects.
 
-### VIII. Project Structure — R Shiny
+### VIII. Project Structure — R Shiny (Golem + R6)
 
 ```text
-app.R                         # Shiny entry point (single-file app)
-R/                            # Shared business logic modules
-├── simulation.R              # Simulation engine (run_simulation, etc.)
-├── optimization.R            # Optimization modes (decider, grid search)
-├── data_prep.R               # Data preparation and demo generation
-├── charts.R                  # Chart helpers (Plotly layout, themes)
-└── config.R                  # Configuration / env var loading
+app.R                         # Legacy entry point (kept during migration)
+R/
+├── app_config.R              # Golem configuration
+├── app_server.R              # Golem server (assembles modules)
+├── app_ui.R                  # Golem UI (assembles modules)
+├── run_app.R                 # golem::run_app() entry point
+│
+├── mod_sidebar.R             # Module: sidebar parameters + simulation trigger
+├── mod_status_bar.R          # Module: status bar (params, spinner, gain)
+├── mod_energie.R             # Module: Energy tab
+├── mod_finances.R            # Module: Finances tab
+├── mod_details.R             # Module: Details tab (PAC, T, COP, heatmap)
+├── mod_contraintes.R         # Module: Constraints verification (12 checks)
+├── mod_dimensionnement.R     # Module: Dimensionnement (automagic, scenarios)
+│
+├── R6_simulation.R           # R6: Simulation orchestrator
+├── R6_params.R               # R6: SimulationParams
+├── R6_thermal_model.R        # R6: COP, thermal dynamics
+├── R6_baseline.R             # R6: 5 baseline modes
+├── R6_optimizer.R            # R6: BaseOptimizer + MILP/LP/QP/Smart
+├── R6_data_generator.R       # R6: Synthetic data generation
+├── R6_data_provider.R        # R6: Belpex, OpenMeteo, CO2
+├── R6_kpi.R                  # R6: KPI calculation
+│
+├── optimizer_milp.R          # MILP solver (ompr/HiGHS)
+├── optimizer_lp.R            # LP solver (ompr/GLPK)
+├── optimizer_qp.R            # QP solver (CVXR/CLARABEL)
+├── belpex.R                  # Belpex price loading
+├── openmeteo.R               # OpenMeteo temperature loading
+├── co2_elia.R                # CO2 intensity (Elia)
+│
+├── fct_helpers.R             # Shared utilities (calc_cop, pl_layout, etc.)
+├── fct_ui_theme.R            # Colors, theme, UI helpers
+└── fct_legacy.R              # Legacy functions (migration bridge)
 
-tests/                        # Unit tests (testthat)
+inst/app/www/custom.css       # Centralized CSS
+tests/testthat/               # Unit tests (R6 classes)
+DESCRIPTION                   # Package metadata (Golem)
 renv.lock                     # Pinned R dependencies
-Dockerfile
 
-specs/                        # Speckit feature specifications (same as base)
-docs/                         # Project documentation (same as base)
+specs/                        # Speckit feature specifications
+docs/                         # Project documentation
 ```
 
 ### IX. Security Adaptations for R Shiny
