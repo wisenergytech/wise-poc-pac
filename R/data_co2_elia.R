@@ -50,7 +50,30 @@ ELIA_PAGE_SIZE <- 100
 ELIA_TIMEOUT <- 12
 
 # ---------------------------------------------------------------------------
-# Fetch principal : essaie ODS192, ODS191, ODS201, puis fallback
+# Charger les CSV locaux co2_historical_YYYY.csv (meme pattern que Belpex)
+# ---------------------------------------------------------------------------
+load_local_co2 <- function(data_dir = "data") {
+  files <- list.files(data_dir, pattern = "co2_historical_.*\\.csv$", full.names = TRUE)
+  if (length(files) == 0) return(NULL)
+
+  dfs <- lapply(files, function(f) {
+    df <- readr::read_csv(f, show_col_types = FALSE,
+      col_types = readr::cols(datetime = readr::col_character()))
+    names(df) <- c("datetime_raw", "co2_g_per_kwh")
+    df$datetime_clean <- gsub("Z$", "", gsub("[+-]\\d{2}:\\d{2}$", "", df$datetime_raw))
+    df$datetime <- lubridate::ymd_hms(df$datetime_clean, tz = "UTC")
+    df <- df[!is.na(df$datetime), c("datetime", "co2_g_per_kwh")]
+    df
+  })
+
+  df <- dplyr::bind_rows(dfs)
+  df <- dplyr::distinct(df, datetime, .keep_all = TRUE)
+  df <- dplyr::arrange(df, datetime)
+  df
+}
+
+# ---------------------------------------------------------------------------
+# Fetch principal : CSV local → ODS192 → ODS191 → ODS201 → fallback
 # ---------------------------------------------------------------------------
 #' Recupere l'intensite CO2 horaire pour une plage de dates
 #'
@@ -61,6 +84,21 @@ fetch_co2_intensity <- function(start_date, end_date) {
 
   start_date <- as.POSIXct(paste0(as.Date(start_date), " 00:00:00"), tz = "UTC")
   end_date   <- as.POSIXct(paste0(as.Date(end_date),   " 23:59:59"), tz = "UTC")
+
+  # 0. CSV locaux (instantane, pas de reseau)
+  local <- load_local_co2()
+  if (!is.null(local)) {
+    local_filtered <- dplyr::filter(local, datetime >= start_date, datetime <= end_date)
+    if (nrow(local_filtered) > 0) {
+      coverage <- as.numeric(difftime(max(local_filtered$datetime),
+        min(local_filtered$datetime), units = "days"))
+      requested <- as.numeric(difftime(end_date, start_date, units = "days"))
+      if (coverage >= requested * 0.9) {
+        message(sprintf("[CO2] CSV local : %d points", nrow(local_filtered)))
+        return(list(df = local_filtered, source = "local"))
+      }
+    }
+  }
 
   # 1. Historique consumption-based (ODS192)
   df <- fetch_elia_co2_dataset("ods192", start_date, end_date)

@@ -7,19 +7,16 @@
 mod_co2_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
-    bslib::layout_columns(col_widths = 12,
-      shiny::uiOutput(ns("co2_kpi_row"))),
-    bslib::layout_columns(col_widths = 12,
-      bslib::card(full_screen = TRUE, bslib::card_header("Impact CO2 horaire -- baseline vs optimise"),
-        bslib::card_body(plotly::plotlyOutput(ns("plot_co2_hourly"), height = "350px")))),
+    shiny::uiOutput(ns("co2_kpi_row")),
+    bslib::card(full_screen = TRUE, bslib::card_header("Impact CO2 horaire -- baseline vs optimise"),
+      bslib::card_body(plotly::plotlyOutput(ns("plot_co2_hourly"), height = "350px"))),
     bslib::layout_columns(col_widths = c(6, 6),
       bslib::card(full_screen = TRUE, bslib::card_header("CO2 evite cumule"),
         bslib::card_body(plotly::plotlyOutput(ns("plot_co2_cumul"), height = "300px"))),
       bslib::card(full_screen = TRUE, bslib::card_header("Heatmap intensite CO2 du reseau"),
         bslib::card_body(plotly::plotlyOutput(ns("plot_co2_heatmap"), height = "300px")))),
-    bslib::layout_columns(col_widths = 12,
-      shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;padding:4px 8px;", cl$text_muted),
-        shiny::uiOutput(ns("co2_data_source"))))
+    shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;padding:4px 8px;", cl$text_muted),
+      shiny::uiOutput(ns("co2_data_source")))
   )
 }
 
@@ -34,44 +31,9 @@ mod_co2_server <- function(id, sidebar) {
     sim_filtered <- sidebar$sim_filtered
     sim_result   <- sidebar$sim_result
 
-    # ---- CO2 data fetching ----
-    co2_prefetched <- shiny::reactiveVal(NULL)
-
-    shiny::observeEvent(sim_result(), {
-      res <- sim_result()
-      sim <- res$sim
-      start_d <- min(sim$timestamp, na.rm = TRUE)
-      end_d   <- max(sim$timestamp, na.rm = TRUE)
-
-      co2_future <- future::future({
-        suppressPackageStartupMessages({
-          library(dplyr)
-          library(lubridate)
-          library(httr)
-        })
-        source("R/data_co2_elia.R", local = TRUE)
-        fetch_co2_intensity(start_d, end_d)
-      }, seed = TRUE, packages = c("dplyr", "lubridate", "httr"))
-
-      promises::then(co2_future,
-        onFulfilled = function(result) {
-          co2_prefetched(result)
-          message(sprintf("[CO2] Pre-fetch termine : %s (%d pts)",
-            result$source, nrow(result$df)))
-        },
-        onRejected = function(err) {
-          message(sprintf("[CO2] Pre-fetch echoue : %s -- fallback", err$message))
-          source("R/data_co2_elia.R", local = TRUE)
-          co2_prefetched(build_fallback_co2(start_d, end_d) |>
-            (\(df) list(df = df, source = "fallback"))())
-        }
-      )
-    }, priority = -1)
-
+    # ---- CO2 data (CSV local = instantane, fallback API si besoin) ----
     co2_data <- shiny::reactive({
       shiny::req(sim_filtered())
-      prefetched <- co2_prefetched()
-      if (!is.null(prefetched)) return(prefetched)
       sim <- sim_filtered()
       start_d <- min(sim$timestamp, na.rm = TRUE)
       end_d   <- max(sim$timestamp, na.rm = TRUE)
@@ -211,10 +173,11 @@ mod_co2_server <- function(id, sidebar) {
       shiny::req(co2_data())
       src <- co2_data()$source
       label <- switch(src,
-        api_historical    = "Elia ODS192 (historique, consumption-based)",
-        api_realtime      = "Elia ODS191 (temps reel, consumption-based)",
+        local              = "CSV local (Elia ODS192 pre-telecharge)",
+        api_historical     = "Elia ODS192 (historique, consumption-based)",
+        api_realtime       = "Elia ODS191 (temps reel, consumption-based)",
         api_generation_mix = "Elia ODS201 (calcule depuis le mix de generation)",
-        fallback          = "Profil synthetique (moyennes belges 2024)"
+        fallback           = "Profil synthetique (moyennes belges 2024)"
       )
       icon_name <- if (src == "fallback") "triangle-exclamation" else "circle-check"
       icon_col  <- if (src == "fallback") cl$danger else cl$success
@@ -223,5 +186,12 @@ mod_co2_server <- function(id, sidebar) {
         sprintf(" Source CO2 : %s", label)
       )
     })
+
+    # Force outputs to render even when tab is hidden (bslib lazy tabs)
+    shiny::outputOptions(output, "co2_kpi_row", suspendWhenHidden = FALSE)
+    shiny::outputOptions(output, "plot_co2_hourly", suspendWhenHidden = FALSE)
+    shiny::outputOptions(output, "plot_co2_cumul", suspendWhenHidden = FALSE)
+    shiny::outputOptions(output, "plot_co2_heatmap", suspendWhenHidden = FALSE)
+    shiny::outputOptions(output, "co2_data_source", suspendWhenHidden = FALSE)
   })
 }
