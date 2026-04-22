@@ -170,14 +170,15 @@ mod_sidebar_ui <- function(id) {
     shiny::conditionalPanel(sprintf("output['%s']", ns("has_sim_result")),
       ns = function(x) x,
       shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download"))),
-    shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
-    shiny::tags$div(style = "margin-top:8px;",
-      shiny::actionButton(ns("run_automagic"), "Trouver la meilleure config", class = "w-100 mt-1",
-        icon = shiny::icon("wand-magic-sparkles"),
-        style = sprintf("background:linear-gradient(135deg,%s,%s);border:none;font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.05em;color:%s;",
-          cl$accent2, cl$accent, cl$text_light)),
-      shiny::tags$div(class = "form-text text-center mt-1", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-        "Grid search sur toutes les combinaisons")),
+    # Automagic button (masque temporairement)
+    # shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
+    # shiny::tags$div(style = "margin-top:8px;",
+    #   shiny::actionButton(ns("run_automagic"), "Trouver la meilleure config", class = "w-100 mt-1",
+    #     icon = shiny::icon("wand-magic-sparkles"),
+    #     style = sprintf("background:linear-gradient(135deg,%s,%s);border:none;font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.05em;color:%s;",
+    #       cl$accent2, cl$accent, cl$text_light)),
+    #   shiny::tags$div(class = "form-text text-center mt-1", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+    #     "Grid search sur toutes les combinaisons")),
   )
 }
 
@@ -495,8 +496,7 @@ mod_sidebar_server <- function(id, sim_state) {
         cr, co, cr-co, if (cr != 0) 100*(cr-co)/cr else 0))
       message("====================================================")
       shiny::updateDateRangeInput(session, "date_range",
-        start = as.Date(min(sim$timestamp)), end = as.Date(max(sim$timestamp)),
-        min = as.Date(min(sim$timestamp)), max = as.Date(max(sim$timestamp)))
+        start = as.Date(min(sim$timestamp)), end = as.Date(max(sim$timestamp)))
     })
 
     # ---- sim_filtered ----

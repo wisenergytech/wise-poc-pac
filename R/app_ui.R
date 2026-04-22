@@ -27,14 +27,10 @@ app_ui <- function(request) {
             mod_finances_ui("finances")),
           bslib::nav_panel(title = "Impact CO2", icon = shiny::icon("leaf"),
             mod_co2_ui("co2")),
-          bslib::nav_panel(title = "Details", icon = shiny::icon("magnifying-glass"),
-            mod_details_ui("details")),
-          bslib::nav_panel(title = "Dimensionnement", icon = shiny::icon("solar-panel"),
-            mod_dimensionnement_ui("dimensionnement")),
+          # bslib::nav_panel(title = "Dimensionnement", icon = shiny::icon("solar-panel"),
+          #   mod_dimensionnement_ui("dimensionnement")),
           bslib::nav_panel(title = "Comparaison", icon = shiny::icon("right-left"),
             mod_comparaison_ui("comparaison")),
-          bslib::nav_panel(title = "Contraintes", icon = shiny::icon("check-circle"),
-            mod_contraintes_ui("contraintes")),
           bslib::nav_panel(title = "Documentation", icon = shiny::icon("book"),
             mod_documentation_ui("documentation"))
         )

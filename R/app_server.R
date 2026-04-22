@@ -36,11 +36,8 @@ app_server <- function(input, output, session) {
   mod_energie_server("energie", sidebar)
   mod_finances_server("finances", sidebar)
   mod_co2_server("co2", sidebar)
-  mod_details_server("details", sidebar)
   mod_dimensionnement_server("dimensionnement", sidebar)
   mod_comparaison_server("comparaison", sidebar)
-  mod_contraintes_server("contraintes", sidebar)
-
   # ---- Documentation (vignettes) ----
   mod_documentation_server("documentation")
 }
