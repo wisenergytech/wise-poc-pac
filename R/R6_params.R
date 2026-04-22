@@ -49,6 +49,8 @@ SimulationParams <- R6::R6Class("SimulationParams",
 
     # --- Baseline ---
     baseline_mode = NULL,
+    autoconso_cible = NULL,
+    baseline_alpha = NULL,
 
     # --- PV ---
     pv_kwc = NULL,
@@ -84,6 +86,8 @@ SimulationParams <- R6::R6Class("SimulationParams",
     #' @param slack_penalty Penalty for temperature violations EUR/deg/qt (default 2.5)
     #' @param optim_bloc_h Optimization block size in hours (default 24)
     #' @param baseline_mode Baseline mode (default "ingenieur")
+    #' @param autoconso_cible Target self-consumption percentage from slider (default NULL)
+    #' @param baseline_alpha PV-affinity coefficient 0-1 for parametric baseline (default NULL)
     #' @param pv_kwc PV capacity in kWc (default 33)
     #' @param pv_kwc_ref Reference PV capacity for scaling (default 33)
     #' @param dt_h Time step in hours (default 0.25 = 15 min)
@@ -105,6 +109,8 @@ SimulationParams <- R6::R6Class("SimulationParams",
       curtailment_active = FALSE, curtail_kw = 5,
       slack_penalty = 2.5, optim_bloc_h = 24,
       baseline_mode = "ingenieur",
+      autoconso_cible = NULL,
+      baseline_alpha = NULL,
       pv_kwc = 33, pv_kwc_ref = 33,
       dt_h = 0.25,
       poids_cout = 0.5,
@@ -151,6 +157,8 @@ SimulationParams <- R6::R6Class("SimulationParams",
       self$seuil_surplus_pct <- seuil_surplus_pct
 
       self$baseline_mode <- baseline_mode
+      self$autoconso_cible <- autoconso_cible
+      self$baseline_alpha <- baseline_alpha
       self$pv_kwc <- pv_kwc
       self$pv_kwc_ref <- pv_kwc_ref
       self$perte_kwh_par_qt <- perte_kwh_par_qt
@@ -181,6 +189,8 @@ SimulationParams <- R6::R6Class("SimulationParams",
         prix_fixe_offtake = self$prix_fixe_offtake,
         prix_fixe_injection = self$prix_fixe_injection,
         perte_kwh_par_qt = self$perte_kwh_par_qt,
+        autoconso_cible = self$autoconso_cible,
+        baseline_alpha = self$baseline_alpha,
         pv_kwc = self$pv_kwc,
         pv_kwc_ref = self$pv_kwc_ref,
         batterie_active = self$batterie_active,

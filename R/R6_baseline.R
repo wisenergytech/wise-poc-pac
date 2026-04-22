@@ -1,13 +1,15 @@
 # =============================================================================
 # R6 Class: Baseline
 # =============================================================================
-# Encapsulates the baseline (reference) simulation with 5 modes:
-# reactif, programmateur, surplus_pv, ingenieur, proactif.
+# Encapsulates the baseline (reference) simulation with 5 discrete modes
+# (reactif, programmateur, surplus_pv, ingenieur, proactif) plus a
+# continuous "parametric" mode driven by alpha coefficient [0,1].
 # Contains the full run_baseline() logic from app.R.
 # =============================================================================
 
 #' @title Baseline Simulation
-#' @description R6 class for baseline (reference) simulation with 5 modes.
+#' @description R6 class for baseline (reference) simulation with 5 discrete
+#'   modes plus a continuous "parametric" mode.
 #'   The baseline represents the "before optimization" scenario (thermostat,
 #'   programmer, PV surplus follower, engineer, or proactive).
 #' @export
@@ -25,7 +27,7 @@ Baseline <- R6::R6Class("Baseline",
     #' @param df Prepared dataframe (output of DataGenerator$prepare_df)
     #' @param params Parameter list (or SimulationParams$as_list())
     #' @param mode Baseline mode: "reactif", "programmateur", "surplus_pv",
-    #'   "ingenieur" (default), or "proactif"
+    #'   "ingenieur" (default), "proactif", or "parametric"
     #' @return The input df with added columns: t_ballon, offtake_kwh, intake_kwh
     run = function(df, params, mode = "ingenieur") {
       if (inherits(params, "SimulationParams")) {
@@ -103,6 +105,23 @@ Baseline <- R6::R6Class("Baseline",
             pac_on[i] <- 1
           } else if (t_prev < params$t_consigne & cop_i > cop_moyen * 1.05) {
             pac_on[i] <- 0.3
+          } else {
+            pac_on[i] <- 0
+          }
+
+        } else if (mode == "parametric") {
+          alpha <- if (!is.null(params$baseline_alpha)) params$baseline_alpha else 0.5
+
+          if (t_prev < t_consigne_bas) {
+            pac_on[i] <- 1
+          } else if (t_prev >= params$t_max) {
+            pac_on[i] <- 0
+          } else if (surplus_i > 0) {
+            pac_on[i] <- alpha * min(1, max(0.1, surplus_i / pac_qt))
+          } else if (t_sans_pac < t_consigne_bas) {
+            pac_on[i] <- 1
+          } else if (alpha > 0.6 && t_prev < params$t_consigne && cop_i > cop_moyen * 1.05) {
+            pac_on[i] <- alpha * 0.3
           } else {
             pac_on[i] <- 0
           }

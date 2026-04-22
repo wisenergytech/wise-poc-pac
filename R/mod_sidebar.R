@@ -20,65 +20,14 @@ mod_sidebar_ui <- function(id) {
       shiny::radioButtons(ns("data_source"), NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::fileInput(ns("csv_file"), NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv")),
-      shiny::selectInput(ns("baseline_type"), shiny::tags$span("Baseline (votre situation actuelle)", tip("Choisissez le mode de pilotage qui correspond a votre installation actuelle. L'economie affichee sera l'ecart entre cette baseline et l'optimiseur.")),
-        choices = c(
-          "Thermostat reactif (ON/OFF bete)" = "reactif",
-          "Programmateur horaire (11h-15h)" = "programmateur",
-          "Surplus PV (chauffe quand surplus)" = "surplus_pv",
-          "Ingenieur (max autoconso, sans prix)" = "ingenieur",
-          "Thermostat proactif (anticipe)" = "proactif"),
-        selected = "ingenieur"),
-      shiny::uiOutput(ns("baseline_description")),
+      shiny::conditionalPanel("false",
+        shiny::selectInput(ns("baseline_type"), NULL,
+          choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
+          selected = "parametric")),
       shiny::dateRangeInput(ns("date_range"), NULL, start = as.Date("2025-07-01"), end = as.Date("2025-08-31"), language = "fr",
         min = as.Date("2025-01-01"), max = as.Date("2025-12-31")),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
         shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
-
-    # ---- Optimisation ----
-    shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Optimisation", tip("Quatre approches : Rule-based (heuristique), MILP (on/off optimal), LP (charge continue lineaire) ou QP (charge continue + confort lisse, via CVXR).")),
-      shiny::radioButtons(ns("approche"), "Approche", choices = c("Rule-based" = "rulebased", "MILP" = "optimiseur", "LP" = "optimiseur_lp", "QP" = "optimiseur_qp"), selected = "rulebased", inline = TRUE),
-      shiny::conditionalPanel(sprintf("input['%s']=='rulebased'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Mode <b>Smart</b> : decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP."))),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Resout un probleme MILP (Mixed Integer Linear Programming) : decisions <b>on/off</b> binaires. Trouve la solution optimale bloc par bloc.")),
-        shiny::sliderInput(ns("optim_bloc_h"), shiny::tags$span("Horizon bloc", tip("Taille du bloc d'optimisation en heures. Plus court = plus rapide mais moins de vision. Plus long = meilleur resultat mais plus lent. 4h est un bon compromis : assez pour voir les tendances de prix et de PV, assez court pour resoudre en <1s.")),
-          1, 24, 4, step = 1, post = "h"),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          shiny::HTML("4h = rapide (~1s/bloc) | 12h = equilibre | 24h = optimal mais lent"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_lp'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Optimisation <b>LP</b> (lineaire pur) : la PAC module sa puissance en continu (0-100%%). Probleme convexe, resolution rapide, optimum global garanti. Ideal pour PAC inverter.")),
-        shiny::sliderInput(ns("optim_bloc_h_lp"), shiny::tags$span("Horizon bloc", tip("Taille du bloc en heures. Le LP etant plus rapide que le MILP, des blocs plus grands (12-24h) sont recommandes.")),
-          1, 24, 24, step = 1, post = "h"),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          shiny::HTML("LP = rapide, des blocs de 24h sont recommandes"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur' || input['%s']=='optimiseur_lp'", ns("approche"), ns("approche")),
-        shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("Penalite T_min (EUR/C)", tip("Cout de violation de T_min par degre par quart d'heure. Plus bas = l'optimiseur explore des temperatures proches de T_min (meilleur COP, plus d'economies). Plus haut = respect strict de T_min. A 2.5 EUR/C, l'optimiseur accepte de descendre legerement sous T_min si le gain economique le justifie.")),
-          0.5, 20, 2.5, step = 0.5, post = " EUR/C")),
-      shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
-        shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strategies d'optimisation"),
-        shiny::tags$div(style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("<b>TOU</b> (Time of Use) est toujours actif : l'optimiseur exploite les variations de prix Belpex. Activez le <b>curtailment</b> pour aussi limiter l'injection reseau.")),
-        shiny::checkboxInput(ns("curtailment_active"), shiny::tags$span("Curtailment (limiter l'injection)", tip("Ajoute une contrainte de puissance maximale d'injection. L'optimiseur decale alors la consommation PAC vers les periodes de surplus PV pour eviter de perdre l'energie ecretee. La baseline n'est PAS affectee -- elle injecte librement. Le gain du curtailment = energie recuperee qui aurait ete perdue.")),
-          FALSE),
-        shiny::conditionalPanel(sprintf("input['%s']", ns("curtailment_active")),
-          shiny::numericInput(ns("curtail_kw"), "Puissance max injection (kW)", 5, min = 0, max = 100, step = 0.5),
-          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-            "0 kW = zero injection. 5 kW = limite prosumer typique."))),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_qp'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Optimisation <b>QP</b> (quadratique convexe, CVXR) : minimise le cout <i>et</i> penalise les ecarts de temperature a la consigne + les variations brusques de charge PAC. Resultat plus confortable et plus lisse.")),
-        shiny::sliderInput(ns("optim_bloc_h_qp"), shiny::tags$span("Horizon bloc", tip("Taille du bloc en heures. CVXR gere bien des blocs de 12-24h.")),
-          1, 24, 24, step = 1, post = "h"),
-        shiny::sliderInput(ns("qp_w_comfort"), shiny::tags$span("Poids confort", tip("Penalite sur l'ecart a la consigne. Plus eleve = temperature plus stable autour de la consigne, mais cout potentiellement plus eleve.")),
-          0, 1, 0.1, step = 0.01),
-        shiny::sliderInput(ns("qp_w_smooth"), shiny::tags$span("Poids lissage", tip("Penalite sur les variations brusques de charge PAC. Plus eleve = charge plus lisse, moins de cycling.")),
-          0, 1, 0.05, step = 0.01),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          shiny::HTML("Poids a 0 = LP pur. Augmenter pour plus de confort/lissage au detriment du cout.")))),
 
     # ---- PAC ----
     shiny::tags$div(class = "sidebar-section",
@@ -138,6 +87,14 @@ mod_sidebar_ui <- function(id) {
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           "Taille du PV dans vos donnees CSV. Le ratio kWc/ref rescale la production."))),
 
+    # ---- Baseline (autoconsommation) ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "Baseline", tip("Decrivez votre niveau d'autoconsommation actuel. L'app construira une baseline parametrique correspondante. Les bornes se calculent automatiquement a partir de votre PAC et PV.")),
+      shiny::sliderInput(ns("autoconso_cible"),
+        shiny::tags$span("Votre autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline correspondante. Deplacez vers la gauche = thermostat aveugle, vers la droite = suivi PV intensif.")),
+        min = 10, max = 90, value = 35, step = 5, post = "%"),
+      shiny::uiOutput(ns("autoconso_bounds_info"))),
+
     # ---- Batterie ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Batterie", tip("Ajout d'une batterie electrochimique. Elle absorbe le surplus que le ballon ne peut plus stocker et le restitue en soiree.")),
@@ -149,6 +106,58 @@ mod_sidebar_ui <- function(id) {
         shiny::sliderInput(ns("batt_soc_range"), "Plage SoC (%)", 0, 100, c(10, 90), step = 5),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           "Rendement = part de l'energie recuperee apres un cycle charge/decharge (pertes thermiques). Plage SoC = limites min/max pour proteger la duree de vie."))),
+
+    # ---- Optimisation ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "Optimisation", tip("Choisissez l'approche de resolution et les strategies d'optimisation a activer.")),
+      shiny::radioButtons(ns("approche"), "Approche", choices = c("Rule-based" = "rulebased", "MILP" = "optimiseur", "LP" = "optimiseur_lp", "QP" = "optimiseur_qp"), selected = "rulebased", inline = TRUE),
+      shiny::conditionalPanel(sprintf("input['%s']=='rulebased'", ns("approche")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Mode <b>Smart</b> : decision basee sur la valeur nette a chaque quart d'heure. Compare le cout de chauffer maintenant vs plus tard en tenant compte du surplus PV, des prix spot et du COP."))),
+      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur'", ns("approche")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Resout un probleme MILP (Mixed Integer Linear Programming) : decisions <b>on/off</b> binaires. Trouve la solution optimale bloc par bloc.")),
+        shiny::sliderInput(ns("optim_bloc_h"), shiny::tags$span("Horizon bloc", tip("Taille du bloc d'optimisation en heures. Plus court = plus rapide mais moins de vision. Plus long = meilleur resultat mais plus lent. 4h est un bon compromis : assez pour voir les tendances de prix et de PV, assez court pour resoudre en <1s.")),
+          1, 24, 4, step = 1, post = "h"),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+          shiny::HTML("4h = rapide (~1s/bloc) | 12h = equilibre | 24h = optimal mais lent"))),
+      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_lp'", ns("approche")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Optimisation <b>LP</b> (lineaire pur) : la PAC module sa puissance en continu (0-100%%). Probleme convexe, resolution rapide, optimum global garanti. Ideal pour PAC inverter.")),
+        shiny::sliderInput(ns("optim_bloc_h_lp"), shiny::tags$span("Horizon bloc", tip("Taille du bloc en heures. Le LP etant plus rapide que le MILP, des blocs plus grands (12-24h) sont recommandes.")),
+          1, 24, 24, step = 1, post = "h"),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+          shiny::HTML("LP = rapide, des blocs de 24h sont recommandes"))),
+      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur' || input['%s']=='optimiseur_lp'", ns("approche"), ns("approche")),
+        shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("Penalite T_min (EUR/C)", tip("Cout de violation de T_min par degre par quart d'heure. Plus bas = l'optimiseur explore des temperatures proches de T_min (meilleur COP, plus d'economies). Plus haut = respect strict de T_min. A 2.5 EUR/C, l'optimiseur accepte de descendre legerement sous T_min si le gain economique le justifie.")),
+          0.5, 20, 2.5, step = 0.5, post = " EUR/C")),
+      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_qp'", ns("approche")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Optimisation <b>QP</b> (quadratique convexe, CVXR) : minimise le cout <i>et</i> penalise les ecarts de temperature a la consigne + les variations brusques de charge PAC. Resultat plus confortable et plus lisse.")),
+        shiny::sliderInput(ns("optim_bloc_h_qp"), shiny::tags$span("Horizon bloc", tip("Taille du bloc en heures. CVXR gere bien des blocs de 12-24h.")),
+          1, 24, 24, step = 1, post = "h"),
+        shiny::sliderInput(ns("qp_w_comfort"), shiny::tags$span("Poids confort", tip("Penalite sur l'ecart a la consigne. Plus eleve = temperature plus stable autour de la consigne, mais cout potentiellement plus eleve.")),
+          0, 1, 0.1, step = 0.01),
+        shiny::sliderInput(ns("qp_w_smooth"), shiny::tags$span("Poids lissage", tip("Penalite sur les variations brusques de charge PAC. Plus eleve = charge plus lisse, moins de cycling.")),
+          0, 1, 0.05, step = 0.01),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+          shiny::HTML("Poids a 0 = LP pur. Augmenter pour plus de confort/lissage au detriment du cout."))),
+      shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
+        shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strategies d'optimisation"),
+        shiny::checkboxInput(ns("tou_active"), shiny::tags$span("TOU (Time of Use)", tip("Exploite les variations de prix Belpex pour decaler la consommation PAC vers les heures les moins cheres. Desactivez pour optimiser uniquement l'autoconsommation PV, sans tenir compte des prix.")),
+          TRUE),
+        shiny::conditionalPanel(sprintf("input['%s']", ns("tou_active")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+            shiny::HTML("L'optimiseur exploite les variations de prix Belpex pour minimiser le cout."))),
+        shiny::conditionalPanel(sprintf("!input['%s']", ns("tou_active")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+            shiny::HTML("Prix aplatis : l'optimiseur maximise l'autoconsommation PV sans signal prix."))),
+        shiny::checkboxInput(ns("curtailment_active"), shiny::tags$span("Curtailment (limiter l'injection)", tip("Ajoute une contrainte de puissance maximale d'injection. L'optimiseur decale alors la consommation PAC vers les periodes de surplus PV pour eviter de perdre l'energie ecretee. La baseline n'est PAS affectee -- elle injecte librement. Le gain du curtailment = energie recuperee qui aurait ete perdue.")),
+          FALSE),
+        shiny::conditionalPanel(sprintf("input['%s']", ns("curtailment_active")),
+          shiny::numericInput(ns("curtail_kw"), "Puissance max injection (kW)", 5, min = 0, max = 100, step = 0.5),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+            "0 kW = zero injection. 5 kW = limite prosumer typique.")))),
 
     # ---- Buttons ----
     shiny::actionButton(ns("run_sim"), "Lancer la simulation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
@@ -241,31 +250,118 @@ DONNEES CALCULEES
       ))
     })
 
-    # ---- Baseline description ----
-    output$baseline_description <- shiny::renderUI({
-      bt <- input$baseline_type
-      descs <- list(
-        reactif = list(
-          txt = "Thermostat classique : allume quand T < T_min, eteint quand T > consigne. Completement aveugle du PV, des prix et de l'ECS futur. Represente une installation sans aucun pilotage.",
-          ac = "~10-15%", marge = "maximale", col = cl$success),
-        programmateur = list(
-          txt = "L'installateur a programme la PAC entre 11h et 15h pour coincider avec le PV. En dehors de cette plage, thermostat reactif. Tres courant sur les installations recentes avec PV.",
-          ac = "~40-50%", marge = "moderee", col = "#f59e0b"),
-        surplus_pv = list(
-          txt = "Onduleur avec sortie surplus (Fronius, SMA, Huawei) : la PAC s'allume quand le surplus PV depasse un seuil. Sinon thermostat reactif. ON/OFF sans modulation.",
-          ac = "~30-50%", marge = "moderee", col = "#f59e0b"),
-        ingenieur = list(
-          txt = "Le mieux qu'on peut faire SANS signal prix. Module la PAC pour coller au surplus PV, anticipe le confort, pre-chauffe quand le COP est bon (T_ext favorable). Aveugle au Belpex. C'est la reference realiste pour mesurer la valeur ajoutee du pilotage par les prix spot.",
-          ac = "~60-80%", marge = "faible -- gains = valeur du Belpex", col = cl$reel),
-        proactif = list(
-          txt = "Thermostat intelligent qui anticipe les chutes de temperature (regarde 1 pas en avant). N'utilise pas le PV ni les prix. Avantage la baseline et reduit les gains affiches.",
-          ac = "~15-20%", marge = "elevee", col = cl$success)
+    # ---- AC bounds computation ----
+    # Build a minimal param list from raw inputs (NOT params_r) to avoid
+    # circular dependency: ac_bounds -> params_r -> baseline_alpha -> ac_bounds
+    ac_bounds <- shiny::reactive({
+      df <- raw_data()
+      shiny::req(df)
+      vol <- volume_ballon_eff()
+      kwc <- pv_kwc_eff()
+      p_base <- list(
+        t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
+        t_min = input$t_consigne - input$t_tolerance,
+        t_max = input$t_consigne + input$t_tolerance,
+        p_pac_kw = input$p_pac_kw, cop_nominal = input$cop_nominal, t_ref_cop = 7,
+        volume_ballon_l = vol, capacite_kwh_par_degre = vol * 0.001163,
+        dt_h = 0.25, pv_kwc = kwc,
+        pv_kwc_ref = if (input$data_source == "csv") input$pv_kwc_ref else kwc,
+        perte_kwh_par_qt = 0.05,
+        horizon_qt = 16, seuil_surplus_pct = 0.3,
+        type_contrat = input$type_contrat,
+        taxe_transport_eur_kwh = ifelse(input$type_contrat == "dynamique", input$taxe_transport, 0),
+        coeff_injection = ifelse(input$type_contrat == "dynamique", input$coeff_injection, 1),
+        prix_fixe_offtake = ifelse(input$type_contrat == "fixe", input$prix_fixe_offtake, 0.30),
+        prix_fixe_injection = ifelse(input$type_contrat == "fixe", input$prix_fixe_injection, 0.03),
+        batterie_active = FALSE, batt_kwh = 0, batt_kw = 0,
+        batt_rendement = 0.9, batt_soc_min = 0.1, batt_soc_max = 0.9,
+        curtailment_active = FALSE, curtail_kwh_per_qt = Inf,
+        slack_penalty = 2.5, optim_bloc_h = 4, poids_cout = 0.5,
+        qp_w_comfort = 0.001, qp_w_smooth = 0.01
       )
-      d <- descs[[bt]]
-      if (is.null(d)) return(NULL)
+      bounds <- list(ac_floor = 15, ac_ceiling = 70)
+      tryCatch({
+        for (a in c(0, 1)) {
+          p_tmp <- p_base
+          p_tmp$baseline_alpha <- a
+          sim_tmp <- Simulation$new(p_tmp)
+          sim_tmp$load_raw_dataframe(df)
+          p_tmp <- sim_tmp$get_params()
+          bl <- Baseline$new(ThermalModel$new(p_tmp))
+          df_bl <- bl$run(sim_tmp$get_prepared_data(), p_tmp, mode = "parametric")
+          pv_total <- sum(df_bl$pv_kwh, na.rm = TRUE)
+          inj <- sum(df_bl$intake_kwh, na.rm = TRUE)
+          ac <- if (pv_total > 0) (1 - inj / pv_total) * 100 else 0
+          if (a == 0) bounds$ac_floor <- round(ac, 1)
+          if (a == 1) bounds$ac_ceiling <- round(ac, 1)
+        }
+        if (bounds$ac_floor > bounds$ac_ceiling) {
+          tmp <- bounds$ac_floor
+          bounds$ac_floor <- bounds$ac_ceiling
+          bounds$ac_ceiling <- tmp
+        }
+      }, error = function(e) {
+        message("[AC bounds] Error: ", e$message)
+      })
+      bounds
+    })
+
+    # ---- Baseline alpha from AC target ----
+    baseline_alpha <- shiny::reactive({
+      bounds <- ac_bounds(); target <- input$autoconso_cible
+      shiny::req(bounds, target)
+      span <- bounds$ac_ceiling - bounds$ac_floor
+      if (span < 1) return(0.5)
+      clamped <- max(bounds$ac_floor, min(bounds$ac_ceiling, target))
+      alpha <- (clamped - bounds$ac_floor) / span
+      max(0, min(1, alpha))
+    })
+
+    # ---- Update slider bounds dynamically ----
+    shiny::observeEvent(ac_bounds(), {
+      bounds <- ac_bounds()
+      new_min <- floor(bounds$ac_floor)
+      new_max <- ceiling(bounds$ac_ceiling)
+      current <- input$autoconso_cible
+      new_val <- max(new_min, min(new_max, current))
+      shiny::updateSliderInput(session, "autoconso_cible",
+        min = new_min, max = new_max, value = new_val)
+    })
+
+    # ---- Autoconso bounds info ----
+    output$autoconso_bounds_info <- shiny::renderUI({
+      bounds <- tryCatch(ac_bounds(), error = function(e) NULL)
+      alpha <- tryCatch(baseline_alpha(), error = function(e) 0.5)
+      target <- input$autoconso_cible
+
+      if (is.null(bounds)) {
+        return(shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+          "Lancez une premiere simulation pour calibrer les bornes."))
+      }
+
+      # No PV case
+      if (bounds$ac_ceiling < 1 && bounds$ac_floor < 1) {
+        return(shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
+          shiny::HTML("Sans PV, la baseline est un thermostat pur. L'autoconsommation est nulle.")))
+      }
+
+      # Qualitative description based on alpha
+      qual <- if (alpha < 0.2) {
+        list(txt = "Thermostat aveugle", col = cl$success, marge = "maximale")
+      } else if (alpha < 0.45) {
+        list(txt = "Pilotage leger", col = "#f59e0b", marge = "elevee")
+      } else if (alpha < 0.7) {
+        list(txt = "Bon suivi PV", col = "#f59e0b", marge = "moderee")
+      } else {
+        list(txt = "Suivi PV intensif", col = cl$reel, marge = "faible -- gains = valeur du Belpex")
+      }
+
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
-        shiny::HTML(sprintf("%s<br><span style='color:%s;font-weight:600;'>Autoconso typique : %s</span> &middot; Marge d'optimisation : <b>%s</b>",
-          d$txt, d$col, d$ac, d$marge)))
+        shiny::HTML(sprintf(
+          "Plage atteignable : <b>%d%%</b> &ndash; <b>%d%%</b><br><span style='color:%s;font-weight:600;'>%s (AC ~%d%%)</span> &middot; Marge d'optimisation : <b>%s</b>",
+          round(bounds$ac_floor), round(bounds$ac_ceiling),
+          qual$col, qual$txt, round(target),
+          qual$marge)))
     })
 
     # ---- Volume ballon auto/manual ----
@@ -363,6 +459,7 @@ DONNEES CALCULEES
         batt_rendement = input$batt_rendement / 100,
         batt_soc_min = input$batt_soc_range[1] / 100,
         batt_soc_max = input$batt_soc_range[2] / 100,
+        autoconso_cible = input$autoconso_cible,
         poids_cout = 0.5,
         slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
         curtailment_active = isTRUE(input$curtailment_active),
@@ -427,7 +524,16 @@ DONNEES CALCULEES
     sim_result <- shiny::eventReactive(input$run_sim, {
       on.exit(sim_running(FALSE), add = TRUE)
       p <- params_r(); df <- raw_data()
+      p$baseline_alpha <- baseline_alpha()
+      p$tou_active <- isTRUE(input$tou_active)
       approche <- input$approche
+
+      # Flatten prices when TOU is disabled: optimizer maximizes
+      # self-consumption without exploiting price variations
+      if (!isTRUE(input$tou_active) && "prix_eur_kwh" %in% names(df)) {
+        prix_moyen <- mean(df$prix_eur_kwh, na.rm = TRUE)
+        df$prix_eur_kwh <- prix_moyen
+      }
 
       shiny::withProgress(message = "Preparation...", value = 0.1, {
         # R6 workflow: Simulation orchestrates prepare + baseline + optimization
@@ -435,8 +541,8 @@ DONNEES CALCULEES
         sim_obj$load_raw_dataframe(df)
         p <- sim_obj$get_params()
 
-        baseline_mode <- if (!is.null(input$baseline_type)) input$baseline_type else "reactif"
-        shiny::setProgress(0.2, detail = paste0("Calcul baseline ", baseline_mode, "..."))
+        baseline_mode <- "parametric"
+        shiny::setProgress(0.2, detail = sprintf("Calcul baseline parametrique (AC %d%%)...", input$autoconso_cible %||% 35))
         sim_obj$run_baseline(mode = baseline_mode)
         df_prep <- sim_obj$get_baseline()
 
@@ -512,7 +618,7 @@ DONNEES CALCULEES
       cr <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm=TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm=TRUE)
       co <- sum(sim$sim_offtake * sim$prix_offtake, na.rm=TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm=TRUE)
       jours <- round(as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days")), 1)
-      thermostat <- if (!is.null(input$baseline_type)) input$baseline_type else "n/a"
+      thermostat <- sprintf("parametric(AC=%d%%)", input$autoconso_cible %||% 35)
       contrat <- if (p$type_contrat == "fixe") {
         sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
       } else {
@@ -557,7 +663,14 @@ DONNEES CALCULEES
 
     shiny::observeEvent(input$run_automagic, {
       p <- params_r()
+      p$baseline_alpha <- baseline_alpha()
       df_raw <- raw_data()
+
+      # Flatten prices when TOU is disabled
+      if (!isTRUE(input$tou_active) && "prix_eur_kwh" %in% names(df_raw)) {
+        prix_moyen <- mean(df_raw$prix_eur_kwh, na.rm = TRUE)
+        df_raw$prix_eur_kwh <- prix_moyen
+      }
 
       pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
       batt_range <- c(0, 5, 10, 15, 20)
@@ -589,7 +702,7 @@ DONNEES CALCULEES
             df_pv$pv_kwh <- df_raw$pv_kwh * ratio
             sim_am$load_raw_dataframe(df_pv)
             p_ct <- sim_am$get_params()
-            baseline_mode_am <- if (!is.null(input$baseline_type)) input$baseline_type else "reactif"
+            baseline_mode_am <- "parametric"
             sim_am$run_baseline(mode = baseline_mode_am)
             df_prep <- sim_am$get_baseline()
 
@@ -694,6 +807,9 @@ DONNEES CALCULEES
       volume_ballon_eff = volume_ballon_eff,
       pv_kwc_eff = pv_kwc_eff,
       automagic_results = automagic_results,
+      autoconso_cible = shiny::reactive(input$autoconso_cible),
+      baseline_alpha = baseline_alpha,
+      ac_bounds = ac_bounds,
       # Expose individual inputs needed by other modules/status bar
       date_range = shiny::reactive(input$date_range),
       data_source = shiny::reactive(input$data_source),
@@ -703,6 +819,7 @@ DONNEES CALCULEES
       optim_bloc_h_lp = shiny::reactive(input$optim_bloc_h_lp),
       optim_bloc_h_qp = shiny::reactive(input$optim_bloc_h_qp),
       slack_penalty = shiny::reactive(input$slack_penalty),
+      tou_active = shiny::reactive(input$tou_active),
       curtailment_active = shiny::reactive(input$curtailment_active),
       curtail_kw = shiny::reactive(input$curtail_kw),
       batterie_active = shiny::reactive(input$batterie_active),

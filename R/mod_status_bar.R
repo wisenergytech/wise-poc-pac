@@ -32,7 +32,7 @@ mod_status_bar_server <- function(id, sidebar) {
       }
       if (is.na(mode_label) || is.null(mode_label)) mode_label <- "?"
 
-      thermostat <- sidebar$baseline_type() %||% "n/a"
+      thermostat <- sprintf("AC %d%%", sidebar$autoconso_cible() %||% 35)
       contrat <- if (p$type_contrat == "fixe") {
         sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
       } else {
@@ -77,8 +77,9 @@ mod_status_bar_server <- function(id, sidebar) {
         line_tag("RUN ", as.character(header)),
         line_tag("DIM ", sprintf("PV=<b>%s kWc</b> (ref=%s) &middot; PAC=<b>%s kW</b> COP=%s &middot; Ballon=<b>%s L</b> [%s..%s]&deg;C consigne=%s",
           p$pv_kwc, p$pv_kwc_ref, p$p_pac_kw, p$cop_nominal, p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne)),
-        line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; Curtail=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b> &middot; <b>%s</b> &rarr; <b>%s</b>",
+        line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; TOU=<b>%s</b> &middot; Curtail=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b> &middot; <b>%s</b> &rarr; <b>%s</b>",
           contrat, batt,
+          if (isTRUE(sidebar$tou_active())) "on" else "off",
           if (isTRUE(sidebar$curtailment_active())) paste0(sidebar$curtail_kw(), "kW") else "off",
           bloc, if (!is.null(sidebar$slack_penalty())) sidebar$slack_penalty() else "n/a",
           thermostat, sidebar$data_source(),
