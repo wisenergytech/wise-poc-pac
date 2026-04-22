@@ -50,12 +50,24 @@ app_ui <- function(request) {
         .tab-explainer li{margin-bottom:2px}
         .tab-explainer strong{color:%s}
         .tab-explainer code{background:%s;padding:1px 5px;border-radius:3px;font-size:.78rem;color:%s}
+        .vignette-content h1,.vignette-content h2,.vignette-content h3,.vignette-content h4{color:%s;font-family:'JetBrains Mono',monospace;margin-top:1.5em}
+        .vignette-content h1{font-size:1.3rem} .vignette-content h2{font-size:1.1rem} .vignette-content h3{font-size:.95rem}
+        .vignette-content pre{background:%s;border:1px solid %s;border-radius:8px;padding:12px;font-size:.78rem;color:%s;overflow-x:auto}
+        .vignette-content code{background:%s;padding:1px 5px;border-radius:3px;font-size:.8rem;color:%s}
+        .vignette-content pre code{background:transparent;padding:0}
+        .vignette-content table{width:100%%;border-collapse:collapse;margin:12px 0;font-size:.82rem}
+        .vignette-content th{background:%s;color:%s;padding:8px 12px;text-align:left;border-bottom:2px solid %s;font-family:'JetBrains Mono',monospace;font-size:.75rem;text-transform:uppercase;letter-spacing:.05em}
+        .vignette-content td{padding:6px 12px;border-bottom:1px solid %s;color:%s}
+        .vignette-content blockquote{border-left:3px solid %s;padding-left:12px;color:%s;font-style:italic}
+        .vignette-content a{color:%s}
+        .vignette-content img{max-width:100%%;border-radius:8px}
       ", cl$bg_dark,cl$grid,cl$grid,cl$accent,cl$text_muted,cl$accent,cl$accent,cl$text_muted,
          cl$text_muted,cl$text_muted,cl$success,cl$danger,
          cl$grid,cl$accent,cl$text_muted,cl$bg_input,cl$grid,cl$accent,cl$accent,
          cl$text_muted,cl$bg_card,
          cl$accent,cl$grid,cl$accent,cl$accent,
-         cl$bg_card,cl$accent3,cl$bg_dark,cl$bg_input,cl$grid,cl$text_muted,cl$accent,cl$accent,cl$bg_input,cl$opti)))),
+         cl$bg_card,cl$accent3,cl$bg_dark,cl$bg_input,cl$grid,cl$text_muted,cl$accent,cl$accent,cl$bg_input,cl$opti,
+         cl$accent,cl$bg_input,cl$grid,cl$opti,cl$bg_input,cl$opti,cl$bg_card,cl$accent,cl$grid,cl$grid,cl$text,cl$accent,cl$text_muted,cl$accent)))),
 
       bslib::layout_sidebar(fillable = TRUE,
         sidebar = bslib::sidebar(width = 300, bg = cl$bg_card,
@@ -78,7 +90,9 @@ app_ui <- function(request) {
           bslib::nav_panel(title = "Comparaison", icon = shiny::icon("right-left"),
             mod_comparaison_ui("comparaison")),
           bslib::nav_panel(title = "Contraintes", icon = shiny::icon("check-circle"),
-            mod_contraintes_ui("contraintes"))
+            mod_contraintes_ui("contraintes")),
+          bslib::nav_panel(title = "Documentation", icon = shiny::icon("book"),
+            mod_documentation_ui("documentation"))
         )
       ) # fin layout_sidebar
     ) # fin page_fillable

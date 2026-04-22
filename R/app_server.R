@@ -40,4 +40,7 @@ app_server <- function(input, output, session) {
   mod_dimensionnement_server("dimensionnement", sidebar)
   mod_comparaison_server("comparaison", sidebar)
   mod_contraintes_server("contraintes", sidebar)
+
+  # ---- Documentation (vignettes) ----
+  mod_documentation_server("documentation")
 }
