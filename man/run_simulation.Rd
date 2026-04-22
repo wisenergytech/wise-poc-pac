@@ -8,7 +8,7 @@ run_simulation(
   df,
   params,
   mode = "smart",
-  baseline_mode = "parametric",
+  baseline_mode = "thermostat",
   fallback_mode = "smart"
 )
 }

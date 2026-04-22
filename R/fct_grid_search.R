@@ -20,7 +20,7 @@
 #'   or \code{NULL} on failure
 #' @export
 run_scenario <- function(df, params, mode = "smart",
-                         baseline_mode = "parametric") {
+                         baseline_mode = "thermostat") {
   sim_obj <- Simulation$new(params)
   sim_obj$load_raw_dataframe(df)
   sim_obj$run_baseline(mode = baseline_mode)
@@ -82,7 +82,7 @@ run_grid_search <- function(df, params,
                             modes = c("smart", "optimizer", "optimizer_lp",
                                       "optimizer_qp"),
                             contrats = c("fixe", "dynamique"),
-                            baseline_mode = "parametric",
+                            baseline_mode = "thermostat",
                             progress_fn = NULL) {
 
   # Map sidebar mode names to R6 optimizer modes

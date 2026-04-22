@@ -87,13 +87,18 @@ mod_sidebar_ui <- function(id) {
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           "Taille du PV dans vos donnees CSV. Le ratio kWc/ref rescale la production."))),
 
-    # ---- Baseline (autoconsommation) ----
+    # ---- Baseline ----
     shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Baseline", tip("Decrivez votre niveau d'autoconsommation actuel. L'app construira une baseline parametrique correspondante. Les bornes se calculent automatiquement a partir de votre PAC et PV.")),
-      shiny::sliderInput(ns("autoconso_cible"),
-        shiny::tags$span("Votre autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline correspondante. Deplacez vers la gauche = thermostat aveugle, vers la droite = suivi PV intensif.")),
-        min = 10, max = 90, value = 35, step = 5, post = "%"),
-      shiny::uiOutput(ns("autoconso_bounds_info"))),
+      shiny::tags$div(class = "section-title", "Baseline", tip("Scenario de reference sans EMS. Par defaut : thermostat pur (aquastat ON/OFF). Activez le suivi PV si l'installation a deja un pilotage basique du surplus.")),
+      shiny::checkboxInput(ns("pv_tracking"), "Suivi PV existant (avance)", value = FALSE),
+      shiny::conditionalPanel(sprintf("input['%s']", ns("pv_tracking")),
+        shiny::sliderInput(ns("autoconso_cible"),
+          shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
+          min = 10, max = 90, value = 35, step = 5, post = "%"),
+        shiny::uiOutput(ns("autoconso_bounds_info"))),
+      shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_tracking")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
+          shiny::HTML("Thermostat pur : la PAC s'allume quand T<sub>ballon</sub> &lt; T<sub>min</sub> et s'arrete a T<sub>consigne</sub>. Aucune conscience du PV ni des prix.")))),
 
     # ---- Batterie ----
     shiny::tags$div(class = "sidebar-section",
@@ -461,9 +466,16 @@ DONNEES CALCULEES
     sim_result <- shiny::eventReactive(input$run_sim, {
       on.exit(sim_running(FALSE), add = TRUE)
       p <- params_r(); df <- raw_data()
-      p$baseline_alpha <- baseline_alpha()
       p$tou_active <- isTRUE(input$tou_active)
       approche <- input$approche
+
+      # Baseline mode: thermostat (default) or pv_tracking (advanced)
+      baseline_mode_r <- if (isTRUE(input$pv_tracking)) {
+        p$baseline_alpha <- baseline_alpha()
+        "pv_tracking"
+      } else {
+        "thermostat"
+      }
 
       # Flatten prices when TOU is disabled
       if (!isTRUE(input$tou_active) && "prix_eur_kwh" %in% names(df)) {
@@ -484,10 +496,16 @@ DONNEES CALCULEES
       }
 
       shiny::withProgress(message = "Preparation...", value = 0.1, {
-        shiny::setProgress(0.2, detail = sprintf("Baseline parametrique (AC %d%%)...", input$autoconso_cible %||% 35))
+        bl_detail <- if (baseline_mode_r == "pv_tracking") {
+          sprintf("Baseline PV tracking (AC %d%%)...", input$autoconso_cible %||% 35)
+        } else {
+          "Baseline thermostat..."
+        }
+        shiny::setProgress(0.2, detail = bl_detail)
         shiny::setProgress(0.3, detail = sprintf("Optimisation %s en cours...", toupper(r6_mode)))
 
-        result <- run_simulation(df, p, mode = r6_mode)
+        result <- run_simulation(df, p, mode = r6_mode,
+                                 baseline_mode = baseline_mode_r)
 
         shiny::setProgress(1, detail = "Termine!")
         list(sim = result$sim, candidats = NULL, modes = NULL,
@@ -505,7 +523,11 @@ DONNEES CALCULEES
       cr <- k$facture_baseline
       co <- k$facture_opti
       jours <- round(k$n_days, 1)
-      thermostat <- sprintf("parametric(AC=%d%%)", input$autoconso_cible %||% 35)
+      thermostat <- if (isTRUE(input$pv_tracking)) {
+        sprintf("pv_tracking(AC=%d%%)", input$autoconso_cible %||% 35)
+      } else {
+        "thermostat"
+      }
       contrat <- if (p$type_contrat == "fixe") {
         sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
       } else {

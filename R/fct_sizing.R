@@ -97,7 +97,7 @@ compute_ac_bounds <- function(df, params) {
       sim_tmp$load_raw_dataframe(df)
       p_tmp <- sim_tmp$get_params()
       bl <- Baseline$new(ThermalModel$new(p_tmp))
-      df_bl <- bl$run(sim_tmp$get_prepared_data(), p_tmp, mode = "parametric")
+      df_bl <- bl$run(sim_tmp$get_prepared_data(), p_tmp, mode = "pv_tracking")
       pv_total <- sum(df_bl$pv_kwh, na.rm = TRUE)
       inj <- sum(df_bl$intake_kwh, na.rm = TRUE)
       ac <- if (pv_total > 0) (1 - inj / pv_total) * 100 else 0

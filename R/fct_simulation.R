@@ -71,7 +71,7 @@ guard_baseline <- function(sim, df_baseline, params, mode_label) {
 #' }
 #' @export
 run_simulation <- function(df, params, mode = "smart",
-                           baseline_mode = "parametric",
+                           baseline_mode = "thermostat",
                            fallback_mode = "smart") {
   sim_obj <- Simulation$new(params)
   sim_obj$load_raw_dataframe(df)

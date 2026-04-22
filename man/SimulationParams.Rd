@@ -60,7 +60,7 @@ Create a new SimulationParams object.
   curtail_kw = 5,
   slack_penalty = 2.5,
   optim_bloc_h = 24,
-  baseline_mode = "ingenieur",
+  baseline_mode = "thermostat",
   autoconso_cible = NULL,
   baseline_alpha = NULL,
   pv_kwc = 33,
@@ -120,7 +120,7 @@ Create a new SimulationParams object.
 
 \item{\code{optim_bloc_h}}{Optimization block size in hours (default 24)}
 
-\item{\code{baseline_mode}}{Baseline mode (default "ingenieur")}
+\item{\code{baseline_mode}}{Baseline mode: "thermostat" (default) or "pv_tracking"}
 
 \item{\code{autoconso_cible}}{Target self-consumption percentage from slider (default NULL)}
 

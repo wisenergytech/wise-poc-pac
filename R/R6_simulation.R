@@ -95,13 +95,13 @@ Simulation <- R6::R6Class("Simulation",
     },
 
     #' @description Run the baseline simulation.
-    #' @param mode Baseline mode: "reactif", "programmateur", "surplus_pv",
-    #'   "ingenieur" (default from params), or "proactif"
+    #' @param mode Baseline mode: \code{"thermostat"} (default) or
+    #'   \code{"pv_tracking"}. Legacy names are mapped automatically.
     #' @return self (for chaining)
     run_baseline = function(mode = NULL) {
       if (is.null(private$prepared_data)) stop("Call load_data() first")
 
-      if (is.null(mode)) mode <- private$params$baseline_mode %||% "ingenieur"
+      if (is.null(mode)) mode <- private$params$baseline_mode %||% "thermostat"
 
       private$status <- "running_baseline"
 

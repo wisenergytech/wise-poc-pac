@@ -126,8 +126,8 @@ Run the baseline simulation.
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{mode}}{Baseline mode: "reactif", "programmateur", "surplus_pv",
-"ingenieur" (default from params), or "proactif"}
+\item{\code{mode}}{Baseline mode: \code{"thermostat"} (default) or
+\code{"pv_tracking"}. Legacy names are mapped automatically.}
 }
 \if{html}{\out{</div>}}
 }

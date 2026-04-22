@@ -85,7 +85,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
     #' @param curtail_kw Curtailment power limit in kW (default 5)
     #' @param slack_penalty Penalty for temperature violations EUR/deg/qt (default 2.5)
     #' @param optim_bloc_h Optimization block size in hours (default 24)
-    #' @param baseline_mode Baseline mode (default "ingenieur")
+    #' @param baseline_mode Baseline mode: "thermostat" (default) or "pv_tracking"
     #' @param autoconso_cible Target self-consumption percentage from slider (default NULL)
     #' @param baseline_alpha PV-affinity coefficient 0-1 for parametric baseline (default NULL)
     #' @param pv_kwc PV capacity in kWc (default 33)
@@ -108,7 +108,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
       batt_rendement = 0.90, batt_soc_min = 0.10, batt_soc_max = 0.90,
       curtailment_active = FALSE, curtail_kw = 5,
       slack_penalty = 2.5, optim_bloc_h = 24,
-      baseline_mode = "ingenieur",
+      baseline_mode = "thermostat",
       autoconso_cible = NULL,
       baseline_alpha = NULL,
       pv_kwc = 33, pv_kwc_ref = 33,

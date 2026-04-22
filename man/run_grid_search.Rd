@@ -11,7 +11,7 @@ run_grid_search(
   batt_range,
   modes = c("smart", "optimizer", "optimizer_lp", "optimizer_qp"),
   contrats = c("fixe", "dynamique"),
-  baseline_mode = "parametric",
+  baseline_mode = "thermostat",
   progress_fn = NULL
 )
 }

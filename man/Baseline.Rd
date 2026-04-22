@@ -4,10 +4,47 @@
 \alias{Baseline}
 \title{Baseline Simulation}
 \description{
-R6 class for baseline (reference) simulation with 5 discrete
-  modes plus a continuous "parametric" mode.
-  The baseline represents the "before optimization" scenario (thermostat,
-  programmer, PV surplus follower, engineer, or proactive).
+R6 class for baseline (reference) simulation. The baseline
+  represents the "before optimization" scenario — what happens without
+  an intelligent EMS.
+}
+\details{
+## Modes
+\describe{
+  \item{thermostat}{(default) Pure ON/OFF hysteresis control. The heat pump
+    turns ON when tank temperature drops below \code{t_min} and OFF when
+    it reaches \code{t_consigne}. This is the behaviour of ~95\% of
+    non-intelligent PAC installations (simple aquastat). The resulting
+    PV self-consumption is purely incidental.}
+  \item{pv_tracking}{Parametric PV surplus following. The heat pump follows
+    PV surplus proportionally to an \code{alpha} parameter (0 = thermostat,
+    1 = maximum PV tracking). This models installations with basic
+    domotics or surplus-following inverters (e.g. SolarEdge, Fronius).
+    Requires \code{params$baseline_alpha}.}
+}
+
+## Thermal model
+Both modes use the same thermal equation per timestep:
+\deqn{T_{i} = \frac{T_{i-1} \cdot (C - k) + Q_{pac} + k \cdot T_{amb} - Q_{ecs}}{C}}
+where \eqn{C} is tank heat capacity (kWh/K), \eqn{k} is loss coefficient,
+\eqn{Q_{pac}} is heat pump output, and \eqn{Q_{ecs}} is hot water draw.
+}
+\examples{
+params <- list(
+  t_consigne = 50, t_tolerance = 5, t_min = 45, t_max = 55,
+  p_pac_kw = 2, cop_nominal = 3.5, t_ref_cop = 7,
+  volume_ballon_l = 200, capacite_kwh_par_degre = 200 * 0.001163,
+  dt_h = 0.25
+)
+tm <- ThermalModel$new(params)
+bl <- Baseline$new(tm)
+
+# Default: thermostat
+result <- bl$run(df, params)
+
+# Advanced: PV tracking with alpha = 0.6
+params$baseline_alpha <- 0.6
+result <- bl$run(df, params, mode = "pv_tracking")
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -40,21 +77,23 @@ Create a new Baseline.
 \if{latex}{\out{\hypertarget{method-Baseline-run}{}}}
 \subsection{Method \code{run()}}{
 Run the baseline simulation.
-  Contains the full run_baseline() logic from app.R, using the same
-  thermal model (proportional heat loss) as the optimizers.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{Baseline$run(df, params, mode = "ingenieur")}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{Baseline$run(df, params, mode = "thermostat")}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{df}}{Prepared dataframe (output of DataGenerator$prepare_df)}
+\item{\code{df}}{Prepared dataframe (output of DataGenerator$prepare_df) with
+columns: pv_kwh, t_ext, conso_hors_pac, soutirage_estime_kwh,
+prix_offtake, prix_injection, and optionally timestamp}
 
-\item{\code{params}}{Parameter list (or SimulationParams$as_list())}
+\item{\code{params}}{Parameter list with at least: t_consigne, t_min, t_max,
+p_pac_kw, cop_nominal, t_ref_cop, capacite_kwh_par_degre, dt_h.
+For \code{"pv_tracking"} mode, also requires baseline_alpha.}
 
-\item{\code{mode}}{Baseline mode: "reactif", "programmateur", "surplus_pv",
-"ingenieur" (default), "proactif", or "parametric"}
+\item{\code{mode}}{Baseline mode: \code{"thermostat"} (default) or
+\code{"pv_tracking"}}
 }
 \if{html}{\out{</div>}}
 }

@@ -1,17 +1,54 @@
 # =============================================================================
 # R6 Class: Baseline
 # =============================================================================
-# Encapsulates the baseline (reference) simulation with 5 discrete modes
-# (reactif, programmateur, surplus_pv, ingenieur, proactif) plus a
-# continuous "parametric" mode driven by alpha coefficient [0,1].
-# Contains the full run_baseline() logic from app.R.
+# Encapsulates the baseline (reference) simulation representing the "before
+# optimization" scenario. Two modes:
+#   - "thermostat" (default): pure ON/OFF hysteresis, no PV awareness
+#   - "pv_tracking": parametric PV surplus following via alpha coefficient
 # =============================================================================
 
 #' @title Baseline Simulation
-#' @description R6 class for baseline (reference) simulation with 5 discrete
-#'   modes plus a continuous "parametric" mode.
-#'   The baseline represents the "before optimization" scenario (thermostat,
-#'   programmer, PV surplus follower, engineer, or proactive).
+#' @description R6 class for baseline (reference) simulation. The baseline
+#'   represents the "before optimization" scenario — what happens without
+#'   an intelligent EMS.
+#'
+#' @details
+#' ## Modes
+#' \describe{
+#'   \item{thermostat}{(default) Pure ON/OFF hysteresis control. The heat pump
+#'     turns ON when tank temperature drops below \code{t_min} and OFF when
+#'     it reaches \code{t_consigne}. This is the behaviour of ~95\% of
+#'     non-intelligent PAC installations (simple aquastat). The resulting
+#'     PV self-consumption is purely incidental.}
+#'   \item{pv_tracking}{Parametric PV surplus following. The heat pump follows
+#'     PV surplus proportionally to an \code{alpha} parameter (0 = thermostat,
+#'     1 = maximum PV tracking). This models installations with basic
+#'     domotics or surplus-following inverters (e.g. SolarEdge, Fronius).
+#'     Requires \code{params$baseline_alpha}.}
+#' }
+#'
+#' ## Thermal model
+#' Both modes use the same thermal equation per timestep:
+#' \deqn{T_{i} = \frac{T_{i-1} \cdot (C - k) + Q_{pac} + k \cdot T_{amb} - Q_{ecs}}{C}}
+#' where \eqn{C} is tank heat capacity (kWh/K), \eqn{k} is loss coefficient,
+#' \eqn{Q_{pac}} is heat pump output, and \eqn{Q_{ecs}} is hot water draw.
+#'
+#' @examples
+#' params <- list(
+#'   t_consigne = 50, t_tolerance = 5, t_min = 45, t_max = 55,
+#'   p_pac_kw = 2, cop_nominal = 3.5, t_ref_cop = 7,
+#'   volume_ballon_l = 200, capacite_kwh_par_degre = 200 * 0.001163,
+#'   dt_h = 0.25
+#' )
+#' tm <- ThermalModel$new(params)
+#' bl <- Baseline$new(tm)
+#'
+#' # Default: thermostat
+#' result <- bl$run(df, params)
+#'
+#' # Advanced: PV tracking with alpha = 0.6
+#' params$baseline_alpha <- 0.6
+#' result <- bl$run(df, params, mode = "pv_tracking")
 #' @export
 Baseline <- R6::R6Class("Baseline",
   public = list(
@@ -22,17 +59,22 @@ Baseline <- R6::R6Class("Baseline",
     },
 
     #' @description Run the baseline simulation.
-    #'   Contains the full run_baseline() logic from app.R, using the same
-    #'   thermal model (proportional heat loss) as the optimizers.
-    #' @param df Prepared dataframe (output of DataGenerator$prepare_df)
-    #' @param params Parameter list (or SimulationParams$as_list())
-    #' @param mode Baseline mode: "reactif", "programmateur", "surplus_pv",
-    #'   "ingenieur" (default), "proactif", or "parametric"
+    #' @param df Prepared dataframe (output of DataGenerator$prepare_df) with
+    #'   columns: pv_kwh, t_ext, conso_hors_pac, soutirage_estime_kwh,
+    #'   prix_offtake, prix_injection, and optionally timestamp
+    #' @param params Parameter list with at least: t_consigne, t_min, t_max,
+    #'   p_pac_kw, cop_nominal, t_ref_cop, capacite_kwh_par_degre, dt_h.
+    #'   For \code{"pv_tracking"} mode, also requires baseline_alpha.
+    #' @param mode Baseline mode: \code{"thermostat"} (default) or
+    #'   \code{"pv_tracking"}
     #' @return The input df with added columns: t_ballon, offtake_kwh, intake_kwh
-    run = function(df, params, mode = "ingenieur") {
+    run = function(df, params, mode = "thermostat") {
       if (inherits(params, "SimulationParams")) {
         params <- params$as_list()
       }
+
+      # Support legacy mode names
+      mode <- private$normalize_mode(mode)
 
       n <- nrow(df)
       pac_qt <- params$p_pac_kw * params$dt_h
@@ -40,23 +82,24 @@ Baseline <- R6::R6Class("Baseline",
       k_perte <- 0.004 * params$dt_h
       t_amb <- 20
 
-      t_consigne_bas  <- params$t_min
-      t_consigne_haut <- params$t_consigne
-
       pv    <- df$pv_kwh
       conso <- df$conso_hors_pac
       ecs   <- df$soutirage_estime_kwh
       t_ext_v <- df$t_ext
-
-      h <- if ("timestamp" %in% names(df)) {
-        lubridate::hour(df$timestamp) + lubridate::minute(df$timestamp) / 60
-      } else {
-        rep(12, n)
-      }
       surplus_pv_qt <- pv - conso
 
-      # Average COP over the period (for ingenieur mode)
-      cop_moyen <- mean(calc_cop(t_ext_v, params$cop_nominal, params$t_ref_cop), na.rm = TRUE)
+      # Pre-compute mean COP (used by pv_tracking mode)
+      cop_moyen <- if (mode == "pv_tracking") {
+        mean(calc_cop(t_ext_v, params$cop_nominal, params$t_ref_cop), na.rm = TRUE)
+      } else {
+        NULL
+      }
+
+      alpha <- if (mode == "pv_tracking") {
+        if (!is.null(params$baseline_alpha)) params$baseline_alpha else 0.5
+      } else {
+        NULL
+      }
 
       t_bal  <- rep(NA_real_, n)
       pac_on <- rep(0, n)
@@ -64,93 +107,22 @@ Baseline <- R6::R6Class("Baseline",
 
       for (i in seq_len(n)) {
         t_prev <- if (i == 1) params$t_consigne else t_bal[i - 1]
-        cop_i <- calc_cop(t_ext_v[i], params$cop_nominal, params$t_ref_cop, t_ballon = t_prev)
-        surplus_i <- surplus_pv_qt[i]
+        cop_i <- calc_cop(t_ext_v[i], params$cop_nominal, params$t_ref_cop,
+                          t_ballon = t_prev)
 
-        # Projected T without heating
-        t_sans_pac <- (t_prev * (cap - k_perte) + k_perte * t_amb - ecs[i]) / cap
-
-        # --- Decision by mode ---
-        if (mode == "programmateur") {
-          if (h[i] >= 11 & h[i] < 15 & t_prev < params$t_max) {
-            pac_on[i] <- 1
-          } else if (t_prev < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (t_prev > t_consigne_haut) {
-            pac_on[i] <- 0
-          } else {
-            pac_on[i] <- if (i > 1) pac_on[i - 1] else 0
-          }
-
-        } else if (mode == "surplus_pv") {
-          seuil_surplus <- 0.5 * params$dt_h
-          if (surplus_i > seuil_surplus & t_prev < params$t_max) {
-            pac_on[i] <- 1
-          } else if (t_prev < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (t_prev > t_consigne_haut) {
-            pac_on[i] <- 0
-          } else {
-            pac_on[i] <- if (i > 1) pac_on[i - 1] else 0
-          }
-
-        } else if (mode == "ingenieur") {
-          if (t_prev < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (t_prev >= params$t_max) {
-            pac_on[i] <- 0
-          } else if (surplus_i > 0 & t_prev < params$t_max) {
-            pac_on[i] <- min(1, max(0.1, surplus_i / pac_qt))
-          } else if (t_sans_pac < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (t_prev < params$t_consigne & cop_i > cop_moyen * 1.05) {
-            pac_on[i] <- 0.3
-          } else {
-            pac_on[i] <- 0
-          }
-
-        } else if (mode == "parametric") {
-          alpha <- if (!is.null(params$baseline_alpha)) params$baseline_alpha else 0.5
-
-          if (t_prev < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (t_prev >= params$t_max) {
-            pac_on[i] <- 0
-          } else if (surplus_i > 0) {
-            pac_on[i] <- alpha * min(1, max(0.1, surplus_i / pac_qt))
-          } else if (t_sans_pac < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (alpha > 0.6 && t_prev < params$t_consigne && cop_i > cop_moyen * 1.05) {
-            pac_on[i] <- alpha * 0.3
-          } else {
-            pac_on[i] <- 0
-          }
-
+        # --- Decision ---
+        if (mode == "pv_tracking") {
+          pac_on[i] <- private$decide_pv_tracking(
+            t_prev, surplus_pv_qt[i], pac_qt, cop_i, cop_moyen, alpha,
+            cap, k_perte, t_amb, ecs[i], params
+          )
         } else {
-          # Reactif or proactif: pure thermostat with hysteresis
-          if (t_prev < t_consigne_bas) {
-            pac_on[i] <- 1
-          } else if (t_prev > t_consigne_haut) {
-            pac_on[i] <- 0
-          } else {
-            pac_on[i] <- if (i > 1) pac_on[i - 1] else 0
-          }
+          pac_on[i] <- private$decide_thermostat(
+            t_prev, pac_on[if (i > 1) i - 1 else 1], params
+          )
         }
 
-        # Proactive constraints (proactif mode only)
-        if (mode == "proactif") {
-          chaleur_pac_i <- pac_qt * cop_i
-          t_min_i <- if (ecs[i] > chaleur_pac_i) params$t_min - 10 else params$t_min
-          if (pac_on[i] == 0) {
-            if (t_sans_pac < t_min_i) pac_on[i] <- 1
-          }
-          if (pac_on[i] == 1) {
-            t_avec_pac <- (t_prev * (cap - k_perte) + pac_qt * cop_i + k_perte * t_amb - ecs[i]) / cap
-            if (t_avec_pac > params$t_max) pac_on[i] <- 0
-          }
-        }
-
-        # Thermal equation (identical for all modes)
+        # --- Thermal equation (identical for all modes) ---
         chaleur <- pac_on[i] * pac_qt * cop_i
         t_bal[i] <- (t_prev * (cap - k_perte) + chaleur + k_perte * t_amb - ecs[i]) / cap
         t_bal[i] <- max(max(20, params$t_min - 10), min(params$t_max + 5, t_bal[i]))
@@ -178,6 +150,45 @@ Baseline <- R6::R6Class("Baseline",
 
   private = list(
     thermal_model = NULL,
-    result = NULL
+    result = NULL,
+
+    # Map legacy mode names to current modes
+    normalize_mode = function(mode) {
+      legacy_map <- c(
+        reactif = "thermostat", programmateur = "thermostat",
+        proactif = "thermostat", surplus_pv = "pv_tracking",
+        ingenieur = "pv_tracking", parametric = "pv_tracking"
+      )
+      if (mode %in% names(legacy_map)) legacy_map[[mode]] else mode
+    },
+
+    # Pure thermostat with hysteresis: ON below t_min, OFF above t_consigne
+    decide_thermostat = function(t_prev, pac_on_prev, params) {
+      if (t_prev < params$t_min) {
+        1
+      } else if (t_prev > params$t_consigne) {
+        0
+      } else {
+        pac_on_prev
+      }
+    },
+
+    # PV surplus tracking with alpha modulation
+    decide_pv_tracking = function(t_prev, surplus_i, pac_qt, cop_i, cop_moyen,
+                                  alpha, cap, k_perte, t_amb, ecs_i, params) {
+      t_sans_pac <- (t_prev * (cap - k_perte) + k_perte * t_amb - ecs_i) / cap
+
+      if (t_prev < params$t_min) {
+        1
+      } else if (t_prev >= params$t_max) {
+        0
+      } else if (surplus_i > 0) {
+        alpha * min(1, max(0.1, surplus_i / pac_qt))
+      } else if (t_sans_pac < params$t_min) {
+        1
+      } else {
+        0
+      }
+    }
   )
 )

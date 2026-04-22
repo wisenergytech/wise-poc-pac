@@ -4,7 +4,7 @@
 \alias{run_scenario}
 \title{Run a single simulation scenario}
 \usage{
-run_scenario(df, params, mode = "smart", baseline_mode = "parametric")
+run_scenario(df, params, mode = "smart", baseline_mode = "thermostat")
 }
 \arguments{
 \item{df}{Raw data dataframe}
