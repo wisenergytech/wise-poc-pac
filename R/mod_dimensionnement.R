@@ -69,94 +69,24 @@ mod_dimensionnement_server <- function(id, sidebar) {
 
       pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
       batt_range <- c(0, 5, 10, 15, 20)
-      modes      <- c("smart", "optimizer", "optimizer_lp", "optimizer_qp")
-      contrats   <- c("fixe", "dynamique")
-
-      total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
 
       shiny::withProgress(message = "Automagic en cours...", value = 0, {
-        resultats <- list()
-        k <- 0
-
-        for (ct in contrats) {
-          p_ct <- p
-          p_ct$type_contrat <- ct
-          if (ct == "fixe") {
-            p_ct$taxe_transport_eur_kwh <- 0
-            p_ct$prix_fixe_offtake <- p$prix_fixe_offtake
-            p_ct$prix_fixe_injection <- p$prix_fixe_injection
+        all_res <- run_grid_search(
+          df_raw, p,
+          pv_range = pv_range, batt_range = batt_range,
+          progress_fn = function(k, total, detail) {
+            shiny::setProgress(k / total, detail = detail)
           }
-
-          for (pv_kwc in pv_range) {
-            p_ct$pv_kwc <- pv_kwc
-            df_pv <- df_raw
-            ratio <- pv_kwc / p$pv_kwc_ref
-            df_pv$pv_kwh <- df_raw$pv_kwh * ratio
-            baseline_mode_am <- if (!is.null(baseline_type())) baseline_type() else "reactif"
-
-            for (bkwh in batt_range) {
-              p_sim <- p_ct
-              p_sim$batterie_active <- bkwh > 0
-              p_sim$batt_kwh <- bkwh
-              p_sim$batt_kw <- min(bkwh / 2, 5)
-
-              for (m in modes) {
-                k <- k + 1
-                shiny::setProgress(k / total, detail = sprintf("%d/%d -- PV %dkWc Batt %dkWh %s %s",
-                  k, total, pv_kwc, bkwh, m, ct))
-
-                r6_m <- switch(m,
-                  optimizer = "milp", optimizer_lp = "lp", optimizer_qp = "qp", "smart")
-
-                tryCatch({
-                  if (m == "optimizer_qp") {
-                    p_sim$qp_w_comfort <- 0.1
-                    p_sim$qp_w_smooth <- 0.05
-                  }
-                  sim_sc <- Simulation$new(p_sim)
-                  sim_sc$load_raw_dataframe(df_pv)
-                  sim_sc$run_baseline(mode = baseline_mode_am)
-                  sim_sc$run_optimization(r6_m)
-                  sim <- sim_sc$get_results()
-
-                  pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
-                  inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
-                  off_tot <- sum(sim$sim_offtake, na.rm = TRUE)
-                  cout_net <- sum(sim$sim_offtake * sim$prix_offtake -
-                                  sim$sim_intake * sim$prix_injection, na.rm = TRUE)
-                  autoconso <- if (pv_tot > 0) (1 - inj_tot / pv_tot) * 100 else 0
-
-                  resultats[[k]] <- tibble::tibble(
-                    PV_kWc = pv_kwc, Batterie_kWh = bkwh,
-                    Mode = m, Contrat = ct,
-                    Cout_EUR = round(cout_net),
-                    Autoconso_pct = round(autoconso, 1),
-                    Injection_kWh = round(inj_tot),
-                    Soutirage_kWh = round(off_tot)
-                  )
-                }, error = function(e) {
-                  resultats[[k]] <<- tibble::tibble(
-                    PV_kWc = pv_kwc, Batterie_kWh = bkwh,
-                    Mode = m, Contrat = ct,
-                    Cout_EUR = NA_real_, Autoconso_pct = NA_real_,
-                    Injection_kWh = NA_real_, Soutirage_kWh = NA_real_
-                  )
-                })
-              }
-            }
-          }
-        }
+        )
+        automagic_results(all_res)
       })
-
-      all_res <- dplyr::bind_rows(resultats) %>% dplyr::filter(!is.na(Cout_EUR)) %>% dplyr::arrange(Cout_EUR)
-      automagic_results(all_res)
 
       if (!is.null(parent_session)) {
         bslib::updateNavsetCardTab(parent_session, "main_tabs", selected = "Dimensionnement")
       }
       shiny::showNotification(
         sprintf("Automagic termine! %d combinaisons testees. Meilleur cout: %d EUR/an",
-                nrow(all_res), all_res$Cout_EUR[1]),
+                nrow(automagic_results()), automagic_results()$Cout_EUR[1]),
         type = "message", duration = 8)
     }, ignoreInit = TRUE)
 
@@ -266,17 +196,13 @@ mod_dimensionnement_server <- function(id, sidebar) {
       scenarii <- dplyr::bind_rows(lapply(kwc_range, function(kwc) {
         p_sc <- p; p_sc$pv_kwc <- kwc; p_sc$pv_kwc_ref <- p$pv_kwc
         df_sc <- df_base %>% dplyr::mutate(pv_kwh = pv_kwh * kwc / kwc_ref)
-        sim_obj <- Simulation$new(p_sc)
-        sim_obj$load_raw_dataframe(df_sc)
-        sim_obj$run_baseline()
-        sim_obj$run_optimization("smart")
-        sim_sc <- sim_obj$get_results()
+        res <- run_scenario(df_sc, p_sc, mode = "smart")
         tibble::tibble(
           kWc = kwc,
-          `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
-          `Soutirage (kWh)` = round(sum(sim_sc$sim_offtake, na.rm = TRUE)),
-          `Autoconso (%)` = round((1 - sum(sim_sc$sim_intake, na.rm = TRUE) / max(sum(sim_sc$pv_kwh, na.rm = TRUE), 1)) * 100, 1),
-          `Facture nette (EUR)` = round(sum(sim_sc$sim_offtake * sim_sc$prix_offtake - sim_sc$sim_intake * sim_sc$prix_injection, na.rm = TRUE))
+          `Injection (kWh)` = res$Injection_kWh,
+          `Soutirage (kWh)` = res$Soutirage_kWh,
+          `Autoconso (%)` = res$Autoconso_pct,
+          `Facture nette (EUR)` = res$Cout_EUR
         )
       }))
 
@@ -315,17 +241,13 @@ mod_dimensionnement_server <- function(id, sidebar) {
         p_sc <- p
         p_sc$batterie_active <- cap > 0
         p_sc$batt_kwh <- cap
-        sim_obj <- Simulation$new(p_sc)
-        sim_obj$load_raw_dataframe(df_base)
-        sim_obj$run_baseline()
-        sim_obj$run_optimization("smart")
-        sim_sc <- sim_obj$get_results()
+        res <- run_scenario(df_base, p_sc, mode = "smart")
         tibble::tibble(
           `Batterie (kWh)` = cap,
-          `Injection (kWh)` = round(sum(sim_sc$sim_intake, na.rm = TRUE)),
-          `Soutirage (kWh)` = round(sum(sim_sc$sim_offtake, na.rm = TRUE)),
-          `Autoconso (%)` = round((1 - sum(sim_sc$sim_intake, na.rm = TRUE) / max(sum(sim_sc$pv_kwh, na.rm = TRUE), 1)) * 100, 1),
-          `Facture nette (EUR)` = round(sum(sim_sc$sim_offtake * sim_sc$prix_offtake - sim_sc$sim_intake * sim_sc$prix_injection, na.rm = TRUE))
+          `Injection (kWh)` = res$Injection_kWh,
+          `Soutirage (kWh)` = res$Soutirage_kWh,
+          `Autoconso (%)` = res$Autoconso_pct,
+          `Facture nette (EUR)` = res$Cout_EUR
         )
       }))
 

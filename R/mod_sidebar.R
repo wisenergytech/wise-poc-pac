@@ -279,31 +279,7 @@ DONNEES CALCULEES
         slack_penalty = 2.5, optim_bloc_h = 4, poids_cout = 0.5,
         qp_w_comfort = 0.001, qp_w_smooth = 0.01
       )
-      bounds <- list(ac_floor = 15, ac_ceiling = 70)
-      tryCatch({
-        for (a in c(0, 1)) {
-          p_tmp <- p_base
-          p_tmp$baseline_alpha <- a
-          sim_tmp <- Simulation$new(p_tmp)
-          sim_tmp$load_raw_dataframe(df)
-          p_tmp <- sim_tmp$get_params()
-          bl <- Baseline$new(ThermalModel$new(p_tmp))
-          df_bl <- bl$run(sim_tmp$get_prepared_data(), p_tmp, mode = "parametric")
-          pv_total <- sum(df_bl$pv_kwh, na.rm = TRUE)
-          inj <- sum(df_bl$intake_kwh, na.rm = TRUE)
-          ac <- if (pv_total > 0) (1 - inj / pv_total) * 100 else 0
-          if (a == 0) bounds$ac_floor <- round(ac, 1)
-          if (a == 1) bounds$ac_ceiling <- round(ac, 1)
-        }
-        if (bounds$ac_floor > bounds$ac_ceiling) {
-          tmp <- bounds$ac_floor
-          bounds$ac_floor <- bounds$ac_ceiling
-          bounds$ac_ceiling <- tmp
-        }
-      }, error = function(e) {
-        message("[AC bounds] Error: ", e$message)
-      })
-      bounds
+      compute_ac_bounds(df, p_base)
     })
 
     # ---- Baseline alpha from AC target ----
@@ -367,14 +343,7 @@ DONNEES CALCULEES
     # ---- Volume ballon auto/manual ----
     volume_ballon_eff <- shiny::reactive({
       if (isTRUE(input$volume_auto)) {
-        p_kw <- input$p_pac_kw
-        cop <- input$cop_nominal
-        tol <- input$t_tolerance
-        delta_t <- 2 * tol
-        heures_stockage <- 2
-        energie_kwh <- p_kw * cop * heures_stockage
-        vol <- energie_kwh / (delta_t * 0.001163)
-        round(vol / 50) * 50
+        calculate_ballon_volume_auto(input$p_pac_kw, input$cop_nominal, input$t_tolerance)
       } else {
         input$volume_ballon_manual
       }
@@ -396,21 +365,8 @@ DONNEES CALCULEES
     # ---- PV auto ----
     pv_kwc_eff <- shiny::reactive({
       if (isTRUE(input$pv_auto)) {
-        p_pac <- input$p_pac_kw
-        vol <- volume_ballon_eff()
-        cop_moy <- input$cop_nominal
-
-        if (p_pac <= 10) {
-          pertes_jour_kwh <- 0.004 * (input$t_consigne - 20) * 24
-          ecs_jour_kwh <- 6 * vol / 200
-          conso_pac_an <- (ecs_jour_kwh + pertes_jour_kwh) / cop_moy * 365
-        } else {
-          heq_jour <- 5
-          conso_pac_an <- p_pac * heq_jour * 365 / cop_moy
-        }
-
-        kwc <- conso_pac_an / 950
-        round(kwc * 2) / 2
+        calculate_pv_auto(input$p_pac_kw, volume_ballon_eff(),
+                          input$cop_nominal, input$t_consigne)
       } else {
         input$pv_kwc_manual
       }
@@ -486,30 +442,11 @@ DONNEES CALCULEES
       # Inject real Belpex prices (CSV only)
       if (input$data_source == "csv") {
         api_key <- Sys.getenv("ENTSOE_API_KEY", Sys.getenv("ENTSO-E_API_KEY", ""))
-        belpex <- load_belpex_prices(
-          start_date = min(df$timestamp),
-          end_date = max(df$timestamp),
-          api_key = api_key,
-          data_dir = "data"
-        )
-        if (!is.null(belpex$data) && nrow(belpex$data) > 0) {
-          belpex_h <- belpex$data %>%
-            dplyr::mutate(
-              datetime_bxl = lubridate::with_tz(datetime, tzone = "Europe/Brussels"),
-              heure_join = lubridate::floor_date(datetime_bxl, unit = "hour"),
-              prix_belpex = price_eur_mwh / 1000
-            ) %>%
-            dplyr::distinct(heure_join, .keep_all = TRUE) %>%
-            dplyr::select(heure_join, prix_belpex)
-
-          df <- df %>%
-            dplyr::mutate(heure_join = lubridate::floor_date(timestamp, unit = "hour")) %>%
-            dplyr::left_join(belpex_h, by = "heure_join") %>%
-            dplyr::mutate(prix_eur_kwh = dplyr::coalesce(prix_belpex, prix_eur_kwh)) %>%
-            dplyr::select(-heure_join, -prix_belpex)
-
-          n_matched <- sum(!is.na(df$prix_eur_kwh) & df$prix_eur_kwh != 0)
+        df_with_belpex <- inject_belpex_prices(df, api_key = api_key, data_dir = "data")
+        n_matched <- sum(!is.na(df_with_belpex$prix_eur_kwh) & df_with_belpex$prix_eur_kwh != 0)
+        if (n_matched > 0) {
           message(sprintf("[Belpex] %d/%d quarts d'heure avec prix reels", n_matched, nrow(df)))
+          df <- df_with_belpex
         } else {
           shiny::showNotification("Prix Belpex indisponibles, prix synthetiques utilises", type = "warning", duration = 5)
         }
@@ -528,84 +465,33 @@ DONNEES CALCULEES
       p$tou_active <- isTRUE(input$tou_active)
       approche <- input$approche
 
-      # Flatten prices when TOU is disabled: optimizer maximizes
-      # self-consumption without exploiting price variations
+      # Flatten prices when TOU is disabled
       if (!isTRUE(input$tou_active) && "prix_eur_kwh" %in% names(df)) {
-        prix_moyen <- mean(df$prix_eur_kwh, na.rm = TRUE)
-        df$prix_eur_kwh <- prix_moyen
+        df$prix_eur_kwh <- mean(df$prix_eur_kwh, na.rm = TRUE)
+      }
+
+      # Map sidebar approche to R6 optimization mode
+      r6_mode <- switch(approche,
+        optimiseur = "milp", optimiseur_lp = "lp", optimiseur_qp = "qp",
+        "smart")
+
+      # Set mode-specific params
+      if (approche == "optimiseur_lp") p$optim_bloc_h <- input$optim_bloc_h_lp
+      if (approche == "optimiseur_qp") {
+        p$optim_bloc_h <- input$optim_bloc_h_qp
+        p$qp_w_comfort <- input$qp_w_comfort
+        p$qp_w_smooth <- input$qp_w_smooth
       }
 
       shiny::withProgress(message = "Preparation...", value = 0.1, {
-        # R6 workflow: Simulation orchestrates prepare + baseline + optimization
-        sim_obj <- Simulation$new(p)
-        sim_obj$load_raw_dataframe(df)
-        p <- sim_obj$get_params()
+        shiny::setProgress(0.2, detail = sprintf("Baseline parametrique (AC %d%%)...", input$autoconso_cible %||% 35))
+        shiny::setProgress(0.3, detail = sprintf("Optimisation %s en cours...", toupper(r6_mode)))
 
-        baseline_mode <- "parametric"
-        shiny::setProgress(0.2, detail = sprintf("Calcul baseline parametrique (AC %d%%)...", input$autoconso_cible %||% 35))
-        sim_obj$run_baseline(mode = baseline_mode)
-        df_prep <- sim_obj$get_baseline()
-
-        # Safety net
-        guard_baseline <- function(sim, df_prep, p, mode_label) {
-          facture_baseline <- sum(df_prep$offtake_kwh * df_prep$prix_offtake - df_prep$intake_kwh * df_prep$prix_injection, na.rm = TRUE)
-          facture_opti <- sum(sim$sim_offtake * sim$prix_offtake - sim$sim_intake * sim$prix_injection, na.rm = TRUE)
-          if (facture_opti > facture_baseline) {
-            message(sprintf("[%s] Facture opti (%.1f) > baseline (%.1f) -- fallback baseline", mode_label, facture_opti, facture_baseline))
-            sim$sim_t_ballon <- df_prep$t_ballon
-            sim$sim_offtake <- df_prep$offtake_kwh
-            sim$sim_intake <- df_prep$intake_kwh
-            sim$sim_cop <- calc_cop(df_prep$t_ext, p$cop_nominal, p$t_ref_cop)
-            sim$decision_raison <- "baseline_fallback"
-            sim$mode_actif <- paste0(mode_label, "_baseline")
-            shiny::showNotification(sprintf("%s fait pire que la baseline -- resultats baseline affiches", mode_label), type = "warning", duration = 8)
-          }
-          sim
-        }
-
-        # Map sidebar approche to R6 optimization mode
-        r6_mode <- switch(approche,
-          optimiseur = "milp",
-          optimiseur_lp = "lp",
-          optimiseur_qp = "qp",
-          "smart"  # default: rulebased / smart
-        )
-        mode_label <- toupper(r6_mode)
-
-        # Set mode-specific params before optimization
-        if (approche == "optimiseur_lp") p$optim_bloc_h <- input$optim_bloc_h_lp
-        if (approche == "optimiseur_qp") {
-          p$optim_bloc_h <- input$optim_bloc_h_qp
-          p$qp_w_comfort <- input$qp_w_comfort
-          p$qp_w_smooth <- input$qp_w_smooth
-        }
-        # Re-create sim_obj with updated params (for QP/LP bloc_h overrides)
-        sim_obj <- Simulation$new(p)
-        sim_obj$load_raw_dataframe(df)
-        p <- sim_obj$get_params()
-        sim_obj$run_baseline(mode = baseline_mode)
-        df_prep <- sim_obj$get_baseline()
-
-        shiny::setProgress(0.3, detail = sprintf("Optimisation %s en cours...", mode_label))
-        sim <- tryCatch({
-          sim_obj$run_optimization(r6_mode)
-          sim_obj$get_results()
-        }, error = function(e) {
-          shiny::showNotification(paste("Erreur optimiseur", mode_label, ":", e$message), type = "error", duration = 10)
-          NULL
-        })
-
-        if (is.null(sim)) {
-          shiny::showNotification(sprintf("Optimisation %s infaisable — fallback Smart", mode_label), type = "error")
-          sim_obj$run_optimization("smart")
-          sim <- sim_obj$get_results()
-          sim$mode_actif <- "smart_fallback"
-        } else {
-          sim <- guard_baseline(sim, df_prep, p, mode_label)
-        }
+        result <- run_simulation(df, p, mode = r6_mode)
 
         shiny::setProgress(1, detail = "Termine!")
-        list(sim = sim, candidats = NULL, modes = NULL, df = df_prep, params = p, mode = r6_mode)
+        list(sim = result$sim, candidats = NULL, modes = NULL,
+             df = result$df, params = result$params, mode = result$mode)
       })
     })
 
@@ -615,9 +501,10 @@ DONNEES CALCULEES
       sim <- res$sim
       p <- res$params
       mode <- res$mode
-      cr <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm=TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm=TRUE)
-      co <- sum(sim$sim_offtake * sim$prix_offtake, na.rm=TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm=TRUE)
-      jours <- round(as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days")), 1)
+      k <- KPICalculator$new()$compute(sim, sim, p)
+      cr <- k$facture_baseline
+      co <- k$facture_opti
+      jours <- round(k$n_days, 1)
       thermostat <- sprintf("parametric(AC=%d%%)", input$autoconso_cible %||% 35)
       contrat <- if (p$type_contrat == "fixe") {
         sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
@@ -658,6 +545,13 @@ DONNEES CALCULEES
       sim %>% dplyr::filter(timestamp >= d1, timestamp < d2)
     })
 
+    # ---- Shared KPIs (computed once, consumed by all modules) ----
+    kpis_r <- shiny::reactive({
+      shiny::req(sim_filtered())
+      sim <- sim_filtered(); p <- params_r()
+      KPICalculator$new()$compute(sim, sim, p)
+    })
+
     # ---- Automagic ----
     automagic_results <- shiny::reactiveVal(NULL)
 
@@ -668,105 +562,26 @@ DONNEES CALCULEES
 
       # Flatten prices when TOU is disabled
       if (!isTRUE(input$tou_active) && "prix_eur_kwh" %in% names(df_raw)) {
-        prix_moyen <- mean(df_raw$prix_eur_kwh, na.rm = TRUE)
-        df_raw$prix_eur_kwh <- prix_moyen
+        df_raw$prix_eur_kwh <- mean(df_raw$prix_eur_kwh, na.rm = TRUE)
       }
 
       pv_range   <- seq(max(1, p$pv_kwc - 3), p$pv_kwc + 3, by = 1)
       batt_range <- c(0, 5, 10, 15, 20)
-      modes      <- c("smart", "optimizer", "optimizer_lp", "optimizer_qp")
-      contrats   <- c("fixe", "dynamique")
-
-      total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
 
       shiny::withProgress(message = "Automagic en cours...", value = 0, {
-        resultats <- list()
-        k <- 0
-
-        for (ct in contrats) {
-          p_ct <- p
-          p_ct$type_contrat <- ct
-          if (ct == "fixe") {
-            p_ct$taxe_transport_eur_kwh <- 0
-            p_ct$prix_fixe_offtake <- p$prix_fixe_offtake
-            p_ct$prix_fixe_injection <- p$prix_fixe_injection
+        all_res <- run_grid_search(
+          df_raw, p,
+          pv_range = pv_range, batt_range = batt_range,
+          progress_fn = function(k, total, detail) {
+            shiny::setProgress(k / total, detail = detail)
           }
-
-          for (pv_kwc in pv_range) {
-            p_ct$pv_kwc <- pv_kwc
-            # Create R6 Simulation for this PV scenario
-            sim_am <- Simulation$new(p_ct)
-            # Adjust PV in raw data before loading
-            df_pv <- df_raw
-            ratio <- pv_kwc / p$pv_kwc_ref
-            df_pv$pv_kwh <- df_raw$pv_kwh * ratio
-            sim_am$load_raw_dataframe(df_pv)
-            p_ct <- sim_am$get_params()
-            baseline_mode_am <- "parametric"
-            sim_am$run_baseline(mode = baseline_mode_am)
-            df_prep <- sim_am$get_baseline()
-
-            for (bkwh in batt_range) {
-              p_sim <- p_ct
-              p_sim$batterie_active <- bkwh > 0
-              p_sim$batt_kwh <- bkwh
-              p_sim$batt_kw <- min(bkwh / 2, 5)
-
-              for (m in modes) {
-                k <- k + 1
-                shiny::setProgress(k / total, detail = sprintf("%d/%d -- PV %dkWc Batt %dkWh %s %s",
-                  k, total, pv_kwc, bkwh, m, ct))
-
-                # Map automagic mode names to R6 optimizer modes
-                r6_m <- switch(m,
-                  optimizer = "milp", optimizer_lp = "lp", optimizer_qp = "qp", "smart")
-
-                tryCatch({
-                  if (m == "optimizer_qp") {
-                    p_sim$qp_w_comfort <- 0.1
-                    p_sim$qp_w_smooth <- 0.05
-                  }
-                  sim_sc <- Simulation$new(p_sim)
-                  sim_sc$load_raw_dataframe(df_pv)
-                  sim_sc$run_baseline(mode = baseline_mode_am)
-                  sim_sc$run_optimization(r6_m)
-                  sim <- sim_sc$get_results()
-
-                  pv_tot  <- sum(sim$pv_kwh, na.rm = TRUE)
-                  inj_tot <- sum(sim$sim_intake, na.rm = TRUE)
-                  off_tot <- sum(sim$sim_offtake, na.rm = TRUE)
-                  cout_net <- sum(sim$sim_offtake * sim$prix_offtake -
-                                  sim$sim_intake * sim$prix_injection, na.rm = TRUE)
-                  autoconso <- if (pv_tot > 0) (1 - inj_tot / pv_tot) * 100 else 0
-
-                  resultats[[k]] <- tibble::tibble(
-                    PV_kWc = pv_kwc, Batterie_kWh = bkwh,
-                    Mode = m, Contrat = ct,
-                    Cout_EUR = round(cout_net),
-                    Autoconso_pct = round(autoconso, 1),
-                    Injection_kWh = round(inj_tot),
-                    Soutirage_kWh = round(off_tot)
-                  )
-                }, error = function(e) {
-                  resultats[[k]] <<- tibble::tibble(
-                    PV_kWc = pv_kwc, Batterie_kWh = bkwh,
-                    Mode = m, Contrat = ct,
-                    Cout_EUR = NA_real_, Autoconso_pct = NA_real_,
-                    Injection_kWh = NA_real_, Soutirage_kWh = NA_real_
-                  )
-                })
-              }
-            }
-          }
-        }
+        )
+        automagic_results(all_res)
       })
-
-      all_res <- dplyr::bind_rows(resultats) %>% dplyr::filter(!is.na(Cout_EUR)) %>% dplyr::arrange(Cout_EUR)
-      automagic_results(all_res)
 
       shiny::showNotification(
         sprintf("Automagic termine! %d combinaisons testees. Meilleur cout: %d EUR/an",
-                nrow(all_res), all_res$Cout_EUR[1]),
+                nrow(automagic_results()), automagic_results()$Cout_EUR[1]),
         type = "message", duration = 8)
     })
 
@@ -804,6 +619,7 @@ DONNEES CALCULEES
       sim_result = sim_result,
       sim_running = sim_running,
       sim_filtered = sim_filtered,
+      kpis_r = kpis_r,
       volume_ballon_eff = volume_ballon_eff,
       pv_kwc_eff = pv_kwc_eff,
       automagic_results = automagic_results,

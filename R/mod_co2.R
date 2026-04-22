@@ -29,54 +29,50 @@ mod_co2_server <- function(id, sidebar) {
   shiny::moduleServer(id, function(input, output, session) {
 
     sim_filtered <- sidebar$sim_filtered
-    sim_result   <- sidebar$sim_result
 
     # ---- CO2 data (CSV local = instantane, fallback API si besoin) ----
     co2_data <- shiny::reactive({
       shiny::req(sim_filtered())
       sim <- sim_filtered()
-      start_d <- min(sim$timestamp, na.rm = TRUE)
-      end_d   <- max(sim$timestamp, na.rm = TRUE)
-      fetch_co2_intensity(start_d, end_d)
+      fetch_co2_intensity(
+        min(sim$timestamp, na.rm = TRUE),
+        max(sim$timestamp, na.rm = TRUE)
+      )
     })
 
-    co2_impact <- shiny::reactive({
+    co2_15min_r <- shiny::reactive({
       shiny::req(sim_filtered(), co2_data())
-      sim <- sim_filtered()
-      co2_raw <- co2_data()
-      co2_15min <- interpolate_co2_15min(co2_raw$df, sim$timestamp)
-      compute_co2_impact(sim, co2_15min)
+      interpolate_co2_15min(co2_data()$df, sim_filtered()$timestamp)
+    })
+
+    co2_impact_r <- shiny::reactive({
+      shiny::req(sim_filtered(), co2_15min_r())
+      compute_co2_impact(sim_filtered(), co2_15min_r())
     })
 
     # ---- KPIs ----
     output$co2_kpi_row <- shiny::renderUI({
-      shiny::req(co2_impact())
-      impact <- co2_impact()
+      shiny::req(co2_impact_r(), co2_15min_r(), sidebar$kpis_r())
+      sim <- sim_filtered(); p <- sidebar$params_r()
 
-      co2_base_kg <- sum(impact$co2_baseline_g, na.rm = TRUE) / 1000
-      co2_opti_kg <- sum(impact$co2_opti_g, na.rm = TRUE) / 1000
+      # Extend shared KPIs with CO2-specific ones
+      k <- KPICalculator$new()$compute(sim, sim, p, co2_15min = co2_15min_r())
 
       kpis <- list(
-        kpi_card(sprintf("%.1f", impact$co2_saved_kg),
-          "CO2 evite", "kg", cl$success,
-          baseline_val = co2_base_kg, opti_val = co2_opti_kg, gain_invert = TRUE,
-          gain_val = round(impact$co2_saved_kg, 1), gain_unit = "kg",
-          tooltip = "Emissions evitees."),
-        kpi_card(sprintf("%.0f", impact$intensity_before),
-          "Intensite baseline", "gCO2/kWh", cl$reel,
-          tooltip = "Intensite carbone moyenne ponderee par la consommation baseline."),
-        kpi_card(sprintf("%.0f", impact$intensity_after),
-          "Intensite optimisee", "gCO2/kWh", cl$opti,
-          baseline_val = impact$intensity_before, opti_val = impact$intensity_after, gain_invert = TRUE,
-          gain_val = round(impact$intensity_after - impact$intensity_before), gain_unit = "gCO2/kWh",
-          tooltip = "Intensite carbone ponderee par la consommation optimisee."),
-        kpi_card(sprintf("%.1f%%", impact$co2_pct_reduction),
-          "Reduction intensite", "", cl$success,
-          tooltip = "Reduction de l'intensite carbone."),
-        kpi_card(sprintf("%.0f", impact$equiv_car_km),
+        kpi_card(sprintf("%.1f", k$co2_opti_kg),
+          "Emissions CO2", "kg", cl$opti,
+          baseline_val = k$co2_baseline_kg, opti_val = k$co2_opti_kg, gain_invert = TRUE,
+          gain_val = round(k$co2_opti_kg - k$co2_baseline_kg, 1), gain_unit = "kg",
+          tooltip = "Emissions CO2 liees au soutirage reseau."),
+        kpi_card(sprintf("%.0f", k$co2_intensity_opti),
+          "Intensite carbone", "gCO2/kWh", cl$opti,
+          baseline_val = k$co2_intensity_baseline, opti_val = k$co2_intensity_opti, gain_invert = TRUE,
+          gain_val = round(k$co2_intensity_opti - k$co2_intensity_baseline), gain_unit = "gCO2/kWh",
+          tooltip = "Intensite carbone moyenne ponderee par la consommation."),
+        kpi_card(sprintf("%.0f", k$co2_equiv_car_km),
           "Equiv. voiture", "km", "#22d3ee",
           tooltip = "Kilometres de voiture equivalents au CO2 evite."),
-        kpi_card(sprintf("%.1f", impact$equiv_trees_year),
+        kpi_card(sprintf("%.1f", k$co2_equiv_trees_year),
           "Equiv. arbres", "/an", "#fbbf24",
           tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite en 1 an.")
       )
@@ -88,18 +84,8 @@ mod_co2_server <- function(id, sidebar) {
 
     # ---- Hourly chart ----
     output$plot_co2_hourly <- plotly::renderPlotly({
-      shiny::req(sim_filtered(), co2_impact())
-      sim <- sim_filtered()
-      impact <- co2_impact()
-
-      d <- sim %>%
-        dplyr::mutate(co2_saved_g = impact$co2_saved_g, co2_intensity = impact$co2_intensity,
-          h = lubridate::floor_date(timestamp, "hour")) %>%
-        dplyr::group_by(h) %>%
-        dplyr::summarise(co2_saved_g = sum(co2_saved_g, na.rm = TRUE),
-          co2_intensity = mean(co2_intensity, na.rm = TRUE), .groups = "drop") %>%
-        dplyr::rename(timestamp = h)
-
+      shiny::req(sim_filtered(), co2_impact_r())
+      d <- prepare_co2_hourly(sim_filtered(), co2_impact_r())
       bar_colors <- ifelse(d$co2_saved_g >= 0, cl$success, cl$danger)
 
       plotly::plot_ly(d, x = ~timestamp) %>%
@@ -119,14 +105,12 @@ mod_co2_server <- function(id, sidebar) {
 
     # ---- Cumulative ----
     output$plot_co2_cumul <- plotly::renderPlotly({
-      shiny::req(sim_filtered(), co2_impact())
-      sim <- sim_filtered()
-      impact <- co2_impact()
-
-      d <- sim %>%
-        dplyr::mutate(co2_cumul_kg = impact$co2_saved_cumul_kg) %>%
-        dplyr::select(timestamp, co2_cumul_kg)
-
+      shiny::req(sim_filtered(), co2_impact_r())
+      impact <- co2_impact_r()
+      d <- data.frame(
+        timestamp = sim_filtered()$timestamp,
+        co2_cumul_kg = impact$co2_saved_cumul_kg
+      )
       plotly::plot_ly(d, x = ~timestamp, y = ~co2_cumul_kg, type = "scatter", mode = "lines",
         name = "CO2 evite cumule",
         fill = "tozeroy", fillcolor = "rgba(52,211,153,0.15)",
@@ -136,32 +120,19 @@ mod_co2_server <- function(id, sidebar) {
 
     # ---- Heatmap ----
     output$plot_co2_heatmap <- plotly::renderPlotly({
-      shiny::req(sim_filtered(), co2_impact())
-      sim <- sim_filtered()
-      impact <- co2_impact()
-
-      d <- sim %>%
-        dplyr::mutate(co2_intensity = impact$co2_intensity,
-          jour = as.Date(timestamp), h = lubridate::hour(timestamp)) %>%
-        dplyr::group_by(jour, h) %>%
-        dplyr::summarise(co2 = mean(co2_intensity, na.rm = TRUE), .groups = "drop")
-
-      mat <- d %>%
-        tidyr::pivot_wider(names_from = h, values_from = co2) %>%
-        dplyr::arrange(jour)
-
-      jours  <- mat$jour
-      heures <- as.integer(colnames(mat)[-1])
-      z_mat  <- as.matrix(mat[, -1])
+      shiny::req(sim_filtered(), co2_impact_r())
+      hm <- prepare_co2_heatmap(sim_filtered(), co2_impact_r())
 
       txt_mat <- matrix(
-        paste0(rep(format(jours, "%d %b"), each = length(heures)), " ", rep(heures, length(jours)), "h\n",
-               round(as.vector(t(z_mat)), 0), " gCO2/kWh"),
-        nrow = length(jours), ncol = length(heures), byrow = TRUE)
+        paste0(rep(format(hm$jours, "%d %b"), each = length(hm$heures)), " ",
+               rep(hm$heures, length(hm$jours)), "h\n",
+               round(as.vector(t(hm$z_mat)), 0), " gCO2/kWh"),
+        nrow = length(hm$jours), ncol = length(hm$heures), byrow = TRUE)
 
-      cs <- list(c(0, "#065f46"), c(0.3, "#34d399"), c(0.5, "#fbbf24"), c(0.8, "#f97316"), c(1, "#dc2626"))
+      cs <- list(c(0, "#065f46"), c(0.3, "#34d399"), c(0.5, "#fbbf24"),
+                 c(0.8, "#f97316"), c(1, "#dc2626"))
 
-      plotly::plot_ly(x = heures, y = jours, z = z_mat, type = "heatmap",
+      plotly::plot_ly(x = hm$heures, y = hm$jours, z = hm$z_mat, type = "heatmap",
         colorscale = cs, hoverinfo = "text", text = txt_mat,
         colorbar = list(title = list(text = "gCO2/kWh", font = list(color = cl$text_muted, size = 9)),
           tickfont = list(color = cl$text_muted, size = 9))) %>%

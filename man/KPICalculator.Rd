@@ -4,9 +4,64 @@
 \alias{KPICalculator}
 \title{KPI Calculator}
 \description{
-R6 class for computing simulation KPIs. Provides methods for
-  individual KPIs (bill, self-consumption, conformity) and a bulk compute()
-  method that returns all KPIs at once.
+R6 class for computing simulation KPIs. Provides individual
+  methods for each metric (bill, self-consumption, self-sufficiency,
+  conformity, offtake/injection costs) and a bulk [compute()] method that
+  returns all KPIs at once. All methods are pure functions of data — no
+  Shiny dependency.
+}
+\details{
+## Energy KPIs
+\describe{
+  \item{pv_total}{Total PV production (kWh)}
+  \item{ac_baseline / ac_opti}{Self-consumption rate (\%). PV consumed
+    on-site / total PV production.}
+  \item{as_baseline / as_opti}{Self-sufficiency rate (\%). PV consumed
+    on-site / total consumption.}
+  \item{soutirage_baseline / soutirage_opti}{Grid offtake (kWh)}
+  \item{injection_baseline / injection_opti}{Grid injection (kWh)}
+  \item{conso_pac_baseline / conso_pac_opti}{Heat pump electricity
+    consumption (kWh)}
+}
+
+## Financial KPIs
+\describe{
+  \item{facture_baseline / facture_opti}{Net bill (EUR): offtake cost
+    minus injection revenue.}
+  \item{cout_soutirage_baseline / cout_soutirage_opti}{Grid offtake
+    cost (EUR).}
+  \item{rev_injection_baseline / rev_injection_opti}{Injection revenue
+    (EUR).}
+  \item{gain_eur / gain_pct}{Savings vs baseline (EUR and \%).}
+  \item{gain_eur_per_day / gain_eur_per_year}{Annualised savings.}
+}
+
+## CO2 KPIs (optional, requires co2_15min)
+\describe{
+  \item{co2_baseline_kg / co2_opti_kg}{Total emissions (kg CO2eq)}
+  \item{co2_intensity_baseline / co2_intensity_opti}{Consumption-weighted
+    carbon intensity (gCO2/kWh)}
+  \item{co2_saved_kg}{CO2 avoided (kg)}
+  \item{co2_pct_reduction}{Intensity reduction (\%)}
+  \item{co2_equiv_car_km}{Car-km equivalent}
+  \item{co2_equiv_trees_year}{Trees equivalent per year}
+}
+
+## Comfort KPI
+\describe{
+  \item{conformite_baseline / conformite_opti}{Thermal comfort conformity
+    (\%): share of time-steps within [t_min, t_max].}
+}
+}
+\examples{
+kpi <- KPICalculator$new()
+
+# Individual method
+kpi$get_autoconsommation(baseline_df, pv_total = 100, type = "baseline")
+
+# Bulk computation
+result <- kpi$compute(sim_data, baseline_data, params)
+result$gain_eur
 }
 \section{Methods}{
 \subsection{Public methods}{
@@ -14,7 +69,10 @@ R6 class for computing simulation KPIs. Provides methods for
 \item \href{#method-KPICalculator-compute}{\code{KPICalculator$compute()}}
 \item \href{#method-KPICalculator-get_all}{\code{KPICalculator$get_all()}}
 \item \href{#method-KPICalculator-get_facture}{\code{KPICalculator$get_facture()}}
+\item \href{#method-KPICalculator-get_cout_soutirage}{\code{KPICalculator$get_cout_soutirage()}}
+\item \href{#method-KPICalculator-get_rev_injection}{\code{KPICalculator$get_rev_injection()}}
 \item \href{#method-KPICalculator-get_autoconsommation}{\code{KPICalculator$get_autoconsommation()}}
+\item \href{#method-KPICalculator-get_autosuffisance}{\code{KPICalculator$get_autosuffisance()}}
 \item \href{#method-KPICalculator-get_conformite}{\code{KPICalculator$get_conformite()}}
 \item \href{#method-KPICalculator-clone}{\code{KPICalculator$clone()}}
 }
@@ -25,24 +83,30 @@ R6 class for computing simulation KPIs. Provides methods for
 \subsection{Method \code{compute()}}{
 Compute all KPIs for a simulation run.
 \subsection{Usage}{
-\if{html}{\out{<div class="r">}}\preformatted{KPICalculator$compute(sim_data, baseline_data, params)}\if{html}{\out{</div>}}
+\if{html}{\out{<div class="r">}}\preformatted{KPICalculator$compute(sim_data, baseline_data, params, co2_15min = NULL)}\if{html}{\out{</div>}}
 }
 
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
 \item{\code{sim_data}}{Optimized simulation dataframe (with sim_offtake,
-sim_intake, sim_t_ballon, prix_offtake, prix_injection)}
+sim_intake, sim_t_ballon, sim_pac_on, prix_offtake, prix_injection,
+pv_kwh)}
 
 \item{\code{baseline_data}}{Baseline dataframe (with offtake_kwh, intake_kwh,
-t_ballon, prix_offtake, prix_injection)}
+t_ballon, prix_offtake, prix_injection, pv_kwh, conso_hors_pac)}
 
-\item{\code{params}}{Parameter list (or SimulationParams$as_list())}
+\item{\code{params}}{Parameter list (or SimulationParams$as_list()) containing
+at least: t_min, t_max, dt_h, p_pac_kw}
+
+\item{\code{co2_15min}}{Optional numeric vector of grid carbon intensity
+(gCO2eq/kWh), same length as \code{nrow(sim_data)}. If provided,
+CO2 KPIs are included in the result.}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-A named list of all KPIs
+A named list of all KPIs (see Details)
 }
 }
 \if{html}{\out{<hr>}}
@@ -55,14 +119,14 @@ Get all computed KPIs.
 }
 
 \subsection{Returns}{
-Named list of KPIs, or NULL if compute() hasn't been called
+Named list of KPIs, or NULL if [compute()] hasn't been called
 }
 }
 \if{html}{\out{<hr>}}
 \if{html}{\out{<a id="method-KPICalculator-get_facture"></a>}}
 \if{latex}{\out{\hypertarget{method-KPICalculator-get_facture}{}}}
 \subsection{Method \code{get_facture()}}{
-Calculate the electricity bill (net cost).
+Calculate the electricity bill (net cost: offtake - injection).
 \subsection{Usage}{
 \if{html}{\out{<div class="r">}}\preformatted{KPICalculator$get_facture(data, params = NULL, type = "baseline")}\if{html}{\out{</div>}}
 }
@@ -70,16 +134,62 @@ Calculate the electricity bill (net cost).
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{data}}{Dataframe with offtake/intake and price columns}
+\item{\code{data}}{Dataframe with offtake/intake columns and prix_offtake,
+prix_injection price columns}
 
-\item{\code{params}}{Parameter list (used for column name inference)}
+\item{\code{params}}{Parameter list (unused, kept for API compatibility)}
 
-\item{\code{type}}{"baseline" or "optimized" (determines which columns to use)}
+\item{\code{type}}{"baseline" (uses offtake_kwh, intake_kwh) or "optimized"
+(uses sim_offtake, sim_intake)}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-Net bill in EUR (offtake cost - injection revenue)
+Net bill in EUR
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-KPICalculator-get_cout_soutirage"></a>}}
+\if{latex}{\out{\hypertarget{method-KPICalculator-get_cout_soutirage}{}}}
+\subsection{Method \code{get_cout_soutirage()}}{
+Calculate grid offtake cost.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{KPICalculator$get_cout_soutirage(data, type = "baseline")}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{data}}{Dataframe with offtake and prix_offtake columns}
+
+\item{\code{type}}{"baseline" or "optimized"}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Offtake cost in EUR
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-KPICalculator-get_rev_injection"></a>}}
+\if{latex}{\out{\hypertarget{method-KPICalculator-get_rev_injection}{}}}
+\subsection{Method \code{get_rev_injection()}}{
+Calculate grid injection revenue.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{KPICalculator$get_rev_injection(data, type = "baseline")}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{data}}{Dataframe with injection and prix_injection columns}
+
+\item{\code{type}}{"baseline" or "optimized"}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Injection revenue in EUR
 }
 }
 \if{html}{\out{<hr>}}
@@ -103,7 +213,33 @@ Calculate self-consumption rate.
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-Self-consumption percentage (0-100)
+Self-consumption percentage (0-100): share of PV production
+  consumed on-site rather than injected into the grid
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-KPICalculator-get_autosuffisance"></a>}}
+\if{latex}{\out{\hypertarget{method-KPICalculator-get_autosuffisance}{}}}
+\subsection{Method \code{get_autosuffisance()}}{
+Calculate self-sufficiency rate.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{KPICalculator$get_autosuffisance(data, pv_total, type = "baseline")}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{data}}{Dataframe with offtake and injection columns}
+
+\item{\code{pv_total}}{Total PV production in kWh}
+
+\item{\code{type}}{"baseline" or "optimized"}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+Self-sufficiency percentage (0-100): share of total consumption
+  covered by on-site PV production
 }
 }
 \if{html}{\out{<hr>}}
@@ -118,16 +254,17 @@ Calculate thermal comfort conformity.
 \subsection{Arguments}{
 \if{html}{\out{<div class="arguments">}}
 \describe{
-\item{\code{sim_t_ballon}}{Vector of tank temperatures}
+\item{\code{sim_t_ballon}}{Numeric vector of tank temperatures (degrees C)}
 
-\item{\code{t_min}}{Lower comfort bound}
+\item{\code{t_min}}{Lower comfort bound (degrees C)}
 
-\item{\code{t_max}}{Upper comfort bound}
+\item{\code{t_max}}{Upper comfort bound (degrees C)}
 }
 \if{html}{\out{</div>}}
 }
 \subsection{Returns}{
-Conformity percentage (0-100)
+Conformity percentage (0-100): share of time-steps where
+  temperature stays within [t_min, t_max]
 }
 }
 \if{html}{\out{<hr>}}

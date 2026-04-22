@@ -2,18 +2,22 @@
 % Please edit documentation in R/data_co2_elia.R
 \name{interpolate_co2_15min}
 \alias{interpolate_co2_15min}
-\title{Interpole l'intensite CO2 horaire au pas de 15 min}
+\title{Interpolate hourly CO2 intensity to 15-minute resolution}
 \usage{
 interpolate_co2_15min(co2_hourly, ts_15min)
 }
 \arguments{
-\item{co2_hourly}{tibble avec colonnes datetime et co2_g_per_kwh (horaire, UTC)}
+\item{co2_hourly}{Tibble with columns \code{datetime} (POSIXct, UTC)
+and \code{co2_g_per_kwh} (numeric)}
 
-\item{ts_15min}{Vecteur de timestamps au pas de 15 min (Europe/Brussels)}
+\item{ts_15min}{POSIXct vector of 15-minute timestamps (Europe/Brussels)}
 }
 \value{
-Vecteur d'intensite CO2 interpolee (meme longueur que ts_15min)
+Numeric vector of interpolated CO2 intensity (gCO2/kWh),
+  same length as \code{ts_15min}
 }
 \description{
-Interpole l'intensite CO2 horaire au pas de 15 min
+Performs linear interpolation of hourly CO2 intensity data onto
+15-minute simulation timestamps. Handles timezone conversion
+(UTC to Europe/Brussels) internally.
 }

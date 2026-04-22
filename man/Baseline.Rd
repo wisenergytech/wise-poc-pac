@@ -4,7 +4,8 @@
 \alias{Baseline}
 \title{Baseline Simulation}
 \description{
-R6 class for baseline (reference) simulation with 5 modes.
+R6 class for baseline (reference) simulation with 5 discrete
+  modes plus a continuous "parametric" mode.
   The baseline represents the "before optimization" scenario (thermostat,
   programmer, PV surplus follower, engineer, or proactive).
 }
@@ -53,7 +54,7 @@ Run the baseline simulation.
 \item{\code{params}}{Parameter list (or SimulationParams$as_list())}
 
 \item{\code{mode}}{Baseline mode: "reactif", "programmateur", "surplus_pv",
-"ingenieur" (default), or "proactif"}
+"ingenieur" (default), "proactif", or "parametric"}
 }
 \if{html}{\out{</div>}}
 }

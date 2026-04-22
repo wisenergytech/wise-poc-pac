@@ -53,10 +53,9 @@ mod_status_bar_server <- function(id, sidebar) {
       } else if (has_sim) {
         sim <- res$sim
         jours <- round(as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days")), 1)
-        cr <- sum(sim$offtake_kwh * sim$prix_offtake, na.rm=TRUE) - sum(sim$intake_kwh * sim$prix_injection, na.rm=TRUE)
-        co <- sum(sim$sim_offtake * sim$prix_offtake, na.rm=TRUE) - sum(sim$sim_intake * sim$prix_injection, na.rm=TRUE)
-        gain <- cr - co
-        pct <- if (cr != 0) 100 * gain / cr else 0
+        k_sb <- sidebar$kpis_r()
+        gain <- k_sb$gain_eur
+        pct <- k_sb$gain_pct
         gain_col <- if (gain > 0.01) cl$success else if (gain < -0.01) cl$danger else cl$text_muted
         shiny::tags$span(shiny::HTML(sprintf("SIMULATION %s -- %.1f j &middot; %s pts &middot; GAIN <b style='color:%s'>%.1f EUR (%.1f%%)</b>",
           mode_label, jours, formatC(nrow(sim), format = "d", big.mark = " "),

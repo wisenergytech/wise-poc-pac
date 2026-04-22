@@ -61,6 +61,8 @@ Create a new SimulationParams object.
   slack_penalty = 2.5,
   optim_bloc_h = 24,
   baseline_mode = "ingenieur",
+  autoconso_cible = NULL,
+  baseline_alpha = NULL,
   pv_kwc = 33,
   pv_kwc_ref = 33,
   dt_h = 0.25,
@@ -119,6 +121,10 @@ Create a new SimulationParams object.
 \item{\code{optim_bloc_h}}{Optimization block size in hours (default 24)}
 
 \item{\code{baseline_mode}}{Baseline mode (default "ingenieur")}
+
+\item{\code{autoconso_cible}}{Target self-consumption percentage from slider (default NULL)}
+
+\item{\code{baseline_alpha}}{PV-affinity coefficient 0-1 for parametric baseline (default NULL)}
 
 \item{\code{pv_kwc}}{PV capacity in kWc (default 33)}
 

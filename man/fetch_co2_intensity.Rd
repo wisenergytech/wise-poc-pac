@@ -2,18 +2,27 @@
 % Please edit documentation in R/data_co2_elia.R
 \name{fetch_co2_intensity}
 \alias{fetch_co2_intensity}
-\title{Recupere l'intensite CO2 horaire pour une plage de dates}
+\title{Fetch hourly CO2 intensity for a date range}
 \usage{
 fetch_co2_intensity(start_date, end_date)
 }
 \arguments{
-\item{start_date}{Date de debut}
+\item{start_date}{Start date (Date or POSIXct)}
 
-\item{end_date}{Date de fin}
+\item{end_date}{End date (Date or POSIXct)}
 }
 \value{
-list(df = tibble(datetime, co2_g_per_kwh), source = character)
+A list with:
+  \describe{
+    \item{df}{Tibble with columns \code{datetime} (POSIXct UTC) and
+      \code{co2_g_per_kwh} (numeric)}
+    \item{source}{Character: \code{"local"}, \code{"api_historical"},
+      \code{"api_realtime"}, \code{"api_generation_mix"}, or
+      \code{"fallback"}}
+  }
 }
 \description{
-Recupere l'intensite CO2 horaire pour une plage de dates
+Tries sources in priority order: local CSV cache, Elia ODS192
+(historical), ODS191 (real-time), ODS201 (generation mix), then
+falls back to a synthetic Belgian average profile.
 }

@@ -10,7 +10,7 @@
 #'   is reduced by 1% per degree above t_ballon_ref.
 #' @param t_ballon_ref Reference tank temperature (default 50)
 #' @return Numeric vector of COP values, clamped to [1.5, 5.5]
-#' @noRd
+#' @export
 calc_cop <- function(t_ext, cop_nominal = 3.5, t_ref = 7, t_ballon = NULL, t_ballon_ref = 50) {
   # COP depends on T_ext (source temperature): +0.1 per C above reference
   cop <- cop_nominal + 0.1 * (t_ext - t_ref)
@@ -20,22 +20,6 @@ calc_cop <- function(t_ext, cop_nominal = 3.5, t_ref = 7, t_ballon = NULL, t_bal
     cop <- cop * (1 - 0.01 * (t_ballon - t_ballon_ref))
   }
   pmax(1.5, pmin(5.5, cop))
-}
-
-#' Forecast Vector
-#'
-#' Extracts a forward-looking slice of a column from a data frame,
-#' from position i to i + horizon (clamped to nrow).
-#'
-#' @param df Data frame
-#' @param col Column name (string)
-#' @param i Starting row index
-#' @param horizon Number of rows to look ahead
-#' @return Numeric vector of values
-#' @noRd
-prevoir_vec <- function(df, col, i, horizon) {
-  fin <- min(i + horizon, nrow(df))
-  df[[col]][i:fin]
 }
 
 #' Auto-Aggregate Based on Period Length
@@ -48,7 +32,7 @@ prevoir_vec <- function(df, col, i, horizon) {
 #' @param timestamp_col Name of the timestamp column (default "timestamp")
 #' @return A list with \code{data} (aggregated data frame), \code{level}
 #'   (aggregation level string), and \code{label} (display label)
-#' @noRd
+#' @export
 auto_aggregate <- function(df, timestamp_col = "timestamp") {
   period_days <- as.numeric(difftime(
     max(df[[timestamp_col]], na.rm = TRUE),

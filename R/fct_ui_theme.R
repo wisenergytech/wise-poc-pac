@@ -50,6 +50,72 @@ pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL) {
   )
 }
 
+#' Overlay Bar Chart (baseline vs optimised)
+#'
+#' Creates a stacked bar chart where for each period the bar height equals
+#' \code{max(baseline, opti)}. The bottom portion (0 to min) is coloured as the
+#' smaller series and the top portion (min to max) as the larger one.
+#' This visually shows that one value is contained within the other.
+#'
+#' No Shiny dependency — can be used standalone for reporting.
+#'
+#' @param data A dataframe with a \code{timestamp} column and the two series
+#'   to compare
+#' @param baseline_col Character. Column name for the baseline series
+#' @param opti_col Character. Column name for the optimised series
+#' @param ylab Character. Y-axis label (e.g. \code{"kWh (horaire)"})
+#' @return A \pkg{plotly} object
+#'
+#' @examples
+#' df <- data.frame(
+#'   timestamp = seq(as.POSIXct("2025-01-01"), by = "hour", length.out = 24),
+#'   soutirage_baseline = runif(24, 1, 5),
+#'   soutirage_opti = runif(24, 0.5, 4)
+#' )
+#' plot_overlay_bar(df, "soutirage_baseline", "soutirage_opti", "kWh")
+#' @export
+plot_overlay_bar <- function(data, baseline_col, opti_col, ylab) {
+  bl <- data[[baseline_col]]
+  op <- data[[opti_col]]
+
+  bottom <- pmin(bl, op)
+  top    <- pmax(bl, op) - bottom
+
+  bl_bigger <- bl > op
+  bottom_color <- ifelse(bl_bigger, cl$opti, cl$reel)
+  top_color    <- ifelse(bl_bigger, cl$reel, cl$opti)
+
+  plotly::plot_ly(data, x = ~timestamp) %>%
+    plotly::add_bars(y = bottom, name = "Commun",
+      marker = list(color = bottom_color), showlegend = FALSE,
+      hovertemplate = paste0(
+        "Baseline: %{customdata[0]:.1f}<br>",
+        "Optimise: %{customdata[1]:.1f}<extra></extra>"),
+      customdata = cbind(bl, op)) %>%
+    plotly::add_bars(y = top, name = "Delta",
+      marker = list(color = top_color), showlegend = FALSE,
+      hovertemplate = paste0(
+        "Baseline: %{customdata[0]:.1f}<br>",
+        "Optimise: %{customdata[1]:.1f}<extra></extra>"),
+      customdata = cbind(bl, op)) %>%
+    plotly::add_bars(y = 0, name = "Baseline", marker = list(color = cl$reel),
+      showlegend = TRUE, hoverinfo = "skip") %>%
+    plotly::add_bars(y = 0, name = "Optimise", marker = list(color = cl$opti),
+      showlegend = TRUE, hoverinfo = "skip") %>%
+    plotly::layout(barmode = "stack", bargap = 0.1) %>%
+    pl_layout(ylab = ylab)
+}
+
+#' Card header with info tooltip
+#'
+#' @param title Card title
+#' @param tooltip Tooltip text explaining the chart
+#' @return A bslib card_header tag
+#' @noRd
+card_header_tip <- function(title, tooltip) {
+  bslib::card_header(shiny::tags$span(title, " ", tip(tooltip)))
+}
+
 #' Inline Info Tooltip
 #'
 #' Creates a small "i" circle with a native HTML tooltip.
@@ -113,9 +179,10 @@ kpi_card <- function(value, label, unit, color,
     } else {
       if (gain_val >= 0) "positive" else "negative"
     }
+    arrow <- if (gain_val > 0) "\u25b2" else if (gain_val < 0) "\u25bc" else ""
     sub_divs <- c(sub_divs, list(
       shiny::tags$div(class = paste("kpi-gain", cls),
-        sprintf("%s%s %s", ifelse(gain_val >= 0, "+", ""),
+        sprintf("%s %s%s %s", arrow, ifelse(gain_val >= 0, "+", ""),
           formatC(round(gain_val), big.mark = " ", format = "d"), gu))
     ))
   }

@@ -12,6 +12,7 @@ R6 class orchestrating the full simulation workflow. This is
 \itemize{
 \item \href{#method-Simulation-new}{\code{Simulation$new()}}
 \item \href{#method-Simulation-load_data}{\code{Simulation$load_data()}}
+\item \href{#method-Simulation-load_raw_dataframe}{\code{Simulation$load_raw_dataframe()}}
 \item \href{#method-Simulation-run_baseline}{\code{Simulation$run_baseline()}}
 \item \href{#method-Simulation-run_optimization}{\code{Simulation$run_optimization()}}
 \item \href{#method-Simulation-get_results}{\code{Simulation$get_results()}}
@@ -81,6 +82,29 @@ Load input data from demo generator or CSV file.
 \item{\code{ecs_kwh_jour}}{Daily ECS consumption for demo (NULL = auto)}
 
 \item{\code{building_type}}{Building type for demo: "passif", "standard", "ancien"}
+
+\item{\code{data_provider}}{Optional DataProvider instance}
+}
+\if{html}{\out{</div>}}
+}
+\subsection{Returns}{
+self (for chaining)
+}
+}
+\if{html}{\out{<hr>}}
+\if{html}{\out{<a id="method-Simulation-load_raw_dataframe"></a>}}
+\if{latex}{\out{\hypertarget{method-Simulation-load_raw_dataframe}{}}}
+\subsection{Method \code{load_raw_dataframe()}}{
+Load a pre-existing raw dataframe (e.g. from a Shiny reactive).
+  Runs prepare_df() internally to produce the prepared data.
+\subsection{Usage}{
+\if{html}{\out{<div class="r">}}\preformatted{Simulation$load_raw_dataframe(df, data_provider = NULL)}\if{html}{\out{</div>}}
+}
+
+\subsection{Arguments}{
+\if{html}{\out{<div class="arguments">}}
+\describe{
+\item{\code{df}}{A raw dataframe (from generer_demo, CSV upload, or any source)}
 
 \item{\code{data_provider}}{Optional DataProvider instance}
 }

@@ -2,18 +2,35 @@
 % Please edit documentation in R/data_co2_elia.R
 \name{compute_co2_impact}
 \alias{compute_co2_impact}
-\title{Calcule l'impact CO2 de l'optimisation}
+\title{Compute CO2 impact: baseline vs optimised}
 \usage{
 compute_co2_impact(sim, co2_15min)
 }
 \arguments{
-\item{sim}{DataFrame de simulation avec offtake_kwh, sim_offtake, timestamp}
+\item{sim}{Dataframe with at least \code{offtake_kwh} (baseline) and
+\code{sim_offtake} (optimised) columns, one row per 15-min timestep}
 
-\item{co2_15min}{Vecteur d'intensite CO2 au pas 15 min (gCO2eq/kWh)}
+\item{co2_15min}{Numeric vector of grid carbon intensity (gCO2eq/kWh),
+same length as \code{nrow(sim)}}
 }
 \value{
-list avec les KPIs et vecteurs horaires
+A named list:
+  \describe{
+    \item{co2_saved_kg}{Total CO2 avoided (kg)}
+    \item{co2_pct_reduction}{Intensity reduction (\%)}
+    \item{intensity_before}{Consumption-weighted intensity baseline (gCO2/kWh)}
+    \item{intensity_after}{Consumption-weighted intensity optimised (gCO2/kWh)}
+    \item{equiv_car_km}{Car-km equivalent of CO2 saved}
+    \item{equiv_trees_year}{Trees needed to absorb CO2 saved per year}
+    \item{co2_baseline_g}{Per-timestep baseline emissions (g)}
+    \item{co2_opti_g}{Per-timestep optimised emissions (g)}
+    \item{co2_saved_g}{Per-timestep CO2 avoided (g)}
+    \item{co2_saved_cumul_kg}{Cumulative CO2 avoided (kg)}
+    \item{co2_intensity}{Input intensity vector (gCO2/kWh)}
+  }
 }
 \description{
-Calcule l'impact CO2 de l'optimisation
+Pure function (no Shiny dependency) that computes per-timestep and aggregate
+CO2 impact metrics by comparing baseline and optimised grid offtake against
+the grid carbon intensity signal.
 }

@@ -75,11 +75,23 @@ load_local_co2 <- function(data_dir = "data") {
 # ---------------------------------------------------------------------------
 # Fetch principal : CSV local → ODS192 → ODS191 → ODS201 → fallback
 # ---------------------------------------------------------------------------
-#' Recupere l'intensite CO2 horaire pour une plage de dates
+#' Fetch hourly CO2 intensity for a date range
 #'
-#' @param start_date Date de debut
-#' @param end_date Date de fin
-#' @return list(df = tibble(datetime, co2_g_per_kwh), source = character)
+#' Tries sources in priority order: local CSV cache, Elia ODS192
+#' (historical), ODS191 (real-time), ODS201 (generation mix), then
+#' falls back to a synthetic Belgian average profile.
+#'
+#' @param start_date Start date (Date or POSIXct)
+#' @param end_date End date (Date or POSIXct)
+#' @return A list with:
+#'   \describe{
+#'     \item{df}{Tibble with columns \code{datetime} (POSIXct UTC) and
+#'       \code{co2_g_per_kwh} (numeric)}
+#'     \item{source}{Character: \code{"local"}, \code{"api_historical"},
+#'       \code{"api_realtime"}, \code{"api_generation_mix"}, or
+#'       \code{"fallback"}}
+#'   }
+#' @export
 fetch_co2_intensity <- function(start_date, end_date) {
 
   start_date <- as.POSIXct(paste0(as.Date(start_date), " 00:00:00"), tz = "UTC")
@@ -279,11 +291,18 @@ build_fallback_co2 <- function(start_date, end_date) {
 # ---------------------------------------------------------------------------
 # Interpolation horaire → 15 min
 # ---------------------------------------------------------------------------
-#' Interpole l'intensite CO2 horaire au pas de 15 min
+#' Interpolate hourly CO2 intensity to 15-minute resolution
 #'
-#' @param co2_hourly tibble avec colonnes datetime et co2_g_per_kwh (horaire, UTC)
-#' @param ts_15min Vecteur de timestamps au pas de 15 min (Europe/Brussels)
-#' @return Vecteur d'intensite CO2 interpolee (meme longueur que ts_15min)
+#' Performs linear interpolation of hourly CO2 intensity data onto
+#' 15-minute simulation timestamps. Handles timezone conversion
+#' (UTC to Europe/Brussels) internally.
+#'
+#' @param co2_hourly Tibble with columns \code{datetime} (POSIXct, UTC)
+#'   and \code{co2_g_per_kwh} (numeric)
+#' @param ts_15min POSIXct vector of 15-minute timestamps (Europe/Brussels)
+#' @return Numeric vector of interpolated CO2 intensity (gCO2/kWh),
+#'   same length as \code{ts_15min}
+#' @export
 interpolate_co2_15min <- function(co2_hourly, ts_15min) {
   # Convertir en numerique pour approx()
   x_hourly <- as.numeric(co2_hourly$datetime)
@@ -306,11 +325,31 @@ interpolate_co2_15min <- function(co2_hourly, ts_15min) {
 # ---------------------------------------------------------------------------
 # Calcul d'impact CO2 : baseline vs optimise
 # ---------------------------------------------------------------------------
-#' Calcule l'impact CO2 de l'optimisation
+#' Compute CO2 impact: baseline vs optimised
 #'
-#' @param sim DataFrame de simulation avec offtake_kwh, sim_offtake, timestamp
-#' @param co2_15min Vecteur d'intensite CO2 au pas 15 min (gCO2eq/kWh)
-#' @return list avec les KPIs et vecteurs horaires
+#' Pure function (no Shiny dependency) that computes per-timestep and aggregate
+#' CO2 impact metrics by comparing baseline and optimised grid offtake against
+#' the grid carbon intensity signal.
+#'
+#' @param sim Dataframe with at least \code{offtake_kwh} (baseline) and
+#'   \code{sim_offtake} (optimised) columns, one row per 15-min timestep
+#' @param co2_15min Numeric vector of grid carbon intensity (gCO2eq/kWh),
+#'   same length as \code{nrow(sim)}
+#' @return A named list:
+#'   \describe{
+#'     \item{co2_saved_kg}{Total CO2 avoided (kg)}
+#'     \item{co2_pct_reduction}{Intensity reduction (\%)}
+#'     \item{intensity_before}{Consumption-weighted intensity baseline (gCO2/kWh)}
+#'     \item{intensity_after}{Consumption-weighted intensity optimised (gCO2/kWh)}
+#'     \item{equiv_car_km}{Car-km equivalent of CO2 saved}
+#'     \item{equiv_trees_year}{Trees needed to absorb CO2 saved per year}
+#'     \item{co2_baseline_g}{Per-timestep baseline emissions (g)}
+#'     \item{co2_opti_g}{Per-timestep optimised emissions (g)}
+#'     \item{co2_saved_g}{Per-timestep CO2 avoided (g)}
+#'     \item{co2_saved_cumul_kg}{Cumulative CO2 avoided (kg)}
+#'     \item{co2_intensity}{Input intensity vector (gCO2/kWh)}
+#'   }
+#' @export
 compute_co2_impact <- function(sim, co2_15min) {
 
   # CO2 par quart d'heure (gCO2eq)
@@ -355,5 +394,66 @@ compute_co2_impact <- function(sim, co2_15min) {
     co2_saved_g        = co2_saved_g,
     co2_saved_cumul_kg = co2_saved_cumul_kg,
     co2_intensity      = co2_15min
+  )
+}
+
+#' Prepare hourly CO2 impact data for plotting
+#'
+#' Aggregates per-timestep CO2 impact to hourly resolution, computing
+#' total CO2 saved and mean grid intensity per hour.
+#'
+#' @param sim Simulation dataframe with a \code{timestamp} column
+#' @param impact Result from [compute_co2_impact()]
+#' @return A dataframe with columns: \code{timestamp} (hourly),
+#'   \code{co2_saved_g}, \code{co2_intensity}
+#' @export
+prepare_co2_hourly <- function(sim, impact) {
+  sim %>%
+    dplyr::mutate(
+      co2_saved_g = impact$co2_saved_g,
+      co2_intensity = impact$co2_intensity,
+      .h = lubridate::floor_date(timestamp, "hour")
+    ) %>%
+    dplyr::group_by(.h) %>%
+    dplyr::summarise(
+      co2_saved_g = sum(co2_saved_g, na.rm = TRUE),
+      co2_intensity = mean(co2_intensity, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::rename(timestamp = .h)
+}
+
+#' Prepare CO2 intensity heatmap matrix
+#'
+#' Pivots per-timestep CO2 intensity into a day x hour matrix suitable
+#' for heatmap visualisation.
+#'
+#' @param sim Simulation dataframe with a \code{timestamp} column
+#' @param impact Result from [compute_co2_impact()]
+#' @return A named list with:
+#'   \describe{
+#'     \item{jours}{Date vector (rows)}
+#'     \item{heures}{Integer vector of hours 0-23 (columns)}
+#'     \item{z_mat}{Numeric matrix of mean CO2 intensity (gCO2/kWh)}
+#'   }
+#' @export
+prepare_co2_heatmap <- function(sim, impact) {
+  d <- sim %>%
+    dplyr::mutate(
+      co2_intensity = impact$co2_intensity,
+      jour = as.Date(timestamp),
+      h = lubridate::hour(timestamp)
+    ) %>%
+    dplyr::group_by(jour, h) %>%
+    dplyr::summarise(co2 = mean(co2_intensity, na.rm = TRUE), .groups = "drop")
+
+  mat <- d %>%
+    tidyr::pivot_wider(names_from = h, values_from = co2) %>%
+    dplyr::arrange(jour)
+
+  list(
+    jours = mat$jour,
+    heures = as.integer(colnames(mat)[-1]),
+    z_mat = as.matrix(mat[, -1])
   )
 }
