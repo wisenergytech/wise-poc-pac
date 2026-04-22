@@ -102,7 +102,7 @@ mod_contraintes_server <- function(id, sidebar) {
           dplyr::mutate(marge_min = t_bal - p$t_min, marge_max = p$t_max - t_bal)
         plotly::plot_ly(d, x = ~timestamp) %>%
           plotly::add_trace(y = ~marge_min, type = "scatter", mode = "lines", name = "Marge T_min",
-            line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.06)") %>%
+            line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(29,67,69,0.06)") %>%
           plotly::add_trace(y = ~marge_max, type = "scatter", mode = "lines", name = "Marge T_max",
             line = list(color = "#f59e0b", width = 1), fill = "tozeroy", fillcolor = "rgba(245,158,11,0.06)") %>%
           plotly::add_segments(x = min(d$timestamp), xend = max(d$timestamp), y = 0, yend = 0,
@@ -114,7 +114,7 @@ mod_contraintes_server <- function(id, sidebar) {
         d <- sim %>% dplyr::mutate(soc_pct = batt_soc * 100)
         plotly::plot_ly(d, x = ~timestamp) %>%
           plotly::add_trace(y = ~soc_pct, type = "scatter", mode = "lines", name = "SoC",
-            line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.08)") %>%
+            line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(29,67,69,0.08)") %>%
           plotly::add_segments(x = min(d$timestamp), xend = max(d$timestamp),
             y = p$batt_soc_min * 100, yend = p$batt_soc_min * 100,
             line = list(color = cl$danger, dash = "dash", width = 1), name = "SoC min") %>%
@@ -211,7 +211,7 @@ mod_contraintes_server <- function(id, sidebar) {
         d <- sim %>% dplyr::mutate(puissance_kw = sim_pac_on * p$p_pac_kw)
         plotly::plot_ly(d, x = ~timestamp) %>%
           plotly::add_trace(y = ~puissance_kw, type = "scatter", mode = "lines", name = "Puissance PAC",
-            line = list(color = cl$pac, width = 1), fill = "tozeroy", fillcolor = "rgba(52,211,153,0.08)") %>%
+            line = list(color = cl$pac, width = 1), fill = "tozeroy", fillcolor = "rgba(5,150,105,0.08)") %>%
           plotly::add_segments(x = min(d$timestamp), xend = max(d$timestamp),
             y = p$p_pac_kw, yend = p$p_pac_kw,
             line = list(color = cl$danger, dash = "dash", width = 1), name = sprintf("P_max = %s kW", p$p_pac_kw)) %>%
@@ -258,9 +258,9 @@ mod_contraintes_server <- function(id, sidebar) {
           dplyr::rename(timestamp = h)
         plotly::plot_ly(d_h, x = ~timestamp) %>%
           plotly::add_trace(y = ~ac_base, type = "scatter", mode = "lines", name = "Autoconso baseline",
-            line = list(color = cl$reel, width = 1), fill = "tozeroy", fillcolor = "rgba(249,115,22,0.06)") %>%
+            line = list(color = cl$reel, width = 1), fill = "tozeroy", fillcolor = "rgba(217,119,6,0.06)") %>%
           plotly::add_trace(y = ~ac_opti, type = "scatter", mode = "lines", name = "Autoconso optimise",
-            line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.06)") %>%
+            line = list(color = cl$opti, width = 1.5), fill = "tozeroy", fillcolor = "rgba(29,67,69,0.06)") %>%
           plotly::add_trace(y = ~pv, type = "scatter", mode = "lines", name = "PV total",
             line = list(color = cl$pv, width = 1, dash = "dot")) %>%
           pl_layout(ylab = "kWh/h")

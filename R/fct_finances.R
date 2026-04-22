@@ -39,14 +39,15 @@ compute_cumulative_bill <- function(sim) {
 
 #' Compute waterfall savings decomposition
 #'
-#' Breaks down the total savings into three components: offtake reduction,
-#' injection loss, and hourly arbitrage (time-of-use optimisation).
+#' Builds a waterfall from the real (non-optimised) bill down to the
+#' optimised bill, decomposing the difference into offtake reduction,
+#' injection loss, and hourly arbitrage.
 #'
 #' @param sim Simulation dataframe with columns: \code{offtake_kwh},
 #'   \code{sim_offtake}, \code{intake_kwh}, \code{sim_intake},
 #'   \code{prix_offtake}, \code{prix_injection}
 #' @return A dataframe with columns: \code{label}, \code{value} (EUR),
-#'   \code{measure} (for plotly waterfall: "relative" or "total")
+#'   \code{measure} ("absolute", "relative", or "total")
 #' @export
 compute_waterfall <- function(sim) {
   moins_soutirage_kwh <- sum(sim$offtake_kwh, na.rm = TRUE) -
@@ -67,10 +68,22 @@ compute_waterfall <- function(sim) {
   eco_arbitrage <- eco_totale - eco_soutirage + perte_injection
 
   data.frame(
-    label = c("Moins de soutirage", "Moins d'injection",
-              "Arbitrage horaire", "Economie totale"),
-    value = c(eco_soutirage, -perte_injection, eco_arbitrage, eco_totale),
-    measure = c("relative", "relative", "relative", "total"),
+    label = c("Facture reelle", "Moins de soutirage",
+              "Moins d'injection", "Arbitrage horaire",
+              "Facture optimisee"),
+    value = c(facture_reel, -eco_soutirage, perte_injection,
+              -eco_arbitrage, facture_opti),
+    measure = c("absolute", "relative", "relative", "relative", "total"),
+    detail = c(
+      "Cout net sans optimisation (soutirage - injection)",
+      paste0(round(moins_soutirage_kwh, 1), " kWh evites a ",
+             round(prix_moy_offt * 100, 1), " c/kWh"),
+      paste0(round(moins_injection_kwh, 1), " kWh non-injectes a ",
+             round(prix_moy_inj * 100, 1), " c/kWh"),
+      "Gain du decalage vers les heures moins cheres",
+      paste0("Economie totale: ", round(eco_totale, 1), " EUR (",
+             round(eco_totale / facture_reel * 100, 1), "%)")
+    ),
     stringsAsFactors = FALSE
   )
 }

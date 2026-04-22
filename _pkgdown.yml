@@ -50,6 +50,28 @@ reference:
       - interpolate_co2_15min
       - compute_co2_impact
 
+  - title: Helpers
+    desc: Utility and calculation functions
+    contents:
+      - auto_aggregate
+      - calc_cop
+      - calculate_ballon_volume_auto
+      - calculate_pv_auto
+      - compute_ac_bounds
+      - compute_cumulative_bill
+      - compute_monthly_summary
+      - compute_sankey_flows
+      - compute_waterfall
+      - guard_baseline
+      - inject_belpex_prices
+      - plot_overlay_bar
+      - prepare_co2_heatmap
+      - prepare_co2_hourly
+      - prepare_energy_timeseries
+      - run_grid_search
+      - run_scenario
+      - run_simulation
+
   - title: App
     desc: Shiny application entry point
     contents:

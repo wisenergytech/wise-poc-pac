@@ -139,13 +139,18 @@ pour utiliser l'app. Ce qui suit explique *comment* chaque optimizer s'y prend.
 L'application propose quatre stratégies, du plus intuitif au plus sophistiqué.
 Pensez-y comme quatre niveaux de pilotage automatique :
 
-```
- Simplicité                                              Sophistication
- ──────────────────────────────────────────────────────────────────────►
+<div class="mermaid">
+flowchart LR
+    A["Smart\n(regles)"] --> B["LP\n(continu)"]
+    B --> C["MILP\n(tout-ou-rien)"]
+    C --> D["QP\n(confort+)"]
+    style A fill:#2a9d8f,color:#fff,stroke:#2a9d8f
+    style B fill:#264653,color:#fff,stroke:#264653
+    style C fill:#e76f51,color:#fff,stroke:#e76f51
+    style D fill:#f4a261,color:#000,stroke:#f4a261
+</div>
 
-  Smart          LP              MILP             QP
-  (règles)    (continu)      (tout-ou-rien)   (confort+)
-```
+*De gauche a droite : simplicite vers sophistication.*
 
 ### 1. Smart (règles expertes)
 
@@ -270,14 +275,25 @@ Vous contrôlez l'importance de ces objectifs avec deux curseurs :
 Optimiser un mois entier d'un coup serait trop lourd. L'app découpe la période en
 **blocs** qui se chevauchent légèrement :
 
-```
-Jour 1                    Jour 2                    Jour 3
-├──Bloc 1──┤
-         ├──Bloc 2──┤
-                  ├──Bloc 3──┤
-                           ├──Bloc 4──┤
-                                    ...
-```
+<div class="mermaid">
+flowchart LR
+    subgraph J1["Jour 1"]
+        B1["Bloc 1"]
+    end
+    subgraph J12[" "]
+        B2["Bloc 2"]
+    end
+    subgraph J2["Jour 2"]
+        B3["Bloc 3"]
+    end
+    subgraph J23[" "]
+        B4["Bloc 4"]
+    end
+    B1 -- "T finale" --> B2
+    B2 -- "T finale" --> B3
+    B3 -- "T finale" --> B4
+    B4 -. "..." .-> E["..."]
+</div>
 
 Chaque bloc est résolu indépendamment, mais la **température du ballon à la fin d'un
 bloc** devient la condition initiale du bloc suivant. C'est comme un relais : chaque
@@ -309,17 +325,24 @@ Deux itérations suffisent en pratique pour converger.
 
 ## Comment choisir son optimizer ?
 
-```
-Votre PAC a-t-elle un variateur (inverter) ?
-│
-├─ OUI → Utilisez LP (rapide, optimal)
-│        └─ Vous voulez aussi du confort ? → Utilisez QP
-│
-└─ NON (ON/OFF uniquement) → Utilisez MILP
-                              └─ Trop lent ? → Essayez LP comme approximation
+<div class="mermaid">
+flowchart TD
+    A{"Votre PAC a-t-elle\nun variateur (inverter) ?"}
+    A -->|OUI| B["LP\n(rapide, optimal)"]
+    A -->|NON| C["MILP\n(ON/OFF)"]
+    B --> D{"Vous voulez aussi\ndu confort ?"}
+    D -->|OUI| E["QP"]
+    D -->|NON| B
+    C --> F{"Trop lent ?"}
+    F -->|OUI| G["LP comme\napproximation"]
+    F -->|NON| C
+    style B fill:#264653,color:#fff,stroke:#264653
+    style C fill:#e76f51,color:#fff,stroke:#e76f51
+    style E fill:#f4a261,color:#000,stroke:#f4a261
+    style G fill:#264653,color:#fff,stroke:#264653
+</div>
 
-Dans tous les cas, Smart est un bon point de départ pour comparer.
-```
+*Dans tous les cas, Smart est un bon point de depart pour comparer.*
 
 ---
 

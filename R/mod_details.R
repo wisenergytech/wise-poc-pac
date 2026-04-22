@@ -67,7 +67,7 @@ mod_details_server <- function(id, sidebar) {
       shiny::req(sim_filtered()); sim <- sim_filtered()
       d <- sim %>% dplyr::filter(!is.na(sim_cop)) %>% dplyr::mutate(jour = as.Date(timestamp)) %>%
         dplyr::group_by(jour) %>% dplyr::summarise(cop = mean(sim_cop, na.rm = TRUE), .groups = "drop")
-      plotly::plot_ly(d, x = ~jour, y = ~cop, type = "scatter", mode = "lines", line = list(color = cl$pac, width = 1.5), fill = "tozeroy", fillcolor = "rgba(52,211,153,0.08)") %>% pl_layout(ylab = "COP")
+      plotly::plot_ly(d, x = ~jour, y = ~cop, type = "scatter", mode = "lines", line = list(color = cl$pac, width = 1.5), fill = "tozeroy", fillcolor = "rgba(5,150,105,0.08)") %>% pl_layout(ylab = "COP")
     })
 
     # ---- PAC timeline ----
@@ -87,7 +87,7 @@ mod_details_server <- function(id, sidebar) {
 
       plotly::plot_ly(d, x = ~timestamp) %>%
         plotly::add_trace(y = ~pv_kwh, type = "scatter", mode = "lines", name = "Production PV",
-          fill = "tozeroy", fillcolor = "rgba(251,191,36,0.12)",
+          fill = "tozeroy", fillcolor = "rgba(245,158,11,0.12)",
           line = list(color = cl$pv, width = 1)) %>%
         plotly::add_bars(y = ~pac_kwh_reel, name = "PAC baseline",
           marker = list(color = cl$reel, opacity = 0.4)) %>%
@@ -117,10 +117,10 @@ mod_details_server <- function(id, sidebar) {
       zlab <- c(inj_evitee = "Moins d'injection (kWh)", surplus = "Surplus PV (kWh)",
                 pac_on = "PAC ON (frac.)", t_ballon = "T ballon (C)", prix = "Prix (cEUR/kWh)")
 
-      cs <- if (v == "inj_evitee") list(c(0, cl$danger), c(0.5, "#1a1d27"), c(1, cl$success))
+      cs <- if (v == "inj_evitee") list(c(0, cl$danger), c(0.5, "#F6F7F8"), c(1, cl$success))
             else if (v == "prix") list(c(0, cl$success), c(0.5, cl$pv), c(1, cl$danger))
             else if (v == "t_ballon") list(c(0, cl$opti), c(0.5, cl$pv), c(1, cl$danger))
-            else list(c(0, "#1a1d27"), c(1, cl$opti))
+            else list(c(0, "#F6F7F8"), c(1, cl$opti))
 
       mat <- hm %>%
         dplyr::select(jour, h, val = !!rlang::sym(v)) %>%
@@ -150,7 +150,7 @@ mod_details_server <- function(id, sidebar) {
 
       plotly::plot_ly(sim, x = ~timestamp) %>%
         plotly::add_trace(y = ~batt_soc * 100, type = "scatter", mode = "lines", name = "SoC",
-          fill = "tozeroy", fillcolor = "rgba(34,211,238,0.1)",
+          fill = "tozeroy", fillcolor = "rgba(29,67,69,0.1)",
           line = list(color = cl$opti, width = 1.5)) %>%
         plotly::add_segments(x = min(sim$timestamp), xend = max(sim$timestamp),
           y = p$batt_soc_min * 100, yend = p$batt_soc_min * 100,

@@ -1,38 +1,169 @@
-/* PAC Optimizer — Custom Theme CSS */
-/* Extracted from app.R inline styles */
+/* Wise Light Theme -- Custom CSS */
+/* Colors: primary=#1D4345, secondary=#E9A345, bg=#F6F7F8, surface=#FFFFFF */
+/* This file handles layout rules not covered by bslib's bs_theme(). */
 
+/* ---- Global overrides ---- */
 body {
-  background: #0f1117;
+  background-color: #F6F7F8 !important;
+  color: #171616 !important;
 }
 
-.card {
-  border: 1px solid #2d3348;
-  border-radius: 12px;
-}
-
+/* ---- Card headers ---- */
 .card-header {
   background: transparent;
-  border-bottom: 1px solid #2d3348;
+  border-bottom: 1px solid #E2E8F0;
   font-family: 'JetBrains Mono', monospace;
   font-size: .8rem;
   text-transform: uppercase;
   letter-spacing: .1em;
-  color: #22d3ee;
+  color: #1D4345;
 }
 
+/* ---- Tabs ---- */
 .nav-tabs .nav-link {
-  color: #94a3b8;
+  color: #475569;
   border: none;
   font-family: 'JetBrains Mono', monospace;
   font-size: .85rem;
   letter-spacing: .05em;
 }
 
-.nav-tabs .nav-link.active {
-  color: #22d3ee !important;
-  border-bottom: 2px solid #22d3ee;
+.nav-tabs .nav-link:hover {
+  color: #1D4345;
 }
 
+.nav-tabs .nav-link.active {
+  color: #1D4345 !important;
+  background-color: #FFFFFF !important;
+  border-bottom: 2px solid #1D4345;
+}
+
+/* ---- Forms / Inputs ---- */
+.form-label {
+  font-size: .78rem;
+  color: #475569;
+}
+
+.form-control,
+.form-select,
+input[type="text"],
+input[type="number"],
+input[type="date"],
+textarea,
+select {
+  font-size: .82rem;
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+  color: #171616 !important;
+}
+
+.form-control:focus,
+.form-select:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: #1D4345 !important;
+  box-shadow: 0 0 0 2px rgba(29,67,69,0.15) !important;
+  outline: none;
+}
+
+.form-control::placeholder,
+input::placeholder {
+  color: #94A3B8 !important;
+}
+
+/* Radio buttons & checkboxes */
+.form-check-input {
+  background-color: #FFFFFF !important;
+  border-color: #E2E8F0 !important;
+}
+
+.form-check-input:checked {
+  background-color: #1D4345 !important;
+  border-color: #1D4345 !important;
+}
+
+.form-check-label {
+  color: #171616;
+}
+
+/* Shiny radio buttons (inline) */
+.shiny-input-radiogroup label,
+.shiny-input-checkboxgroup label {
+  color: #171616;
+}
+
+/* Date range input */
+.input-daterange .input-group-text {
+  background-color: #EDF0F4;
+  border-color: #E2E8F0;
+  color: #475569;
+}
+
+/* File input */
+.form-control[type="file"] {
+  background-color: #FFFFFF !important;
+}
+
+/* Slider */
+.irs--shiny .irs-bar {
+  background: #1D4345;
+  border-top: 1px solid #1D4345;
+  border-bottom: 1px solid #1D4345;
+}
+
+.irs--shiny .irs-handle {
+  border: 1px solid #1D4345;
+  background-color: #FFFFFF;
+}
+
+.irs--shiny .irs-from,
+.irs--shiny .irs-to,
+.irs--shiny .irs-single {
+  background-color: #1D4345;
+  color: #FFFFFF;
+}
+
+.irs--shiny .irs-line {
+  background: #E2E8F0;
+  border: 1px solid #E2E8F0;
+}
+
+.irs--shiny .irs-grid-text {
+  color: #475569;
+}
+
+/* Form helper text */
+.form-text {
+  color: #475569 !important;
+}
+
+/* ---- Buttons ---- */
+.btn-primary {
+  background-color: #1D4345 !important;
+  border-color: #1D4345 !important;
+  color: #FFFFFF !important;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .82rem;
+  letter-spacing: .05em;
+}
+
+.btn-primary:hover {
+  background-color: #2A5A5D !important;
+  border-color: #2A5A5D !important;
+}
+
+.btn-outline-primary {
+  color: #1D4345 !important;
+  border-color: #1D4345 !important;
+}
+
+.btn-outline-primary:hover {
+  background-color: #1D4345 !important;
+  color: #FFFFFF !important;
+}
+
+/* ---- KPI cards ---- */
 .kpi-value {
   font-family: 'JetBrains Mono', monospace;
   font-size: 1.8rem;
@@ -44,19 +175,19 @@ body {
   font-size: .7rem;
   text-transform: uppercase;
   letter-spacing: .1em;
-  color: #94a3b8;
+  color: #475569;
   margin-top: 4px;
 }
 
 .kpi-unit {
   font-size: .75rem;
-  color: #94a3b8;
+  color: #475569;
   margin-left: 4px;
 }
 
 .kpi-sub {
   font-size: .65rem;
-  color: #94a3b8;
+  color: #475569;
   margin-top: 2px;
   font-family: 'JetBrains Mono', monospace;
 }
@@ -69,17 +200,18 @@ body {
 }
 
 .kpi-gain.positive {
-  color: #34d399;
+  color: #059669;
 }
 
 .kpi-gain.negative {
-  color: #f87171;
+  color: #DC2626;
 }
 
+/* ---- Sidebar ---- */
 .sidebar-section {
   margin-bottom: 16px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #2d3348;
+  border-bottom: 1px solid #E2E8F0;
 }
 
 .section-title {
@@ -87,43 +219,20 @@ body {
   font-size: .7rem;
   text-transform: uppercase;
   letter-spacing: .15em;
-  color: #22d3ee;
+  color: #1D4345;
   margin-bottom: 8px;
 }
 
-.form-label {
-  font-size: .78rem;
-  color: #94a3b8;
-}
-
-.form-control,
-.form-select {
-  font-size: .82rem;
-  background: #252833 !important;
-  border-color: #2d3348 !important;
-}
-
-.btn-primary {
-  background: #22d3ee;
-  border: none;
-  font-family: 'JetBrains Mono', monospace;
-  font-size: .82rem;
-  letter-spacing: .05em;
-}
-
-.btn-primary:hover {
-  background: #22d3ee;
-  filter: brightness(1.15);
-}
-
+/* ---- Status bar ---- */
 #status_bar {
   font-family: 'JetBrains Mono', monospace;
   font-size: .75rem;
-  color: #94a3b8;
+  color: #475569;
   padding: 8px 16px;
-  background: #1a1d27;
+  background: #EDF0F4;
   border-radius: 8px;
   margin-bottom: 12px;
+  border-left: 3px solid #1D4345;
 }
 
 #status_bar .status-line {
@@ -131,7 +240,7 @@ body {
 }
 
 #status_bar .status-tag {
-  color: #22d3ee;
+  color: #1D4345;
   font-weight: 700;
   margin-right: 6px;
 }
@@ -140,8 +249,8 @@ body {
   display: inline-block;
   width: 12px;
   height: 12px;
-  border: 2px solid #2d3348;
-  border-top-color: #22d3ee;
+  border: 2px solid #E2E8F0;
+  border-top-color: #1D4345;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
   vertical-align: middle;
@@ -149,7 +258,7 @@ body {
 }
 
 #status_bar .status-running {
-  color: #22d3ee;
+  color: #1D4345;
   font-weight: 700;
   margin-left: 8px;
 }
@@ -160,21 +269,23 @@ body {
   }
 }
 
+/* ---- Full-screen card ---- */
 .bslib-full-screen .card {
   border: none;
 }
 
 .bslib-full-screen .card-body {
-  background: #1a1d27;
+  background: #FFFFFF;
 }
 
+/* ---- Info tooltip ---- */
 .info-tip {
   display: inline-block;
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: #a78bfa;
-  color: #0f1117;
+  background: #E9A345;
+  color: #FFFFFF;
   font-size: 10px;
   text-align: center;
   line-height: 16px;
@@ -185,17 +296,18 @@ body {
 }
 
 .info-tip:hover {
-  filter: brightness(1.3);
+  filter: brightness(1.1);
 }
 
+/* ---- Tab explainer (collapsible) ---- */
 .tab-explainer {
-  background: #252833;
-  border: 1px solid #2d3348;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
   border-radius: 8px;
   padding: 12px 16px;
   margin-bottom: 16px;
   font-size: .82rem;
-  color: #94a3b8;
+  color: #475569;
   line-height: 1.5;
 }
 
@@ -205,7 +317,7 @@ body {
   font-size: .75rem;
   text-transform: uppercase;
   letter-spacing: .1em;
-  color: #22d3ee;
+  color: #1D4345;
   list-style: none;
 }
 
@@ -236,13 +348,172 @@ body {
 }
 
 .tab-explainer strong {
-  color: #22d3ee;
+  color: #1D4345;
 }
 
 .tab-explainer code {
-  background: #252833;
+  background: #EDF0F4;
   padding: 1px 5px;
   border-radius: 3px;
   font-size: .78rem;
-  color: #22d3ee;
+  color: #1D4345;
+}
+
+/* ---- Modals ---- */
+.modal-content {
+  background-color: #FFFFFF;
+  color: #171616;
+}
+
+.modal-header {
+  border-bottom-color: #E2E8F0;
+}
+
+.modal-footer {
+  border-top-color: #E2E8F0;
+}
+
+/* Accordion (documentation modal) */
+.accordion-button {
+  background-color: #FFFFFF;
+  color: #1D4345;
+}
+
+.accordion-button:not(.collapsed) {
+  background-color: #EDF0F4;
+  color: #1D4345;
+}
+
+.accordion-body {
+  background-color: #FFFFFF;
+  color: #171616;
+}
+
+/* ---- DataTables ---- */
+.dataTables_wrapper {
+  color: #171616;
+}
+
+table.dataTable thead th {
+  color: #1D4345;
+  border-bottom-color: #E2E8F0 !important;
+}
+
+table.dataTable tbody td {
+  color: #171616;
+}
+
+table.dataTable.compact tbody td {
+  border-bottom-color: #E2E8F0;
+}
+
+.dataTables_info,
+.dataTables_paginate {
+  color: #475569 !important;
+}
+
+/* ---- Notifications ---- */
+.shiny-notification {
+  background-color: #FFFFFF;
+  color: #171616;
+  border-left: 3px solid #1D4345;
+}
+
+/* ---- Vignette content ---- */
+.vignette-content h1,
+.vignette-content h2,
+.vignette-content h3,
+.vignette-content h4 {
+  color: #1D4345;
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 1.5em;
+}
+
+.vignette-content h1 { font-size: 1.3rem; }
+.vignette-content h2 { font-size: 1.1rem; }
+.vignette-content h3 { font-size: .95rem; }
+
+.vignette-content pre {
+  background: #EDF0F4;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 12px;
+  font-size: .78rem;
+  color: #475569;
+  overflow-x: auto;
+}
+
+.vignette-content code {
+  background: #EDF0F4;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: .8rem;
+  color: #1D4345;
+}
+
+.vignette-content pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.vignette-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font-size: .82rem;
+}
+
+.vignette-content th {
+  background: #EDF0F4;
+  color: #1D4345;
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 2px solid #E2E8F0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: .75rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.vignette-content td {
+  padding: 6px 12px;
+  border-bottom: 1px solid #E2E8F0;
+  color: #171616;
+}
+
+.vignette-content blockquote {
+  border-left: 3px solid #1D4345;
+  padding-left: 12px;
+  color: #475569;
+  font-style: italic;
+}
+
+.vignette-content a {
+  color: #1D4345;
+}
+
+.vignette-content img {
+  max-width: 100%;
+  border-radius: 8px;
+}
+
+/* ---- Mermaid diagrams ---- */
+.vignette-content .mermaid {
+  text-align: center;
+  margin: 16px 0;
+  background: transparent;
+}
+
+.vignette-content .mermaid svg {
+  max-width: 100%;
+}
+
+/* ---- MathJax ---- */
+.vignette-content .math.display {
+  margin: 16px 0;
+  text-align: center;
+}
+
+.vignette-content .MathJax {
+  font-size: 1em !important;
 }

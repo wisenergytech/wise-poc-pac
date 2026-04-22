@@ -28,12 +28,12 @@ L'application simule le **pilotage d'une pompe a chaleur (PAC)** alimentant un
 ballon thermique (eau chaude sanitaire et/ou chauffage). Le bilan electrique a
 chaque pas de temps (quart d'heure) est :
 
-```
-consommation_totale = consommation_hors_PAC + consommation_PAC
-surplus             = production_PV - consommation_totale
-soutirage_reseau    = max(0, -surplus)     # offtake
-injection_reseau    = max(0,  surplus)     # intake
-```
+$$\begin{aligned}
+\text{conso\_totale} &= \text{conso\_hors\_PAC} + \text{conso\_PAC} \\
+\text{surplus} &= \text{PV} - \text{conso\_totale} \\
+\text{soutirage} &= \max(0, -\text{surplus}) \\
+\text{injection} &= \max(0, \text{surplus})
+\end{aligned}$$
 
 ### Consommation globale vs consommation PAC
 
@@ -57,11 +57,11 @@ realiste pour le calcul du soutirage net, mais n'est jamais optimisee.
 Le calcul d'impact CO2 (module `mod_co2`) applique l'intensite carbone du
 reseau electrique belge (gCO2eq/kWh, source Elia) au soutirage net :
 
-```
-CO2_baseline = offtake_kwh * intensite_CO2      # soutirage baseline
-CO2_optimise = sim_offtake * intensite_CO2      # soutirage optimise
-CO2_evite    = CO2_baseline - CO2_optimise
-```
+$$\begin{aligned}
+\text{CO}_2^{\text{baseline}} &= \text{offtake} \times I_{\text{CO}_2} \\
+\text{CO}_2^{\text{optimise}} &= \text{sim\_offtake} \times I_{\text{CO}_2} \\
+\text{CO}_2^{\text{evite}} &= \text{CO}_2^{\text{baseline}} - \text{CO}_2^{\text{optimise}}
+\end{aligned}$$
 
 L'intensite CO2 est la meme dans les deux scenarios (elle depend du mix
 electrique du reseau, pas de l'installation locale). Le CO2 evite provient
@@ -85,9 +85,7 @@ moyenne a baisse.
 Les pertes thermiques du ballon sont proportionnelles a l'ecart entre la
 temperature du ballon et la temperature ambiante (supposee constante a 20 C) :
 
-```
-perte = k_perte * (T_ballon - T_ambiant)
-```
+$$P_{\text{perte}} = k \cdot (T_{\text{ballon}} - T_{\text{amb}})$$
 
 Le coefficient `k_perte` est soit estime a partir des donnees reelles (mode
 CSV), soit fixe a 0.004 par pas de temps (mode demo).
@@ -166,15 +164,19 @@ correspondante.
 
 ### Algorithme de decision (zone flexible)
 
-```
-si T < T_min           -> PAC ON (securite)
-si T >= T_max          -> PAC OFF (limite haute)
-si surplus > 0         -> pac_on = alpha * min(1, max(0.1, surplus / pac_qt))
-si T_sans_pac < T_min  -> PAC ON (pre-chauffe urgente)
-si alpha > 0.6 et T < consigne et COP > COP_moyen * 1.05
-                       -> pac_on = alpha * 0.3 (COP opportuniste)
-sinon                  -> PAC OFF
-```
+<div class="mermaid">
+flowchart TD
+    A{"T < T_min ?"} -->|Oui| B["PAC ON\n(securite)"]
+    A -->|Non| C{"T >= T_max ?"}
+    C -->|Oui| D["PAC OFF\n(limite haute)"]
+    C -->|Non| E{"Surplus PV > 0 ?"}
+    E -->|Oui| F["pac_on = alpha x\nmin(1, surplus/pac_qt)"]
+    E -->|Non| G{"T sans PAC\n< T_min ?"}
+    G -->|Oui| H["PAC ON\n(pre-chauffe)"]
+    G -->|Non| I{"alpha > 0.6 et\nT < consigne et\nCOP > COP_moy x 1.05 ?"}
+    I -->|Oui| J["pac_on = alpha x 0.3\n(COP opportuniste)"]
+    I -->|Non| K["PAC OFF"]
+</div>
 
 ### Monotonie AC(alpha)
 
@@ -192,9 +194,7 @@ A chaque changement de parametres (PV, PAC, ballon), l'application calcule :
 Le slider est automatiquement borne a [ac_floor, ac_ceiling]. Le mapping
 inverse (AC cible -> alpha) est lineaire :
 
-```
-alpha = (AC_cible - ac_floor) / (ac_ceiling - ac_floor)
-```
+$$\alpha = \frac{\text{AC}_{\text{cible}} - \text{AC}_{\text{floor}}}{\text{AC}_{\text{ceiling}} - \text{AC}_{\text{floor}}}$$
 
 ### Lien physique entre autoconsommation et dimensionnement
 
@@ -206,9 +206,7 @@ mediee par la capacite de stockage du ballon.
 
 A chaque quart d'heure, le surplus PV est :
 
-```
-surplus = production_PV - consommation_hors_PAC
-```
+$$\text{surplus} = \text{PV} - \text{conso\_hors\_PAC}$$
 
 La PAC ne peut absorber ce surplus que si (1) le ballon n'est pas plein
 (T < T_max) et (2) la puissance PAC est suffisante. L'autoconsommation
@@ -227,9 +225,7 @@ capacite d'absorption thermique.
 
 Le volume du ballon determine la **capacite de stockage thermique** :
 
-```
-stockage_kwh = volume_L * 0.001163 * (T_max - T_min)
-```
+$$E_{\text{stockage}} = V \times 0{,}001163 \times (T_{\max} - T_{\min})$$
 
 Un ballon plus gros permet d'absorber plus de surplus PV en le convertissant
 en chaleur, ce qui elargit la plage du slider vers le haut. Un ballon trop

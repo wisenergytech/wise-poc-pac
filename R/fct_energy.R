@@ -89,9 +89,9 @@ compute_sankey_flows <- function(sim, scenario = "baseline") {
     max(0, off - max(0, pac_elec - pv_auto))
   )
   link_color <- c(
-    "rgba(251,191,36,0.4)", "rgba(251,191,36,0.2)",
-    "rgba(249,115,22,0.4)", "rgba(248,113,113,0.4)",
-    "rgba(248,113,113,0.2)"
+    "rgba(245,158,11,0.4)", "rgba(245,158,11,0.2)",
+    "rgba(217,119,6,0.4)", "rgba(220,38,38,0.4)",
+    "rgba(220,38,38,0.2)"
   )
 
   # Filter out negligible flows

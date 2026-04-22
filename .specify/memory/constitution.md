@@ -234,3 +234,25 @@ Base security principles (II, III) apply with these R-specific adaptations:
 - `/speckit.implement` MUST update `renv.lock` (via `renv::snapshot()`) when a new R package is introduced.
 - Never add a dependency without using it in the committed code.
 - All packages MUST be declared in `DESCRIPTION` or loaded explicitly in `app.R`.
+
+### XI. Separation of Concerns — Business Logic vs Shiny Logic (NON-NEGOTIABLE)
+
+All business logic (calculations, models, data transformations, KPI computation, optimization) MUST reside exclusively in R6 classes (`R6_*.R`) or pure functions (`fct_*.R`). These files MUST NOT depend on Shiny (`library(shiny)`, `reactive()`, `observe()`, `session`, etc.).
+
+Shiny modules (`mod_*.R`) MUST contain only:
+
+- UI layout and rendering (`renderPlotly`, `renderDT`, `renderText`, etc.)
+- Reactive wiring (reading inputs, calling R6 methods, passing results to outputs)
+- User interaction logic (validation messages, modal dialogs, navigation)
+
+Shiny modules MUST NOT contain:
+
+- Mathematical formulas or physical models
+- Data transformation pipelines (joins, aggregations, pivots)
+- KPI or metric calculations
+- Optimizer logic or solver calls
+- Business rules or domain-specific conditional logic
+
+**Test rule**: Every R6 class and `fct_*.R` function MUST be unit-testable without loading Shiny (i.e., `library(shiny)` MUST NOT appear in their test files).
+
+**Rationale**: Mixing business logic into reactive code makes it untestable outside of a Shiny session, couples domain knowledge to UI framework specifics, and prevents reuse of calculations across modules or in non-Shiny contexts (scripts, reports, API endpoints).

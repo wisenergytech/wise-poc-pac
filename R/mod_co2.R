@@ -8,12 +8,18 @@ mod_co2_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
     shiny::uiOutput(ns("co2_kpi_row")),
-    bslib::card(full_screen = TRUE, bslib::card_header("Impact CO2 horaire -- baseline vs optimise"),
+    bslib::card(full_screen = TRUE,
+      card_header_tip("Impact CO2 horaire -- baseline vs optimise",
+        "Barres : CO2 evite (vert) ou supplementaire (rouge) par heure grace a l'optimisation. Courbe pointillee : intensite carbone du reseau belge (gCO2eq/kWh)."),
       bslib::card_body(plotly::plotlyOutput(ns("plot_co2_hourly"), height = "350px"))),
     bslib::layout_columns(col_widths = c(6, 6),
-      bslib::card(full_screen = TRUE, bslib::card_header("CO2 evite cumule"),
+      bslib::card(full_screen = TRUE,
+        card_header_tip("CO2 evite cumule",
+          "Cumul des emissions CO2 evitees depuis le debut de la periode. Correspond a la somme des barres vertes moins les rouges du graphique horaire."),
         bslib::card_body(plotly::plotlyOutput(ns("plot_co2_cumul"), height = "300px"))),
-      bslib::card(full_screen = TRUE, bslib::card_header("Heatmap intensite CO2 du reseau"),
+      bslib::card(full_screen = TRUE,
+        card_header_tip("Heatmap intensite CO2 du reseau",
+          "Intensite carbone du reseau electrique belge par heure et par jour (gCO2eq/kWh). Les zones rouges/oranges indiquent les heures les plus carbonees, les zones vertes les plus propres."),
         bslib::card_body(plotly::plotlyOutput(ns("plot_co2_heatmap"), height = "300px")))),
     shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;padding:4px 8px;", cl$text_muted),
       shiny::uiOutput(ns("co2_data_source")))
@@ -70,10 +76,10 @@ mod_co2_server <- function(id, sidebar) {
           gain_val = round(k$co2_intensity_opti - k$co2_intensity_baseline), gain_unit = "gCO2/kWh",
           tooltip = "Intensite carbone moyenne ponderee par la consommation."),
         kpi_card(sprintf("%.0f", k$co2_equiv_car_km),
-          "Equiv. voiture", "km", "#22d3ee",
+          "Equiv. voiture", "km", cl$opti,
           tooltip = "Kilometres de voiture equivalents au CO2 evite."),
         kpi_card(sprintf("%.1f", k$co2_equiv_trees_year),
-          "Equiv. arbres", "/an", "#fbbf24",
+          "Equiv. arbres", "/an", cl$pv,
           tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite en 1 an.")
       )
       do.call(shiny::tags$div, c(
@@ -86,11 +92,14 @@ mod_co2_server <- function(id, sidebar) {
     output$plot_co2_hourly <- plotly::renderPlotly({
       shiny::req(sim_filtered(), co2_impact_r())
       d <- prepare_co2_hourly(sim_filtered(), co2_impact_r())
-      bar_colors <- ifelse(d$co2_saved_g >= 0, cl$success, cl$danger)
+      d_pos <- d; d_pos$co2_saved_g[d_pos$co2_saved_g < 0] <- NA
+      d_neg <- d; d_neg$co2_saved_g[d_neg$co2_saved_g >= 0] <- NA
 
       plotly::plot_ly(d, x = ~timestamp) %>%
-        plotly::add_bars(y = ~co2_saved_g, name = "CO2 evite (g)",
-          marker = list(color = bar_colors)) %>%
+        plotly::add_bars(data = d_pos, y = ~co2_saved_g, name = "CO2 evite (g)",
+          marker = list(color = cl$success)) %>%
+        plotly::add_bars(data = d_neg, y = ~co2_saved_g, name = "CO2 supplementaire (g)",
+          marker = list(color = cl$danger)) %>%
         plotly::add_trace(y = ~co2_intensity, type = "scatter", mode = "lines",
           name = "Intensite reseau (gCO2/kWh)", yaxis = "y2",
           line = list(color = cl$accent3, width = 1.5, dash = "dot")) %>%
@@ -113,7 +122,7 @@ mod_co2_server <- function(id, sidebar) {
       )
       plotly::plot_ly(d, x = ~timestamp, y = ~co2_cumul_kg, type = "scatter", mode = "lines",
         name = "CO2 evite cumule",
-        fill = "tozeroy", fillcolor = "rgba(52,211,153,0.15)",
+        fill = "tozeroy", fillcolor = "rgba(5,150,105,0.15)",
         line = list(color = cl$success, width = 2)) %>%
         pl_layout(ylab = "kg CO2eq evite")
     })

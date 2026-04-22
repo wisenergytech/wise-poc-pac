@@ -11,6 +11,7 @@ mod_sidebar_ui <- function(id) {
 
   shiny::tagList(
     shiny::tags$div(style = "padding:8px 0 16px 0;text-align:center;",
+      shiny::tags$img(src = "www/logo-wise.svg", style = "width:120px;margin-bottom:8px;"),
       shiny::tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:%s;letter-spacing:.1em", cl$accent), shiny::HTML("&#9889; PAC OPTIMIZER")),
       shiny::tags$div(style = sprintf("font-size:.65rem;color:%s;margin-top:2px;letter-spacing:.15em;text-transform:uppercase", cl$text_muted), "Pilotage predictif")),
 
@@ -174,14 +175,9 @@ mod_sidebar_ui <- function(id) {
       shiny::actionButton(ns("run_automagic"), "Trouver la meilleure config", class = "w-100 mt-1",
         icon = shiny::icon("wand-magic-sparkles"),
         style = sprintf("background:linear-gradient(135deg,%s,%s);border:none;font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.05em;color:%s;",
-          cl$accent3, "#6366f1", cl$text)),
+          cl$accent2, cl$accent, cl$text_light)),
       shiny::tags$div(class = "form-text text-center mt-1", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
         "Grid search sur toutes les combinaisons")),
-    shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
-    shiny::actionButton(ns("show_guide"), "Documentation", class = "w-100",
-      icon = shiny::icon("book-open"),
-      style = sprintf("background:transparent;border:1px solid %s;color:%s;font-family:'JetBrains Mono',monospace;font-size:.78rem;letter-spacing:.05em;",
-        cl$grid, cl$text_muted))
   )
 }
 
@@ -199,61 +195,6 @@ mod_sidebar_ui <- function(id) {
 mod_sidebar_server <- function(id, sim_state) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
-
-    # ---- Modal documentation ----
-    observeEvent(input$show_guide, {
-      shiny::showModal(shiny::modalDialog(
-        title = NULL,
-        size = "xl",
-        easyClose = TRUE,
-        footer = shiny::modalButton("Fermer"),
-        shiny::tags$div(style = sprintf("color:%s;font-size:.85rem;line-height:1.6;", cl$text),
-          shiny::tags$div(style = "text-align:center;margin-bottom:16px;",
-            shiny::tags$h4(style = sprintf("color:%s;margin:0;", cl$accent), "Documentation -- PAC Optimizer"),
-            shiny::tags$p(style = sprintf("color:%s;font-size:.8rem;margin:4px 0 0 0;", cl$text_muted),
-              "Cliquez sur une section pour la deplier.")),
-          bslib::accordion(id = ns("guide_modal_accordion"), open = FALSE,
-            bslib::accordion_panel("1. Flux de donnees", icon = shiny::icon("database"),
-              shiny::tags$p("A chaque quart d'heure, l'algorithme dispose des informations suivantes :"),
-              shiny::tags$pre(style = sprintf("background:%s;border-radius:8px;padding:12px;font-size:.75rem;color:%s;", cl$bg_input, cl$text_muted),
-"DONNEES D'ENTREE (par quart d'heure)
-\u251C\u2500\u2500 Grid meter \u2500\u2500\u2500\u2500 offtake + intake
-\u251C\u2500\u2500 Production PV \u2500 kWh produits
-\u251C\u2500\u2500 Temperature \u2500\u2500\u2500 ballon + exterieure
-\u2514\u2500\u2500 Prix spot \u2500\u2500\u2500\u2500\u2500 Belpex (ENTSO-E)
-
-DONNEES CALCULEES
-\u251C\u2500\u2500 COP reel \u2500\u2500\u2500\u2500\u2500\u2500 f(T exterieure)
-\u251C\u2500\u2500 Surplus PV \u2500\u2500\u2500\u2500 PV - conso hors PAC
-\u251C\u2500\u2500 Pertes ballon \u2500 calibrees sur donnees
-\u2514\u2500\u2500 Soutirage ECS \u2500 estime par chutes de T"),
-              shiny::tags$p(shiny::tags$strong("Demo :"), " PV, conso et temperature synthetiques. ", shiny::tags$strong("CSV :"), " vos donnees. Dans les deux cas, les ", shiny::tags$strong("prix Belpex reels"), " sont injectes automatiquement.")),
-            bslib::accordion_panel("2. Modele thermique du ballon", icon = shiny::icon("temperature-half"),
-              shiny::tags$p("Modele simple calibre sur vos donnees :"),
-              shiny::tags$pre(style = sprintf("background:%s;border-radius:8px;padding:12px;font-size:.78rem;color:%s;", cl$bg_input, cl$opti),
-                "T(t+1) = T(t) + (chaleur_PAC - pertes - soutirage_ECS) / capacite_thermique"),
-              shiny::tags$ul(
-                shiny::tags$li(shiny::tags$strong("Chaleur PAC"), " = puissance x COP (varie avec T ext)"),
-                shiny::tags$li(shiny::tags$strong("Pertes"), " = refroidissement naturel (calibre)"),
-                shiny::tags$li(shiny::tags$strong("Capacite"), " = volume x 0.001163 kWh/L/degre"))),
-            bslib::accordion_panel("3. COP", icon = shiny::icon("gauge-high"),
-              shiny::tags$p("Ratio chaleur produite / electricite consommee. Varie avec T exterieure :"),
-              shiny::tags$ul(shiny::tags$li("0C : COP = 2.5"), shiny::tags$li("7C : COP = 3.5 (nominal)"),
-                shiny::tags$li("15C : COP = 4.3"), shiny::tags$li("20C : COP = 4.8")),
-              shiny::tags$p("Chauffer en journee = surplus PV + meilleur COP.")),
-            bslib::accordion_panel("4. Modes d'optimisation", icon = shiny::icon("sliders"),
-              shiny::tags$h6(style = sprintf("color:%s;", cl$success), "SMART (Rule-based)"), shiny::tags$p("Decision basee sur la valeur nette a chaque quart d'heure."),
-              shiny::tags$h6(style = sprintf("color:%s;", cl$opti), "OPTIMIZER (MILP)"), shiny::tags$p("Resout un probleme d'optimisation mathematique (MILP).")),
-            bslib::accordion_panel("5. Types de decisions", icon = shiny::icon("code-branch"),
-              shiny::tags$p("Voir la documentation complete dans l'app standalone (app.R).")),
-            bslib::accordion_panel("6. D'ou viennent les prix ?", icon = shiny::icon("coins"),
-              shiny::tags$p("Marche day-ahead Belpex, publie par ENTSO-E Transparency.")),
-            bslib::accordion_panel("7. Prix, ecologie et optimisation", icon = shiny::icon("leaf"),
-              shiny::tags$p("Prix bas = renouvelable abondant = reseau vert."))
-          )
-        )
-      ))
-    })
 
     # ---- AC bounds computation ----
     # Build a minimal param list from raw inputs (NOT params_r) to avoid

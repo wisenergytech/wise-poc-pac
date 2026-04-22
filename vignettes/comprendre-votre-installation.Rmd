@@ -581,15 +581,20 @@ dimensionnes de maniere **interdependante**. Changer l'un affecte les autres.
 
 ### Chaine de dependances
 
-```
-Puissance PAC (kW) + COP + Tolerance
-        |                    |
-        v                    v
-   Volume Ballon (L)    Plage thermique
-        |
-        v
-   Puissance PV (kWc)
-```
+<div class="mermaid">
+flowchart TD
+    A["Puissance PAC (kW)"] --> C["Volume Ballon (L)"]
+    B["COP"] --> C
+    D["Tolerance"] --> C
+    D --> E["Plage thermique"]
+    C --> F["Puissance PV (kWc)"]
+    style A fill:#1D4345,color:#fff,stroke:#1D4345
+    style B fill:#1D4345,color:#fff,stroke:#1D4345
+    style D fill:#E9A345,color:#000,stroke:#E9A345
+    style C fill:#2a9d8f,color:#fff,stroke:#2a9d8f
+    style E fill:#E9A345,color:#000,stroke:#E9A345
+    style F fill:#2a9d8f,color:#fff,stroke:#2a9d8f
+</div>
 
 La PAC est le point de depart : sa puissance et son COP determinent la quantite
 de chaleur produite. Le ballon doit etre dimensionne pour stocker cette chaleur.

@@ -101,7 +101,7 @@ mod_dimensionnement_server <- function(id, sidebar) {
             shiny::tags$div(class = "kpi-value", style = sprintf("color:%s;font-size:1.4rem;", cl$accent), paste0(best$PV_kWc, " kWc")),
             shiny::tags$div(class = "kpi-label", "PV optimal")),
           shiny::tags$div(class = "text-center",
-            shiny::tags$div(class = "kpi-value", style = sprintf("color:%s;font-size:1.4rem;", "#818cf8"), paste0(best$Batterie_kWh, " kWh")),
+            shiny::tags$div(class = "kpi-value", style = sprintf("color:%s;font-size:1.4rem;", cl$accent3), paste0(best$Batterie_kWh, " kWh")),
             shiny::tags$div(class = "kpi-label", "Batterie")),
           shiny::tags$div(class = "text-center",
             shiny::tags$div(class = "kpi-value", style = sprintf("color:%s;font-size:1.4rem;", cl$success), toupper(best$Mode)),
@@ -120,7 +120,7 @@ mod_dimensionnement_server <- function(id, sidebar) {
           shiny::actionButton(session$ns("apply_best"), "Appliquer cette configuration",
             icon = shiny::icon("check"),
             style = sprintf("background:%s;border:none;color:%s;font-family:'JetBrains Mono',monospace;font-size:.78rem;margin-top:4px;",
-              cl$success, cl$bg_dark)))
+              cl$success, cl$text_light)))
       )
     })
 

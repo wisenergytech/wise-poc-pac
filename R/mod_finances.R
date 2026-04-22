@@ -10,12 +10,18 @@ mod_finances_ui <- function(id) {
   shiny::tagList(
     shiny::uiOutput(ns("finance_kpi_row")),
     bslib::layout_columns(col_widths = 12,
-      bslib::card(full_screen = TRUE, bslib::card_header("Facture nette cumulee -- baseline vs optimise"),
+      bslib::card(full_screen = TRUE,
+        card_header_tip("Facture nette cumulee -- baseline vs optimise",
+          "Evolution de la facture nette cumulee (soutirage - injection) au fil du temps. L'ecart entre les deux courbes represente l'economie cumulee a chaque instant."),
         bslib::card_body(plotly::plotlyOutput(ns("plot_cout_cumule"), height = "320px")))),
     bslib::layout_columns(col_widths = c(6, 6),
-      bslib::card(full_screen = TRUE, bslib::card_header("Decomposition de l'economie"),
+      bslib::card(full_screen = TRUE,
+        card_header_tip("Decomposition de l'economie",
+          "Cascade partant de la facture reelle (sans optimisation) jusqu'a la facture optimisee. Chaque barre intermediaire montre une composante de l'economie : reduction du soutirage, perte d'injection, et arbitrage horaire."),
         bslib::card_body(plotly::plotlyOutput(ns("plot_waterfall"), height = "300px"))),
-      bslib::card(full_screen = TRUE, bslib::card_header("Bilan mensuel"),
+      bslib::card(full_screen = TRUE,
+        card_header_tip("Bilan mensuel",
+          "Recapitulatif mois par mois : production PV, factures baseline et optimisee, economie en EUR et en EUR/jour."),
         bslib::card_body(DT::DTOutput(ns("table_mensuel")))))
   )
 }
@@ -62,11 +68,22 @@ mod_finances_server <- function(id, sidebar) {
     output$plot_cout_cumule <- plotly::renderPlotly({
       shiny::req(sim_filtered())
       d <- compute_cumulative_bill(sim_filtered())
+      d <- d %>% dplyr::mutate(eco = cum_baseline - cum_opti)
       plotly::plot_ly(d, x = ~timestamp) %>%
         plotly::add_trace(y = ~cum_baseline, type = "scatter", mode = "lines", name = "Facture baseline",
-          line = list(color = cl$reel, width = 2), fill = "tozeroy", fillcolor = "rgba(249,115,22,0.08)") %>%
+          line = list(color = cl$reel, width = 2), fill = "tozeroy", fillcolor = "rgba(217,119,6,0.08)",
+          customdata = ~eco,
+          hovertemplate = paste0(
+            "<b>Baseline</b>: %{y:.1f} EUR<br>",
+            "Economie cumulee: %{customdata:.1f} EUR",
+            "<extra>Baseline</extra>")) %>%
         plotly::add_trace(y = ~cum_opti, type = "scatter", mode = "lines", name = "Facture optimisee",
-          line = list(color = cl$opti, width = 2), fill = "tozeroy", fillcolor = "rgba(34,211,238,0.08)") %>%
+          line = list(color = cl$opti, width = 2), fill = "tozeroy", fillcolor = "rgba(29,67,69,0.08)",
+          customdata = ~eco,
+          hovertemplate = paste0(
+            "<b>Optimise</b>: %{y:.1f} EUR<br>",
+            "Economie cumulee: %{customdata:.1f} EUR",
+            "<extra>Optimise</extra>")) %>%
         pl_layout(ylab = "Facture nette cumulee (EUR)")
     })
 
@@ -74,22 +91,33 @@ mod_finances_server <- function(id, sidebar) {
     output$plot_waterfall <- plotly::renderPlotly({
       shiny::req(sim_filtered())
       wf <- compute_waterfall(sim_filtered())
-      eco_totale <- wf$value[wf$measure == "total"]
 
       plotly::plot_ly(
-        x = wf$label, y = wf$value,
+        x = ~label, y = ~value, data = wf,
         type = "waterfall",
-        measure = wf$measure,
-        text = paste0(ifelse(wf$value >= 0, "+", ""), round(wf$value, 1), " EUR"),
+        measure = ~measure,
+        text = paste0(round(wf$value, 1), " EUR"),
         textposition = "outside",
         textfont = list(color = cl$text, size = 10, family = "JetBrains Mono"),
-        connector = list(line = list(color = cl$grid, width = 1)),
-        increasing = list(marker = list(color = cl$success)),
-        decreasing = list(marker = list(color = cl$danger)),
-        totals = list(marker = list(color = ifelse(eco_totale >= 0, cl$opti, cl$danger)))
+        customdata = ~detail,
+        hovertemplate = paste0(
+          "<b>%{x}</b><br>",
+          "%{text}<br>",
+          "<i>%{customdata}</i>",
+          "<extra></extra>"),
+        connector = list(line = list(color = cl$text_muted, width = 2, dash = "dot")),
+        increasing = list(marker = list(color = "#d62728")),
+        decreasing = list(marker = list(color = "#2ca02c")),
+        totals = list(marker = list(color = "#1f77b4"))
       ) %>%
         pl_layout(ylab = "EUR") %>%
-        plotly::layout(xaxis = list(tickfont = list(size = 10)))
+        plotly::layout(
+          xaxis = list(
+            tickfont = list(size = 10),
+            categoryorder = "array",
+            categoryarray = wf$label
+          )
+        )
     })
 
     # ---- Monthly table ----

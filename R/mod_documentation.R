@@ -1,12 +1,31 @@
 #' Documentation UI Module
 #'
 #' Displays package vignettes as embedded HTML within the app.
+#' Loads MathJax (LaTeX rendering) and Mermaid.js (diagrams) for rich content.
 #'
 #' @param id module id
 #' @noRd
 mod_documentation_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
+    shiny::tags$head(
+      # MathJax v3 for LaTeX math rendering
+      shiny::tags$script(
+        src = "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js",
+        async = "async"
+      ),
+      # Mermaid.js v10 for diagrams
+      shiny::tags$script(
+        src = "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"
+      ),
+      shiny::tags$script(shiny::HTML(
+        "document.addEventListener('DOMContentLoaded', function() {
+          if (typeof mermaid !== 'undefined') {
+            mermaid.initialize({startOnLoad: false, theme: 'dark'});
+          }
+        });"
+      ))
+    ),
     bslib::navset_pill(
       bslib::nav_panel(
         title = "Guide des reglages",
@@ -32,6 +51,7 @@ mod_documentation_ui <- function(id) {
 #' Renders package vignettes to HTML fragments and displays them.
 #' Uses pre-built vignettes from inst/doc/ (built at install time),
 #' falling back to rendering from source in dev mode.
+#' Triggers MathJax and Mermaid re-rendering after content insertion.
 #'
 #' @param id module id
 #' @noRd
@@ -70,13 +90,26 @@ mod_documentation_server <- function(id) {
         body <- html_content
       }
 
-      shiny::tags$div(
-        class = "vignette-content",
-        style = sprintf(
-          "padding:16px;font-size:.88rem;line-height:1.7;color:%s;max-width:900px;",
-          cl$text
+      shiny::tagList(
+        shiny::tags$div(
+          class = "vignette-content",
+          style = sprintf(
+            "padding:16px;font-size:.88rem;line-height:1.7;color:%s;max-width:900px;",
+            cl$text
+          ),
+          shiny::HTML(body)
         ),
-        shiny::HTML(body)
+        # Trigger MathJax + Mermaid rendering after dynamic content insertion
+        shiny::tags$script(shiny::HTML(
+          "setTimeout(function() {
+            if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
+              MathJax.typesetPromise();
+            }
+            if (typeof mermaid !== 'undefined' && mermaid.run) {
+              mermaid.run({querySelector: '.mermaid:not([data-processed])'});
+            }
+          }, 200);"
+        ))
       )
     }
 
