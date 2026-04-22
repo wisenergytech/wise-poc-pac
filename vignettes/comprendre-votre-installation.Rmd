@@ -520,50 +520,165 @@ confort sans perte economique significative.
 
 ---
 
-## Les baselines : a quoi vous comparer ?
+## La baseline : a quoi vous comparer ?
 
 L'app calcule toujours un scenario de **reference** (baseline) qui represente votre
 situation *sans* optimisation. Les economies affichees sont la difference entre cette
-baseline et l'optimisation.
+baseline et le scenario optimise.
 
-### Les 5 modes de baseline
+### Thermostat (mode par defaut)
 
-1. **Thermostat reactif** : le plus basique. La PAC s'allume quand le ballon
-   descend sous T~min~ et s'eteint quand il atteint la consigne. Totalement
-   aveugle aux prix, au PV et a la meteo.
+C'est le comportement reel de ~95 % des installations PAC non-pilotees. Un simple
+**aquastat** sur le ballon avec hysteresis :
 
-   *Quand l'utiliser* : si votre installation actuelle n'a aucun pilotage
-   intelligent.
+- La PAC s'allume quand T~ballon~ < T~min~
+- La PAC s'eteint quand T~ballon~ atteint T~consigne~
+- Entre les deux, elle maintient son etat precedent (hysteresis)
 
-2. **Programmateur horaire (11h-15h)** : la PAC est forcee ON entre 11h et 15h
-   (pour coincider avec le PV) et fonctionne en thermostat reactif le reste du
-   temps.
+Ce thermostat est **totalement aveugle** : il ne sait pas si le soleil brille, si
+le prix de l'electricite est haut ou bas, ni si le COP est bon ou mauvais. Il
+reagit uniquement a la temperature du ballon.
 
-   *Quand l'utiliser* : si votre installateur a programme une plage horaire fixe.
+**Consequence** : l'autoconsommation PV qui en resulte est purement fortuite. Si la
+PAC tourne au moment ou les panneaux produisent, tant mieux. Sinon, le surplus est
+injecte sur le reseau. C'est justement ce que l'optimiseur va ameliorer.
 
-3. **Surplus PV** : la PAC s'allume quand le surplus PV depasse un seuil.
-   Sinon, thermostat reactif.
+**Pourquoi c'est la bonne baseline ?** Parce que les economies affichees representent
+le gain **reel** par rapport a une installation typique non-pilotee. Pas de triche :
+la baseline ne fait rien d'intelligent.
 
-   *Quand l'utiliser* : si votre onduleur a une sortie "surplus" qui pilote la
-   PAC (Fronius, SMA, Huawei).
+### Suivi PV (mode avance, optionnel)
 
-4. **Ingenieur** : le mode le plus intelligent *sans* signal prix. Module la PAC
-   pour coller au surplus PV, anticipe le confort, pre-chauffe quand le COP est
-   bon. C'est la reference realiste pour mesurer la valeur ajoutee du pilotage
-   par les prix spot.
+Si votre installation dispose deja d'un pilotage basique du surplus PV (onduleur
+Fronius, SMA, Huawei, ou systeme domotique), vous pouvez activer l'option
+**"Suivi PV existant"** dans la sidebar. Un curseur apparait pour indiquer votre
+taux d'autoconsommation actuel.
 
-   *Quand l'utiliser* : pour evaluer ce que le prix dynamique apporte *en plus*
-   d'une gestion intelligente du PV.
+Ce mode utilise un parametre `alpha` (0 a 1) qui controle l'intensite du suivi PV :
 
-5. **Thermostat proactif** : thermostat avec un pas d'anticipation. Il regarde
-   un quart d'heure en avance pour anticiper les chutes de temperature.
+| Alpha | Comportement | Installation typique |
+|-------|-------------|---------------------|
+| 0 | Thermostat pur (aucune conscience du PV) | Pas de pilotage |
+| 0.3 | Suivi leger du surplus PV | Domotique basique |
+| 0.6 | Bon suivi du surplus PV | Onduleur avec sortie surplus |
+| 1.0 | Suivi maximal, PAC calquee sur le PV | SolarEdge, Fronius intelligent |
 
-   *Quand l'utiliser* : pour une baseline "genereuse" qui minimise artificiellement
-   les gains affiches (test de robustesse).
+La correspondance entre le curseur d'autoconsommation et alpha est calibree
+automatiquement : l'app lance deux simulations (alpha = 0 et alpha = 1) pour
+determiner la plage d'autoconsommation atteignable, puis interpole lineairement.
 
-**Conseil** : si vous ne savez pas, utilisez **Ingenieur**. C'est la baseline la
-plus realiste et la plus exigeante — les economies affichees seront conservatrices
-mais credibles.
+**Quand l'utiliser ?** Uniquement si votre installation a deja un pilotage PV.
+Les economies affichees seront plus faibles (la baseline est deja partiellement
+intelligente), mais elles refleteront le gain reel que l'EMS apporte *en plus*
+de votre systeme existant.
+
+---
+
+## Auto-dimensionnement : comment PV, ballon et PAC sont interconnectes
+
+Les trois composants principaux de l'installation — PAC, ballon, et PV — sont
+dimensionnes de maniere **interdependante**. Changer l'un affecte les autres.
+
+### Chaine de dependances
+
+```
+Puissance PAC (kW) + COP + Tolerance
+        |                    |
+        v                    v
+   Volume Ballon (L)    Plage thermique
+        |
+        v
+   Puissance PV (kWc)
+```
+
+La PAC est le point de depart : sa puissance et son COP determinent la quantite
+de chaleur produite. Le ballon doit etre dimensionne pour stocker cette chaleur.
+Et le PV doit etre dimensionne pour alimenter la PAC.
+
+### Auto-dimensionnement du ballon
+
+**Objectif** : stocker 2 heures de production de chaleur dans la plage de
+temperature autorisee.
+
+**Formule** :
+
+> Volume (L) = P~PAC~ x COP x 2h / (2 x tolerance x 0,001163)
+
+Ou **0,001163** est la capacite thermique de l'eau (kWh par litre par degre C),
+et **2 x tolerance** est la plage de temperature utile (de T~min~ a T~max~).
+
+Le resultat est arrondi au multiple de 50 L le plus proche.
+
+**Exemple** : PAC 60 kW, COP 3,5, tolerance 5 C :
+
+> Volume = 60 x 3,5 x 2 / (2 x 5 x 0,001163) = **36 100 L**
+
+**Pourquoi 2 heures ?** C'est le compromis entre flexibilite et realisme :
+
+- Moins de 1h : le ballon se remplit/vide trop vite, pas assez de marge pour
+  decaler la consommation
+- 2h : l'optimiseur peut decaler la PAC de 2h vers les heures creuses ou le
+  surplus PV, sans risque de manquer de chaleur
+- Plus de 4h : le volume devient excessif et les pertes thermiques augmentent
+
+**Impact sur l'optimisation** : un ballon trop petit par rapport a la PAC
+limite fortement les economies possibles — l'optimiseur n'a pas la place
+de "stocker" l'energie pour plus tard.
+
+### Auto-dimensionnement du PV
+
+**Objectif** : couvrir la consommation electrique annuelle de la PAC.
+
+Deux strategies selon la taille de l'installation :
+
+#### PAC <= 10 kW (domestique, ECS)
+
+La consommation est estimee a partir de la demande ECS quotidienne :
+
+> Conso~elec~/an = (ECS~jour~ + Pertes~jour~) / COP x 365
+
+Ou :
+
+- ECS~jour~ = 6 x Volume~ballon~ / 200 (kWh~th~/jour)
+- Pertes~jour~ = 0,004 x (T~consigne~ - 20) x 24 (kWh~th~/jour)
+
+#### PAC > 10 kW (collectif, chauffage)
+
+La consommation est estimee a partir de la puissance et d'un nombre
+d'heures equivalentes pleine charge :
+
+> Conso~elec~/an = P~PAC~ x 5h/jour x 365 / COP
+
+Le **5h/jour** represente une moyenne annuelle pour une PAC collective
+(plus en hiver, moins en ete).
+
+#### De la consommation au kWc
+
+> kWc = Conso~elec~/an / 950
+
+Le **950 kWh/kWc/an** est le rendement moyen d'un PV en Belgique
+(orientation sud, inclinaison 35 deg, sans ombrage majeur).
+
+Le resultat est arrondi au 0,5 kWc le plus proche.
+
+**Exemple** : PAC 60 kW, COP 3,5 :
+
+> Conso = 60 x 5 x 365 / 3,5 = 31 286 kWh/an
+> kWc = 31 286 / 950 = **32,9 kWc** (arrondi a 33 kWc)
+
+### Boucle de retro-action
+
+Quand vous changez un parametre dans l'app, les dependances se propagent
+automatiquement :
+
+1. Vous augmentez la **puissance PAC** de 40 a 60 kW
+2. Le **volume ballon** augmente proportionnellement (de ~24 000 L a ~36 000 L)
+3. La **puissance PV** augmente aussi (de ~22 kWc a ~33 kWc)
+4. Les **bornes d'autoconsommation** sont recalculees (si suivi PV actif)
+
+Ce chainage garantit que les trois composants restent coherents entre eux.
+Vous pouvez toujours passer en mode manuel pour l'un ou l'autre si votre
+installation reelle differe du dimensionnement theorique.
 
 ---
 
