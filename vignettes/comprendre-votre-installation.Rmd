@@ -1,0 +1,605 @@
+---
+title: "Comprendre votre installation : guide des reglages"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Comprendre votre installation : guide des reglages}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4
+)
+```
+
+## A qui s'adresse ce guide ?
+
+Vous etes ingenieur, gestionnaire de batiment ou simplement proprietaire d'une
+installation avec pompe a chaleur et panneaux solaires. Vous voulez utiliser
+l'application PAC Optimizer pour reduire votre facture d'electricite, mais les
+termes techniques vous semblent flous. Ce guide reprend **chaque reglage de
+l'application** et l'explique dans un langage accessible, avec des ordres de
+grandeur concrets.
+
+---
+
+## La pompe a chaleur (PAC) : votre machine a transformer l'electricite en chaleur
+
+### Le principe en 30 secondes
+
+Une pompe a chaleur ne *cree* pas de la chaleur a partir de rien. Elle la
+**deplace**. Elle prend de la chaleur presente dans l'air exterieur (meme quand
+il fait froid, il reste de l'energie thermique dans l'air) et la concentre pour
+chauffer votre eau.
+
+C'est exactement le meme principe qu'un frigo, mais a l'envers : un frigo extrait
+la chaleur de l'interieur pour la rejeter a l'exterieur. La PAC extrait la chaleur
+de l'exterieur pour l'envoyer a l'interieur.
+
+### Puissance de la PAC (kW)
+
+La **puissance electrique** de la PAC, c'est ce qu'elle consomme sur le reseau
+quand elle tourne. C'est comme la cylindree d'un moteur : ca vous dit a quelle
+vitesse elle peut chauffer l'eau.
+
+| Puissance | Installation typique |
+|-----------|---------------------|
+| 2-5 kW | Maison individuelle, eau chaude sanitaire seule |
+| 5-15 kW | Maison avec chauffage + eau chaude |
+| 20-60 kW | Petit immeuble collectif, copropriete |
+| 60-100 kW | Immeuble de grande taille, tertiaire |
+
+**Reglage dans l'app** : `Puissance (kW)`. Indiquez la puissance electrique
+nominale inscrite sur la plaque signaletique de votre PAC. Si vous avez deux PAC
+(ex. 20 + 40 kW), additionnez-les.
+
+### Le COP : le rendement magique
+
+Le **COP** (*Coefficient de Performance*) est LE chiffre qui rend la PAC
+interessante. Un COP de 3,5 signifie :
+
+> Pour 1 kWh d'electricite consomme, la PAC produit 3,5 kWh de chaleur.
+
+Comment est-ce possible ? Parce que la PAC ne *fabrique* pas les 3,5 kWh. Elle en
+fournit 1 (l'electricite) et va "chercher" les 2,5 restants dans l'air exterieur.
+C'est gratuit — c'est de l'energie solaire stockee dans l'atmosphere.
+
+**Analogie** : imaginez un systeme de levier. Vous appuyez avec une force de 1 kg,
+et le levier souleve 3,5 kg. Vous n'avez pas cree d'energie — vous avez juste
+utilise un mecanisme qui amplifie votre effort.
+
+#### Le COP varie avec la temperature exterieure
+
+Plus il fait chaud dehors, plus il est facile d'extraire de la chaleur de l'air.
+C'est comme pomper de l'eau : si le puits est a 2 m de profondeur, c'est facile.
+S'il est a 50 m, c'est beaucoup plus dur.
+
+| Temperature exterieure | COP approximatif | Interpretation |
+|------------------------|-------------------|----------------|
+| -5 C | ~2,3 | La PAC travaille dur — rendement modeste |
+| 0 C | ~2,8 | Hiver classique |
+| 7 C | ~3,5 | Valeur de reference (nominale) |
+| 15 C | ~4,3 | Mi-saison — tres bon rendement |
+| 20 C | ~4,8 | Ete — rendement excellent |
+
+**Consequence pratique** : chauffer votre eau a 14h quand il fait 18 C est
+nettement plus economique qu'a 3h du matin quand il fait 2 C. L'app en tient
+compte automatiquement.
+
+**Reglage dans l'app** : `COP nominal`. C'est la valeur a 7 C exterieur. Vous la
+trouvez dans la fiche technique de votre PAC. Si vous ne la connaissez pas, 3,5
+est une valeur par defaut raisonnable pour la plupart des PAC air/eau.
+
+---
+
+## Le ballon thermique : votre batterie de chaleur
+
+### Le concept
+
+Le ballon d'eau chaude est un **reservoir d'energie thermique**. Quand la PAC
+fonctionne, elle chauffe l'eau du ballon. Quand vous tirez de l'eau chaude (douche,
+vaisselle, chauffage), le ballon se vide de son energie.
+
+C'est exactement comme une batterie, mais pour la chaleur au lieu de l'electricite :
+
+| Batterie electrique | Ballon thermique |
+|--------------------|-------------------|
+| Capacite en kWh | Capacite en kWh thermiques |
+| Niveau de charge (%) | Temperature de l'eau (C) |
+| Charge avec le PV | Chauffe avec la PAC |
+| Se decharge quand on consomme | Se refroidit quand on tire de l'eau |
+| Pertes par auto-decharge | Pertes par refroidissement naturel |
+
+### Volume du ballon (litres)
+
+Plus le ballon est gros, plus vous pouvez stocker de chaleur. C'est comme un
+reservoir de voiture : un grand reservoir permet de rouler plus longtemps avant de
+faire le plein, et surtout de **choisir quand** faire le plein (quand le prix est
+bas).
+
+Un ballon trop petit oblige la PAC a tourner souvent — y compris quand
+l'electricite est chere. Un ballon suffisamment grand permet de chauffer aux heures
+les moins couteuses et de vivre sur la reserve le reste du temps.
+
+| Volume | Installation typique | Autonomie approximative* |
+|--------|---------------------|--------------------------|
+| 100-200 L | Maison, 2-3 personnes | 4-8h (ECS seule) |
+| 300-500 L | Maison, 4-6 personnes | 8-16h |
+| 500-2000 L | Petit collectif | 4-12h |
+| 2000-10000 L | Immeuble, collectivite | 6-24h |
+
+*L'autonomie depend de la consommation, des pertes, et de la plage de temperature.
+
+**Reglage dans l'app** : deux options.
+
+- **Volume auto** (recommande) : l'app dimensionne le ballon pour stocker **2 h de
+  chaleur PAC** dans la plage de tolerance. La formule est simple :
+
+  > Volume = Puissance PAC x COP x 2h / (2 x tolerance x 0,001163)
+
+  Par exemple, pour une PAC de 60 kW avec un COP de 3,5 et une tolerance de 5 C :
+  Volume = 60 x 3,5 x 2 / (2 x 5 x 0,001163) = **36 100 L** (arrondi a 36 050 L)
+
+  Cela peut sembler enorme, mais pour un immeuble avec une PAC de 60 kW, c'est
+  coherent. C'est la taille qui donne a l'optimiseur assez de flexibilite pour
+  decaler la consommation.
+
+- **Volume manuel** : entrez le volume reel de votre ballon. L'app travaillera avec
+  cette contrainte, mais les economies possibles seront plus limitees si le ballon
+  est petit par rapport a la puissance de la PAC.
+
+### Capacite thermique : de litres a kWh
+
+La capacite d'un ballon ne se mesure pas qu'en litres. Ce qui compte, c'est
+**combien d'energie** il peut stocker dans sa plage de temperature autorisee :
+
+> Capacite (kWh) = Volume (L) x 0,001163 x plage de temperature (C)
+
+Le nombre **0,001163** est la capacite thermique de l'eau : il faut 0,001163 kWh
+pour chauffer 1 litre de 1 C. C'est une constante physique.
+
+**Exemple concret** :
+- Ballon de 500 L, plage 45-55 C (tolerance de 5 C, soit 10 C de plage)
+- Capacite = 500 x 0,001163 x 10 = **5,8 kWh thermiques**
+
+Cela signifie que le ballon peut absorber 5,8 kWh de chaleur en passant de 45 a
+55 C. En termes electriques, avec un COP de 3,5, il faut seulement
+5,8 / 3,5 = **1,7 kWh electriques** pour le remplir. C'est l'equivalent de
+laisser tourner un seche-cheveux pendant 1h.
+
+---
+
+## Temperatures : consigne, tolerance, et confort
+
+### La consigne
+
+La **temperature de consigne** est la temperature cible de votre ballon. C'est le
+"thermostat" de reference.
+
+| Consigne | Usage typique |
+|----------|--------------|
+| 45 C | Eau chaude sanitaire (menage) — suffisant pour les douches |
+| 50 C | Standard — bon compromis confort/economies |
+| 55 C | Collectif, risque legionelle maitrise |
+| 60-65 C | Anti-legionelle strict (montee periodique recommandee) |
+
+**Attention** : plus la consigne est haute, plus le COP baisse (la PAC doit
+travailler plus dur pour atteindre une temperature elevee) et plus les pertes
+thermiques augmentent. Chaque degre en plus coute de l'argent.
+
+**Reglage dans l'app** : `Consigne (C)`. Valeur par defaut : 50 C.
+
+### La tolerance
+
+La **tolerance** definit la bande de temperature acceptable autour de la consigne :
+
+> T~min~ = consigne - tolerance
+> T~max~ = consigne + tolerance
+
+**Exemple** : consigne 50 C, tolerance 5 C → le ballon peut varier entre 45 C et
+55 C.
+
+**Pourquoi c'est important pour l'optimisation ?**
+
+Plus la tolerance est large, plus l'optimiseur a de **liberte de manoeuvre**. Avec
+une plage de 10 C (tolerance de 5 C), il peut :
+- Chauffer le ballon a 55 C quand l'electricite est gratuite (surplus PV)
+- Le laisser descendre a 45 C pendant les heures cheres
+- Ca represente 10 C de "stockage" disponible
+
+Avec une tolerance de 2 C (plage de 4 C), il ne peut stocker qu'un tiers de cette
+energie. Moins de liberte = moins d'economies.
+
+**Analogie** : c'est comme le jeu dans le volant d'une voiture. Un peu de jeu
+permet des ajustements souples. Trop peu, et le moindre mouvement est une secousse.
+
+**Reglage dans l'app** : `Tolerance +/- C`. Valeur par defaut : 5 C.
+
+### Pourquoi une temperature maximale ?
+
+La T~max~ du ballon (consigne + tolerance) n'est pas un choix arbitraire de
+l'optimiseur. C'est une contrainte physique et de securite imposee par la PAC
+elle-meme :
+
+1. **Pression dans le ballon** — L'eau qui chauffe se dilate. Au-dela de ~60-65 C,
+   la pression monte et les soupapes de securite s'ouvrent, causant des pertes
+   d'eau et d'energie.
+
+2. **Degradation du COP** — Plus la temperature du ballon est elevee, plus le
+   compresseur travaille dur. Le COP chute rapidement au-dessus de 55 C
+   (typiquement de 3,5 a moins de 2). Chauffer au-dela devient economiquement
+   absurde.
+
+3. **Limite du refrigerant** — Le fluide frigorigene a une temperature de
+   condensation maximale. Les PAC residentielles classiques (R410A, R32)
+   plafonnent a 55-65 C. Les PAC "haute temperature" (R744/CO2) montent a 80 C
+   mais sont plus couteuses.
+
+4. **Entartrage** — Au-dessus de 55 C, le calcaire se depose massivement dans
+   l'echangeur, reduisant la duree de vie de l'installation.
+
+5. **Securite brulure** — La norme NF impose que l'eau distribuee ne depasse pas
+   50 C aux points de puisage (60 C maximum dans le ballon pour le traitement
+   anti-legionelle).
+
+Dans l'application, la contrainte T~max~ empeche l'optimiseur de "surcharger" le
+ballon au-dela de ce que la PAC peut physiquement produire de maniere efficace.
+C'est une des raisons pour lesquelles la tolerance ne doit pas etre trop large :
+une T~max~ de 65 C avec une PAC classique donnerait un COP catastrophique sur les
+derniers degres.
+
+---
+
+## L'eau chaude sanitaire (ECS) : la demande a satisfaire
+
+### Qu'est-ce que le kWh thermique par jour ?
+
+L'**ECS** (Eau Chaude Sanitaire), c'est l'eau chaude que vous consommez
+quotidiennement : douches, bains, vaisselle, lavage des mains, nettoyage.
+
+On mesure cette demande en **kWh thermiques par jour** (kWh~th~/jour). Pourquoi
+"thermiques" ? Parce qu'on parle de la quantite de chaleur necessaire, pas de
+l'electricite consommee. Grace au COP, l'electricite necessaire est bien moindre.
+
+**Exemple concret** : une douche de 5 minutes utilise environ 40 L d'eau a 40 C.
+Si l'eau froide arrive a 15 C, il faut chauffer 40 L de 25 C :
+
+> 40 L x 25 C x 0,001163 = **1,2 kWh~th~**
+
+Avec un COP de 3,5, la PAC n'aura consomme que 1,2 / 3,5 = **0,34 kWh electrique**
+pour cette douche. Au prix spot moyen (~0,10 EUR/kWh), ca coute environ **3,4
+centimes**.
+
+### Ordres de grandeur
+
+| Situation | ECS (kWh~th~/jour) | Equivalent |
+|-----------|---------------------|------------|
+| 1 personne | 3-4 | 1-2 douches |
+| Menage (4 pers.) | 6-10 | 2-4 douches + vaisselle |
+| Petit immeuble (10 logements) | 50-100 | Usage collectif |
+| Grand immeuble (30+ logements) | 150-500 | Chauffage + ECS |
+
+**Reglage dans l'app** : `ECS (kWh_th/jour)`. Si vous laissez le champ vide,
+l'app estime automatiquement une valeur coherente a partir de la puissance de
+votre PAC et du volume du ballon. Pour un resultat plus precis, entrez la valeur
+reelle si vous la connaissez (elle figure parfois dans les bilans energetiques
+annuels ou les rapports de votre installateur).
+
+### Type de batiment (grandes installations)
+
+Pour les PAC de plus de 10 kW (collectif), l'app propose de preciser le **type de
+batiment**. Cela influence les deperditions thermiques du batiment (le coefficient
+G), qui determinent combien de chaleur est necessaire pour maintenir la temperature
+ambiante en plus de l'ECS :
+
+| Type | Description | Deperditions |
+|------|-------------|-------------|
+| **Passif** | Construction tres isolee (BBC, passivhaus) | Faibles — peu de chauffage necessaire |
+| **Standard** | Construction recente (RT2012, PEB) | Moyennes |
+| **Ancien** | Batiment peu isole (avant 1990) | Elevees — beaucoup de chauffage |
+
+---
+
+## Le contrat d'electricite : fixe ou dynamique
+
+### Contrat fixe
+
+Prix constant, 24h/24, 365 jours/an. Simple et previsible.
+
+- **Prix soutirage** : ce que vous payez pour chaque kWh tire du reseau (typiquement
+  0,25-0,35 EUR/kWh en Belgique, tout compris).
+- **Prix injection** : ce que vous recevez pour chaque kWh injecte sur le reseau
+  (typiquement 0,02-0,05 EUR/kWh).
+
+Avec un contrat fixe, l'optimiseur ne peut pas jouer sur les variations de prix
+(il n'y en a pas). Il se concentre sur la maximisation de l'autoconsommation solaire
+et l'optimisation du COP.
+
+### Contrat dynamique (spot Belpex)
+
+Le prix change **chaque heure** en fonction du marche de l'electricite belge (Belpex,
+publie par ENTSO-E). C'est ici que l'optimisation prend tout son sens.
+
+**Comment se forme le prix ?**
+
+Le prix Belpex reflete l'equilibre offre/demande sur le reseau electrique europeen :
+
+- **Prix bas** (parfois negatifs !) : beaucoup de soleil et/ou de vent, peu de
+  demande. Le reseau deborde d'electricite renouvelable. C'est le moment ideal pour
+  chauffer votre ballon.
+- **Prix moyens** : situation normale.
+- **Prix eleves** : forte demande (matin, soiree) et/ou faible production
+  renouvelable. C'est le moment de vivre sur votre reserve de chaleur.
+
+**Ordres de grandeur** (Belpex 2024-2025) :
+
+| Situation | Prix spot (EUR/MWh) | Prix final* (EUR/kWh) |
+|-----------|--------------------|-----------------------|
+| Creux (nuit, surplus PV) | 0-30 | 0,15-0,18 |
+| Moyen | 50-80 | 0,20-0,23 |
+| Pointe | 100-200 | 0,25-0,35 |
+| Extreme (vague de froid) | 200-500+ | 0,35-0,65+ |
+| Negatif (surplus massif) | -50 a 0 | 0,10-0,15 |
+
+*Prix final = spot + taxes reseau.
+
+**Reglages dans l'app** :
+
+- `Taxes reseau (EUR/kWh)` : les couts de transport et distribution ajoutes au prix
+  spot. Typiquement 0,12-0,18 EUR/kWh en Belgique. Ce montant est fixe, il s'ajoute
+  a chaque kWh soutire quel que soit le prix spot.
+- `Coeff. injection / spot` : quel pourcentage du prix spot vous recevez quand vous
+  injectez. A 1,0, vous recevez 100 % du prix spot. Certains fournisseurs
+  appliquent un coefficient inferieur (0,8-0,95).
+
+**Formules** :
+> Prix soutirage = prix spot + taxes reseau
+> Prix injection = prix spot x coefficient injection
+
+---
+
+## Les panneaux solaires (PV)
+
+### Puissance crete (kWc)
+
+Le **kWc** (kilowatt-crete) mesure la puissance maximale de vos panneaux dans des
+conditions ideales (plein soleil, 25 C, orientation parfaite). En Belgique, 1 kWc
+produit environ **900-1000 kWh par an**.
+
+| Puissance | Installation typique | Production annuelle |
+|-----------|---------------------|---------------------|
+| 3-6 kWc | Maison individuelle | 2 700-6 000 kWh |
+| 10-30 kWc | Grande toiture, PME | 9 000-30 000 kWh |
+| 30-100 kWc | Immeuble, industrie | 27 000-100 000 kWh |
+
+**Reglage dans l'app** : deux options.
+
+- **PV auto** : l'app dimensionne le PV pour couvrir la consommation annuelle
+  estimee de la PAC. C'est un bon point de depart.
+- **Manuel** : entrez la puissance reelle de votre installation si vous la
+  connaissez.
+
+Si vous importez vos propres donnees CSV, indiquez egalement le **kWc de reference**
+de votre installation pour que l'app puisse correctement rescaler la production si
+vous changez la taille du PV.
+
+### L'autoconsommation : le nerf de la guerre
+
+L'electricite la moins chere est celle que vous **ne soutirez pas** du reseau. Quand
+vos panneaux produisent et que votre PAC consomme en meme temps, c'est gratuit (hors
+cout de l'installation).
+
+Le taux d'autoconsommation mesure quelle part de votre production PV vous utilisez
+directement :
+
+> Autoconsommation (%) = (PV produit - PV injecte) / PV produit x 100
+
+Sans pilotage, une installation typique autoconsomme 20-30 % de son PV. Avec
+l'optimisation PAC, on peut monter a **60-80 %** : l'optimiseur chauffe le ballon
+quand le soleil brille, stockant ainsi l'energie solaire sous forme de chaleur.
+
+---
+
+## La batterie electrochimique (optionnelle)
+
+### Pourquoi une batterie en plus du ballon ?
+
+Le ballon stocke la chaleur, mais il a ses limites : une fois a T~max~, impossible
+de stocker plus. La batterie prend le relais pour l'electricite "pure" :
+
+- Le surplus PV charge d'abord le ballon (via la PAC)
+- Quand le ballon est plein, le surplus charge la batterie
+- Le soir, la batterie alimente la maison (eclairage, electromenager)
+
+**Analogie** : le ballon est votre garde-manger (stock de nourriture preparee). La
+batterie est votre congelateur (stock polyvalent pour plus tard).
+
+### Les reglages
+
+- **Capacite (kWh)** : combien d'energie la batterie peut stocker. Un menage
+  typique utilise 5-15 kWh entre le coucher du soleil et le lendemain matin.
+
+- **Puissance charge/decharge (kW)** : la vitesse a laquelle la batterie peut se
+  remplir ou se vider. Generalement la moitie de la capacite (ex. 5 kW pour 10 kWh).
+
+- **Rendement aller-retour (%)** : la part de l'energie recuperee apres un cycle
+  complet charge + decharge. A 90 %, pour 10 kWh charges, vous recuperez 9 kWh.
+  Les 10 % restants sont perdus en chaleur dans la batterie.
+
+  **Analogie** : c'est comme transvaser de l'eau entre deux seaux. A chaque
+  transvasement, un peu d'eau tombe a cote. Le rendement, c'est la proportion
+  qui arrive dans le deuxieme seau.
+
+- **Plage SoC (%)** : le *State of Charge* (etat de charge) minimum et maximum.
+  Typiquement 10-90 %. On evite de vider completement ou de remplir a ras bord une
+  batterie lithium, car cela degrade sa duree de vie.
+
+  **Analogie** : c'est comme ne pas rouler jusqu'a la panne d'essence et ne pas
+  remplir au-dela du premier clic de la pompe. Votre reservoir "utile" est plus
+  petit que le reservoir total, mais il dure plus longtemps.
+
+---
+
+## Les reglages d'optimisation avances
+
+### Penalite T~min~ (EUR/ C par quart d'heure)
+
+C'est le parametre le plus subtil. Il controle le **compromis entre cout et
+confort**.
+
+Quand l'optimiseur planifie, il peut parfois trouver moins cher de laisser le
+ballon descendre *legerement* sous T~min~ pendant un bref moment (par exemple
+pendant un pic de prix), puis de rechauffer quand le prix baisse.
+
+La penalite T~min~ est le "prix fictif" que l'optimiseur paie pour chaque degre
+sous T~min~, pour chaque quart d'heure de violation. Plus la penalite est elevee,
+plus l'optimiseur evite les violations.
+
+| Penalite | Comportement |
+|----------|-------------|
+| 0,5 EUR/ C | L'optimiseur explore librement sous T~min~ si c'est rentable. Economique mais risque d'inconfort. |
+| 2,5 EUR/ C (defaut) | Bon compromis. Violations rares et breves (<1 C pendant quelques minutes). |
+| 10 EUR/ C | Respect quasi strict de T~min~. Cout legerement plus eleve. |
+| 20 EUR/ C | T~min~ est traitee comme un mur infranchissable (sauf impossibilite physique, ex. tirage ECS massif). |
+
+**Analogie** : imaginez que quelqu'un vous paie pour rester dans une zone de
+confort. La penalite, c'est l'amende que vous payez si vous en sortez. A 0,50 EUR,
+vous sortez facilement. A 20 EUR, vous restez cloue a l'interieur.
+
+**Reglage dans l'app** : `Penalite T_min (EUR/C)`. Disponible pour MILP et LP.
+
+### Horizon bloc (heures)
+
+L'optimiseur ne resout pas tout le mois d'un coup (ca serait trop lourd en MILP).
+Il decoupe la periode en **blocs** de N heures et les resout un par un.
+
+| Horizon | Temps de calcul | Qualite de la solution |
+|---------|----------------|----------------------|
+| 1-2h | Ultra rapide | Myope — rate les tendances |
+| 4h (defaut MILP) | ~1s par bloc | Bon compromis |
+| 12h | ~5-10s par bloc | Tres bon, voit les cycles jour/nuit |
+| 24h (defaut LP/QP) | ~1-2s (LP), variable (MILP) | Optimal sur une journee entiere |
+
+En LP et QP, les blocs de 24h sont recommandes car le calcul reste rapide.
+En MILP (decisions binaires), 4h est le compromis standard.
+
+### Curtailment (limitation d'injection)
+
+Certains gestionnaires de reseau ou contrats imposent une **puissance maximale
+d'injection**. Si vos panneaux produisent 15 kW mais que vous ne pouvez injecter
+que 5 kW, les 10 kW excedentaires sont **perdus** (ecretes).
+
+L'optimiseur peut contourner ce probleme : il chauffe le ballon ou charge la
+batterie pendant les periodes de surplus, absorbant l'electricite qui serait
+autrement perdue.
+
+**Reglage dans l'app** :
+- `Curtailment (limiter l'injection)` : cochez si vous avez une limite d'injection.
+- `Puissance max injection (kW)` : la limite imposee. 0 kW = zero injection
+  autorisee (tout doit etre autoconsomme). 5 kW = limite prosumer typique en
+  Belgique.
+
+### Poids confort et lissage (QP uniquement)
+
+Ces deux curseurs ne sont visibles qu'en mode QP :
+
+- **Poids confort** : a quel point l'optimiseur s'efforce de maintenir la
+  temperature *exactement* a la consigne (pas juste "dans la plage"). A 0, le QP
+  se comporte comme le LP. A 1, le confort domine le cout.
+
+- **Poids lissage** : a quel point l'optimiseur evite les changements brusques de
+  puissance. Un poids eleve donne une courbe de charge PAC plus douce, ce qui est
+  meilleur pour la duree de vie du compresseur.
+
+En pratique, des valeurs faibles (0,05-0,15) suffisent pour un gain notable de
+confort sans perte economique significative.
+
+---
+
+## Les baselines : a quoi vous comparer ?
+
+L'app calcule toujours un scenario de **reference** (baseline) qui represente votre
+situation *sans* optimisation. Les economies affichees sont la difference entre cette
+baseline et l'optimisation.
+
+### Les 5 modes de baseline
+
+1. **Thermostat reactif** : le plus basique. La PAC s'allume quand le ballon
+   descend sous T~min~ et s'eteint quand il atteint la consigne. Totalement
+   aveugle aux prix, au PV et a la meteo.
+
+   *Quand l'utiliser* : si votre installation actuelle n'a aucun pilotage
+   intelligent.
+
+2. **Programmateur horaire (11h-15h)** : la PAC est forcee ON entre 11h et 15h
+   (pour coincider avec le PV) et fonctionne en thermostat reactif le reste du
+   temps.
+
+   *Quand l'utiliser* : si votre installateur a programme une plage horaire fixe.
+
+3. **Surplus PV** : la PAC s'allume quand le surplus PV depasse un seuil.
+   Sinon, thermostat reactif.
+
+   *Quand l'utiliser* : si votre onduleur a une sortie "surplus" qui pilote la
+   PAC (Fronius, SMA, Huawei).
+
+4. **Ingenieur** : le mode le plus intelligent *sans* signal prix. Module la PAC
+   pour coller au surplus PV, anticipe le confort, pre-chauffe quand le COP est
+   bon. C'est la reference realiste pour mesurer la valeur ajoutee du pilotage
+   par les prix spot.
+
+   *Quand l'utiliser* : pour evaluer ce que le prix dynamique apporte *en plus*
+   d'une gestion intelligente du PV.
+
+5. **Thermostat proactif** : thermostat avec un pas d'anticipation. Il regarde
+   un quart d'heure en avance pour anticiper les chutes de temperature.
+
+   *Quand l'utiliser* : pour une baseline "genereuse" qui minimise artificiellement
+   les gains affiches (test de robustesse).
+
+**Conseil** : si vous ne savez pas, utilisez **Ingenieur**. C'est la baseline la
+plus realiste et la plus exigeante — les economies affichees seront conservatrices
+mais credibles.
+
+---
+
+## Les donnees d'entree : Demo vs CSV
+
+### Mode Demo
+
+L'app genere des donnees synthetiques mais realistes :
+
+- **Production PV** : profil en cloche (lever → midi → coucher), avec variabilite
+  meteorologique
+- **Temperature exterieure** : profil sinusoidal journalier, avec moyennes
+  saisonnieres
+- **Prix Belpex** : **prix reels** charges depuis les fichiers CSV locaux
+  (2024-2025) ou l'API ENTSO-E
+- **Consommation hors PAC** : profil domestique ou tertiaire, avec base et pointes
+- **ECS** : tirages aleatoires (douches matin/soir, usages ponctuels)
+
+### Mode CSV
+
+Importez vos propres donnees au format CSV avec les colonnes attendues. L'app
+injectera automatiquement les prix Belpex reels pour la periode correspondante.
+Vous pouvez exporter les resultats pour une analyse approfondie.
+
+---
+
+## Recapitulatif : les reglages par ordre d'importance
+
+Si vous ne deviez en regler que 3 :
+
+1. **Puissance PAC** et **COP nominal** : ce sont les fondations. Tout le reste en
+   decoule.
+2. **Type de contrat** : fixe ou dynamique. C'est ce qui determine si l'optimisation
+   par les prix est possible.
+3. **Consigne et tolerance** : elles definissent votre espace de flexibilite.
+
+Les autres reglages (penalite, bloc, curtailment, batterie, poids QP) sont des
+ajustements fins. Les valeurs par defaut sont choisies pour fonctionner
+raisonnablement dans la plupart des cas.

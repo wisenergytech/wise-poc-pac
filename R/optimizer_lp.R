@@ -158,7 +158,7 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
   # Solve
   # ----------------------------------------------------------
   result <- tryCatch(
-    solve_model(model, with_ROI(solver = "highs", verbose = FALSE)),
+    solve_model(model, with_ROI(solver = "glpk", verbose = FALSE)),
     error = function(e) {
       message("[LP Optimizer] Solver error: ", e$message)
       return(NULL)

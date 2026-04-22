@@ -1,0 +1,263 @@
+---
+title: "Hypotheses de modelisation et perimetre"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Hypotheses de modelisation et perimetre}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Ce document liste les hypotheses structurantes du modele de simulation et
+d'optimisation. Elles definissent ce que l'application modelise, ce qu'elle ne
+modelise pas, et les simplifications retenues.
+
+---
+
+## Perimetre energetique
+
+### Ce qui est modelise
+
+L'application simule le **pilotage d'une pompe a chaleur (PAC)** alimentant un
+ballon thermique (eau chaude sanitaire et/ou chauffage). Le bilan electrique a
+chaque pas de temps (quart d'heure) est :
+
+```
+consommation_totale = consommation_hors_PAC + consommation_PAC
+surplus             = production_PV - consommation_totale
+soutirage_reseau    = max(0, -surplus)     # offtake
+injection_reseau    = max(0,  surplus)     # intake
+```
+
+### Consommation globale vs consommation PAC
+
+Le soutirage reseau (`offtake_kwh` en baseline, `sim_offtake` en optimise)
+integre la **consommation globale** du site (PAC + hors PAC), nette de la
+production PV. Cependant :
+
+- La **consommation hors PAC** (`conso_hors_pac`) est identique entre le
+  scenario baseline et le scenario optimise. Elle n'est pas un levier
+  d'optimisation.
+- Seul le **profil de fonctionnement de la PAC** change entre les deux
+  scenarios.
+
+Par consequent, tous les **ecarts** affiches (economies financieres, CO2 evite,
+gains d'autoconsommation) refletent exclusivement l'impact du pilotage
+intelligent de la PAC. La consommation hors PAC sert de "bruit de fond"
+realiste pour le calcul du soutirage net, mais n'est jamais optimisee.
+
+### Impact CO2
+
+Le calcul d'impact CO2 (module `mod_co2`) applique l'intensite carbone du
+reseau electrique belge (gCO2eq/kWh, source Elia) au soutirage net :
+
+```
+CO2_baseline = offtake_kwh * intensite_CO2      # soutirage baseline
+CO2_optimise = sim_offtake * intensite_CO2      # soutirage optimise
+CO2_evite    = CO2_baseline - CO2_optimise
+```
+
+L'intensite CO2 est la meme dans les deux scenarios (elle depend du mix
+electrique du reseau, pas de l'installation locale). Le CO2 evite provient
+donc du **deplacement temporel** de la consommation PAC vers des periodes ou
+le reseau est moins carbone et/ou ou l'autoconsommation PV est plus elevee.
+
+---
+
+## Modele thermique
+
+### Ballon a une zone
+
+Le ballon est modelise comme un **volume parfaitement melange** (une seule
+temperature). Les phenomenes de stratification thermique ne sont pas pris en
+compte. C'est une simplification conservative : en realite, la stratification
+permet de tirer de l'eau chaude en haut du ballon meme quand la temperature
+moyenne a baisse.
+
+### Pertes thermiques
+
+Les pertes thermiques du ballon sont proportionnelles a l'ecart entre la
+temperature du ballon et la temperature ambiante (supposee constante a 20 C) :
+
+```
+perte = k_perte * (T_ballon - T_ambiant)
+```
+
+Le coefficient `k_perte` est soit estime a partir des donnees reelles (mode
+CSV), soit fixe a 0.004 par pas de temps (mode demo).
+
+### COP variable
+
+Le COP de la PAC varie en fonction de la temperature exterieure et,
+secondairement, de la temperature du ballon. L'app utilise une regression
+lineaire basee sur le COP nominal a 7 C (valeur constructeur).
+
+Les optimiseurs LP, MILP et QP effectuent un **raffinement iteratif** du COP :
+la premiere resolution utilise un COP estime, puis le COP est recalcule a
+partir de la trajectoire de temperature resultante, et le probleme est resolu
+a nouveau. Deux iterations suffisent en pratique.
+
+---
+
+## Donnees d'entree
+
+### Mode demo (donnees synthetiques)
+
+- **Production PV** : profil en cloche base sur la geometrie solaire, module
+  par un facteur de couverture nuageuse derive des prix Belpex (quand
+  disponibles) ou aleatoire.
+- **Temperature exterieure** : donnees reelles Open-Meteo (Profondeville) si
+  l'API repond, sinon profil sinusoidal synthetique.
+- **Prix electricite** : prix Belpex reels (fichiers CSV locaux ou API
+  ENTSO-E). Fallback synthetique si indisponible.
+- **Consommation hors PAC** : profil domestique synthetique avec pointes
+  matin (8h) et soir (19h), base constante ~0.3 kW.
+- **Tirages ECS** : tirages stochastiques concentres aux heures de pointe
+  (matin, midi, soir). Pour les PAC > 10 kW, inclut aussi le chauffage
+  ambiance avec un coefficient G dependant du type de batiment.
+
+### Mode CSV (donnees reelles)
+
+En mode CSV, la consommation hors PAC est estimee a partir des donnees
+mesurees : `conso_hors_pac = offtake_mesure - consommation_PAC_estimee`.
+L'estimation de la consommation PAC est basee sur un seuil de soutirage
+(50 % de la puissance PAC par quart d'heure).
+
+---
+
+## Hypotheses economiques
+
+- **Contrat fixe** : prix de soutirage et d'injection constants.
+- **Contrat dynamique** : prix de soutirage = prix spot Belpex + taxes reseau
+  (constantes). Prix d'injection = prix spot x coefficient d'injection.
+- Les taxes reseau sont supposees constantes dans le temps (pas de tarif
+  capacitaire, pas de pointe quart-horaire).
+- L'usure de la batterie (degradation cyclique) n'est pas modelisee. Le
+  rendement aller-retour est constant.
+
+---
+
+## Baseline parametrique
+
+### Principe
+
+Au lieu de 5 modes discrets (reactif, programmateur, surplus_pv, ingenieur,
+proactif), l'application propose un **slider d'autoconsommation** qui parametre
+une baseline unique via un coefficient continu alpha dans [0, 1].
+
+L'utilisateur exprime sa situation actuelle en termes concrets ("mon
+autoconsommation est d'environ 35%") et l'application construit la baseline
+correspondante.
+
+### Coefficient alpha
+
+- **alpha = 0** : thermostat pur. La PAC ne suit pas du tout le PV. Dans la zone
+  flexible (T_min <= T < T_max), la branche surplus donne 0 et la branche COP
+  opportuniste est inactive. Resultat : autoconsommation ~15%.
+- **alpha = 1** : suivi PV maximal. La branche surplus donne
+  `min(1, surplus/pac_qt)` et le pre-chauffage COP est actif. Resultat :
+  autoconsommation ~70% (equivalent au mode ingenieur).
+
+### Algorithme de decision (zone flexible)
+
+```
+si T < T_min           -> PAC ON (securite)
+si T >= T_max          -> PAC OFF (limite haute)
+si surplus > 0         -> pac_on = alpha * min(1, max(0.1, surplus / pac_qt))
+si T_sans_pac < T_min  -> PAC ON (pre-chauffe urgente)
+si alpha > 0.6 et T < consigne et COP > COP_moyen * 1.05
+                       -> pac_on = alpha * 0.3 (COP opportuniste)
+sinon                  -> PAC OFF
+```
+
+### Monotonie AC(alpha)
+
+L'autoconsommation est monotone non-decroissante en alpha : augmenter alpha
+augmente la fraction du surplus PV consommee localement. Les bornes sont
+calculees dynamiquement en executant la baseline a alpha=0 et alpha=1.
+
+### Calcul des bornes du slider
+
+A chaque changement de parametres (PV, PAC, ballon), l'application calcule :
+
+- `ac_floor` = autoconsommation a alpha=0
+- `ac_ceiling` = autoconsommation a alpha=1
+
+Le slider est automatiquement borne a [ac_floor, ac_ceiling]. Le mapping
+inverse (AC cible -> alpha) est lineaire :
+
+```
+alpha = (AC_cible - ac_floor) / (ac_ceiling - ac_floor)
+```
+
+### Lien physique entre autoconsommation et dimensionnement
+
+Le taux d'autoconsommation n'est pas un parametre libre : il est une
+**consequence physique** du ratio entre la production PV et la consommation PAC,
+mediee par la capacite de stockage du ballon.
+
+#### Mecanisme
+
+A chaque quart d'heure, le surplus PV est :
+
+```
+surplus = production_PV - consommation_hors_PAC
+```
+
+La PAC ne peut absorber ce surplus que si (1) le ballon n'est pas plein
+(T < T_max) et (2) la puissance PAC est suffisante. L'autoconsommation
+resulte donc de la **coincidence temporelle** entre la production PV et la
+capacite d'absorption thermique.
+
+#### Effet du ratio PV / PAC
+
+| Ratio PV/PAC | Surplus typique | AC atteignable | Plage du slider |
+|---|---|---|---|
+| PV << PAC (ex. 10 kWc / 60 kW) | Faible ou nul | Eleve (~80-95%) | Etroite (le PV est entierement absorbe quoi qu'il arrive) |
+| PV ~ PAC (ex. 33 kWc / 60 kW) | Modere | 30-70% selon pilotage | Large (le pilotage fait la difference) |
+| PV >> PAC (ex. 100 kWc / 10 kW) | Important | Bas (~15-40%) | Moderee (surplus structurel non absorbable) |
+
+#### Role du ballon
+
+Le volume du ballon determine la **capacite de stockage thermique** :
+
+```
+stockage_kwh = volume_L * 0.001163 * (T_max - T_min)
+```
+
+Un ballon plus gros permet d'absorber plus de surplus PV en le convertissant
+en chaleur, ce qui elargit la plage du slider vers le haut. Un ballon trop
+petit (par rapport a la puissance PAC) limite mecaniquement l'autoconsommation
+atteignable, meme avec un pilotage parfait.
+
+#### Consequences pour l'interface
+
+Les bornes du slider (`ac_floor`, `ac_ceiling`) sont recalculees
+automatiquement quand l'utilisateur modifie le PV, la PAC ou le ballon.
+L'utilisateur ne peut pas demander un taux d'autoconsommation que son
+installation ne permet pas physiquement : le slider contraint les valeurs
+possibles.
+
+### Cas sans PV
+
+Si `pv_kwc = 0`, le surplus est toujours negatif. `ac_floor ~= ac_ceiling ~= 0`.
+Le slider est collapse et un message informatif est affiche.
+
+---
+
+## Limites connues
+
+| Hypothese | Impact | Amelioration possible |
+|-----------|--------|----------------------|
+| Ballon 1 zone (pas de stratification) | Sous-estime legerement la flexibilite reelle | Modele 2-3 zones |
+| Consommation hors PAC non optimisee | Sous-estime les economies totales possibles | Inclure charges pilotables (lave-linge, VE) |
+| COP lineaire | Approximation acceptable en regime normal | Courbe constructeur detaillee |
+| Pas de tarif capacitaire | Peut surestimer les economies en contrat dynamique | Integrer les pointes quart-horaires |
+| Pertes ballon a T_ambiant fixe (20 C) | Negligeable pour les ballons interieurs | T_ambiant variable si ballon en local non chauffe |
+| Pas de degradation batterie | Peut surestimer legerement la valeur de la batterie | Modele de vieillissement cyclique |
