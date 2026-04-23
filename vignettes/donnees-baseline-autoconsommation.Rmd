@@ -1,0 +1,497 @@
+---
+title: "Donnees, baseline et autoconsommation : comment tout s'articule"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Donnees, baseline et autoconsommation : comment tout s'articule}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.width = 7,
+  fig.height = 4
+)
+```
+
+Ce guide explique, pas a pas et avec des exemples chiffres, comment
+interagissent les trois mecanismes centraux de l'application :
+
+1. Le **choix des donnees** (synthetique vs reel)
+2. La **baseline** (scenario de reference)
+3. Le **taux d'autoconsommation**
+
+Si vous ne lisez qu'une seule section, lisez "Le film d'une journee" — elle
+raconte concretement ce qui se passe quart d'heure par quart d'heure.
+
+---
+
+## Vue d'ensemble : qui fait quoi ?
+
+Avant de plonger dans les details, voici le schema general :
+
+```
+  [1] DONNEES D'ENTREE           [2] BASELINE              [3] OPTIMISEUR
+  (ce qu'on observe)             (ce qui se passe           (ce qu'on pourrait
+                                  sans pilotage)             faire de mieux)
+
+  Production PV ─────────┐
+  Temperature    ─────────┤
+  Prix Belpex    ─────────┼──► Simulation baseline ──► Simulation optimisee
+  Conso residuelle ───────┤    (thermostat ou          (MILP, LP, QP, Smart)
+  Tirages ECS    ─────────┘     suivi PV)
+                                    │                        │
+                                    ▼                        ▼
+                              Facture "avant"          Facture "apres"
+                                    │                        │
+                                    └──── GAIN = difference ─┘
+```
+
+**Le gain affiche dans l'app est toujours : baseline moins optimise.** Changer
+la baseline change donc directement les economies affichees.
+
+---
+
+## Etape 1 : les donnees d'entree
+
+### Ce qui change entre synthetique et reel
+
+Quand vous basculez la source PV, voici ce qui se passe concretement :
+
+| Donnee | Mode synthetique | Mode reel (Wallonie 2024) |
+|--------|------------------|---------------------------|
+| **Production PV** | Courbe en cloche mathematique | Mesures reelles 15-min |
+| **Prix Belpex** | Fichier `belpex_2025.csv` | Fichier `belpex_2024.csv` |
+| **Temperature** | Open-Meteo 2025 | Open-Meteo 2024 |
+| **Conso residuelle** | Synthetique (~0.3-0.6 kW) | Synthetique (~0.3-0.6 kW) |
+| **Tirages ECS** | Aleatoires | Aleatoires |
+| **Periode** | 2025 (libre) | 2024 (contraint) |
+
+**Point cle** : la consommation residuelle et les tirages ECS sont **toujours
+synthetiques**, quel que soit le mode. Seuls le PV, les prix, les temperatures
+et le CO2 changent.
+
+### Exemple chiffre : une journee du 15 juillet
+
+Prenons une installation de 60 kW PAC, 33 kWc PV, ballon de 36 000 L.
+
+**En mode synthetique** (15 juillet 2025) :
+
+| Heure | PV (kWh/qt) | T ext (C) | Belpex (EUR/MWh) |
+|-------|-------------|-----------|-------------------|
+| 06:00 | 0.2 | 16.5 | 45 |
+| 09:00 | 4.8 | 19.2 | 62 |
+| 12:00 | 6.6 | 22.1 | 38 |
+| 15:00 | 5.1 | 23.4 | 25 |
+| 18:00 | 1.9 | 21.8 | 89 |
+| 21:00 | 0.0 | 19.1 | 72 |
+
+La courbe PV est une cloche reguliere — elle monte, culmine, redescend.
+
+**En mode reel** (15 juillet 2024) :
+
+| Heure | PV (kWh/qt) | T ext (C) | Belpex (EUR/MWh) |
+|-------|-------------|-----------|-------------------|
+| 06:00 | 0.1 | 15.8 | 52 |
+| 09:00 | 5.2 | 18.6 | 71 |
+| 12:00 | 3.1 | 20.4 | 44 |
+| 15:00 | 6.8 | 22.1 | 18 |
+| 18:00 | 0.8 | 20.9 | 95 |
+| 21:00 | 0.0 | 18.3 | 68 |
+
+Notez la difference a 12h : en reel, un passage nuageux fait chuter le PV a
+3.1 kWh au lieu de 6.6. Puis le soleil revient plus fort a 15h (6.8 kWh).
+L'optimiseur doit s'adapter a ce profil irregulier.
+
+---
+
+## Etape 2 : la baseline — votre scenario de reference
+
+### Pourquoi la baseline est importante
+
+L'app affiche toujours un **gain** (en EUR et en %). Ce gain, c'est :
+
+> Gain = Facture baseline - Facture optimisee
+
+Si la baseline est "facile a battre" (thermostat aveugle), le gain sera
+important. Si la baseline est deja assez intelligente (suivi PV avance), le
+gain sera plus modeste mais plus realiste.
+
+**Choisir la bonne baseline, c'est poser la bonne question** :
+
+- Thermostat pur → "Combien gagnerait-on en ajoutant un EMS a une installation
+  classique ?"
+- Suivi PV a 35% → "Combien gagnerait-on en remplacant notre pilotage actuel
+  par un EMS ?"
+
+### Mode thermostat (par defaut)
+
+Le thermostat ne connait qu'une regle :
+
+- Si T~ballon~ < T~min~ → PAC ON
+- Si T~ballon~ >= T~consigne~ → PAC OFF
+- Entre les deux → maintient l'etat precedent (hysteresis)
+
+Il ne sait rien du PV, rien des prix, rien du COP. Quand le ballon refroidit
+sous 45 C, la PAC demarre — meme si c'est 18h et que le prix Belpex est a
+200 EUR/MWh.
+
+### Mode suivi PV (avec slider d'autoconsommation)
+
+Quand vous cochez "Suivi PV existant" et reglez le slider a, disons, 35%,
+l'app construit une baseline qui **imite** un systeme de suivi PV existant
+atteignant 35% d'autoconsommation.
+
+Le parametre interne `alpha` (0 a 1) controle l'intensite du suivi :
+
+- **alpha = 0** : thermostat pur, aucune conscience du PV
+- **alpha = 0.5** : la PAC s'allume partiellement quand il y a du surplus PV
+- **alpha = 1** : la PAC suit le surplus PV au maximum de ses capacites
+
+Le mapping entre le % d'autoconsommation et alpha est **automatique** :
+l'app lance deux simulations (alpha=0 et alpha=1) pour mesurer les bornes,
+puis interpole.
+
+---
+
+## Etape 3 : le film d'une journee — exemple complet
+
+Prenons le 15 juillet en mode reel, avec notre installation de 60 kW PAC,
+33 kWc PV, ballon de 36 000 L, contrat dynamique.
+
+### Les acteurs
+
+- **Consommation residuelle** : ~0.4 kW constants (frigos, VMC, veilles)
+  → 0.1 kWh par quart d'heure
+- **Tirages ECS** : 2 douches le matin (7h-8h), vaisselle a midi, 3 douches
+  le soir (19h-20h30)
+- **PV** : profil reel (voir tableau ci-dessus)
+- **PAC** : 60 kW electrique, COP ~4.2 (il fait 20 C dehors)
+
+### Scenario 1 : Thermostat pur (baseline alpha = 0)
+
+```
+06:00  T_ballon = 50.0 C  PV = 0.1 kWh  PAC OFF
+       Le ballon est a la consigne. Tout va bien.
+
+07:15  T_ballon = 47.2 C  PV = 1.2 kWh  PAC OFF
+       Premiere douche ! Le ballon perd 2.8 C. Encore au-dessus de T_min (45 C).
+
+07:45  T_ballon = 44.8 C  PV = 2.1 kWh  PAC ON !
+       Deuxieme douche. T_ballon passe sous T_min → le thermostat allume la PAC.
+       La PAC consomme 15 kWh_e (60 kW x 0.25h). Le PV fournit 2.1 kWh.
+       Soutirage reseau = 15 - 2.1 + 0.1 = 13.0 kWh
+       Prix Belpex a 07:45 = 68 EUR/MWh → cout = 13.0 x 0.083 = 1.08 EUR
+
+08:30  T_ballon = 49.8 C  PV = 3.8 kWh  PAC ON (hysteresis)
+       La PAC continue (n'a pas encore atteint T_consigne = 50 C).
+
+08:45  T_ballon = 50.2 C  PV = 4.1 kWh  PAC OFF
+       T_consigne atteinte. La PAC s'arrete.
+       Le PV produit 4.1 kWh mais la conso n'est que 0.1 kWh.
+       Injection = 4.1 - 0.1 = 4.0 kWh (presque tout est perdu sur le reseau)
+
+12:00  T_ballon = 48.5 C  PV = 3.1 kWh  PAC OFF
+       Passage nuageux. Le ballon refroidit doucement par pertes thermiques.
+       Le PV est bas mais la PAC ne tourne pas → injection = 3.0 kWh
+
+15:00  T_ballon = 46.8 C  PV = 6.8 kWh  PAC OFF
+       Le soleil revient en force ! 6.8 kWh de PV... mais la PAC ne tourne
+       pas (T_ballon > T_min). Injection massive = 6.7 kWh
+       C'est du gachis : on injecte a 18 EUR/MWh au lieu de stocker.
+
+18:30  T_ballon = 44.6 C  PV = 0.3 kWh  PAC ON !
+       Les douches du soir. T_ballon < T_min → PAC ON.
+       Pas de PV. Belpex a 95 EUR/MWh (pointe du soir).
+       Soutirage = 15.0 kWh au prix fort → cout = 15.0 x 0.110 = 1.65 EUR
+```
+
+**Bilan journee** : facture PAC ~8.5 EUR, autoconsommation PV ~22%
+
+Le thermostat a rate deux opportunites :
+
+1. A 15h, il y avait 6.8 kWh de surplus PV gratuit, mais la PAC ne tournait pas
+2. A 18h30, il a du acheter au prix fort car le ballon etait froid
+
+### Scenario 2 : Suivi PV a 35% (baseline alpha ~ 0.4)
+
+Meme journee, mais la baseline suit partiellement le surplus PV :
+
+```
+07:45  T_ballon = 44.8 C  PV = 2.1 kWh  PAC ON
+       Identique au thermostat (T < T_min → securite, pas de choix).
+
+08:45  T_ballon = 50.2 C  PV = 4.1 kWh  PAC partielle (alpha x surplus)
+       T_consigne atteinte mais surplus PV = 4.0 kWh. Le suivi PV active
+       la PAC a ~40% de sa puissance → absorbe 2.4 kWh de surplus.
+       Injection reduite : 4.0 - 2.4 = 1.6 kWh
+
+15:00  T_ballon = 49.1 C  PV = 6.8 kWh  PAC partielle
+       Gros surplus. Le suivi PV active la PAC → absorbe ~4 kWh.
+       Injection : 6.8 - 4.0 - 0.1 = 2.7 kWh (au lieu de 6.7)
+
+18:30  T_ballon = 47.2 C  PV = 0.3 kWh  PAC OFF
+       Grace au pre-chauffage a 15h, le ballon est plus chaud (47.2 C au
+       lieu de 44.6 C). Pas besoin d'allumer maintenant !
+
+19:30  T_ballon = 44.9 C  PAC ON
+       Les douches finissent par faire chuter le ballon sous T_min.
+       Mais on a gagne 1 heure : le prix Belpex est redescendu a 72 EUR/MWh.
+```
+
+**Bilan journee** : facture PAC ~6.8 EUR, autoconsommation PV ~35%
+
+Le suivi PV a permis d'absorber une partie du surplus a 15h et de retarder
+l'achat du soir. Mais il ne planifie pas : il reagit au surplus instantane
+sans tenir compte des prix futurs.
+
+### Scenario 3 : Optimiseur LP
+
+L'optimiseur connait les prix Belpex de toute la journee a l'avance et
+planifie le profil de charge optimal :
+
+```
+07:45  T_ballon = 44.8 C  PV = 2.1 kWh  PAC ON (partielle, 40%)
+       L'optimiseur sait que le gros surplus arrive a 15h. Il chauffe juste
+       assez pour tenir (pas jusqu'a T_consigne, juste au-dessus de T_min).
+       Conso PAC = 6 kWh. Soutirage = 6 - 2.1 + 0.1 = 4.0 kWh
+       A 68 EUR/MWh → cout = 0.33 EUR (au lieu de 1.08 EUR)
+
+12:00  T_ballon = 46.1 C  PV = 3.1 kWh  PAC ON (50%)
+       Passage nuageux, mais le prix est bas (44 EUR/MWh) et il y a un peu
+       de surplus. L'optimiseur en profite pour pre-chauffer un peu.
+
+15:00  T_ballon = 47.8 C  PV = 6.8 kWh  PAC ON (100%)
+       Le prix est au plus bas (18 EUR/MWh) et le surplus PV est maximal.
+       L'optimiseur chauffe a plein regime : 15 kWh de conso PAC.
+       Tout couvert par le PV (6.8 kWh) + achat de 8.1 kWh a 18 EUR/MWh.
+       Cout = 8.1 x 0.033 = 0.27 EUR
+
+15:15  T_ballon = 52.4 C  PV = 6.5 kWh  PAC ON (100%)
+       Continue de stocker la chaleur. Le ballon monte vers T_max.
+
+16:00  T_ballon = 54.8 C  PAC OFF
+       Le ballon est charge a bloc. Le surplus PV restant est injecte.
+
+18:30  T_ballon = 51.2 C  PV = 0.3 kWh  PAC OFF
+       Grace au stockage massif a 15h, le ballon est encore a 51.2 C malgre
+       les douches du soir. Pas besoin d'acheter au prix fort !
+
+21:00  T_ballon = 46.5 C  PAC OFF
+       Le ballon a absorbe toutes les douches. Fin de journee confortable.
+```
+
+**Bilan journee** : facture PAC ~4.2 EUR, autoconsommation PV ~68%
+
+L'optimiseur a fait trois choses que ni le thermostat ni le suivi PV ne
+peuvent faire :
+
+1. **Chauffage minimal a 7h45** (juste ce qu'il faut, pas jusqu'a T_consigne)
+2. **Stockage massif a 15h** (PV gratuit + prix Belpex au plancher)
+3. **Zero achat en soiree** (vit sur la reserve thermique du ballon)
+
+### Comparaison des trois scenarios
+
+| | Thermostat | Suivi PV 35% | Optimiseur LP |
+|---|---|---|---|
+| Facture PAC (journee) | 8.50 EUR | 6.80 EUR | 4.20 EUR |
+| Autoconsommation PV | 22% | 35% | 68% |
+| Injection reseau | 42 kWh | 28 kWh | 12 kWh |
+| Soutirage pointe (18-21h) | 45 kWh | 30 kWh | 0 kWh |
+
+**Si votre baseline est le thermostat** :
+Gain affiche = 8.50 - 4.20 = **4.30 EUR/jour (51%)**
+
+**Si votre baseline est le suivi PV a 35%** :
+Gain affiche = 6.80 - 4.20 = **2.60 EUR/jour (38%)**
+
+Meme optimiseur, meme resultat final — mais le gain affiche depend de
+**contre quoi on compare**. C'est pour ca que le choix de la baseline
+est important : il doit refleter votre situation reelle actuelle.
+
+---
+
+## Le slider d'autoconsommation en detail
+
+### Ce qu'il controle (et ce qu'il ne controle pas)
+
+Le slider controle **uniquement la baseline** — c'est-a-dire le scenario de
+reference "avant optimisation". Il ne change rien a l'optimiseur.
+
+Ce que le slider modifie :
+
+- Le parametre `alpha` de la baseline (intensite du suivi PV)
+- Donc le profil ON/OFF de la PAC dans la baseline
+- Donc le cout de la baseline
+- Donc le gain affiche
+
+Ce que le slider **ne modifie pas** :
+
+- La consommation residuelle (toujours fixe, ~0.4 kW)
+- Le comportement de l'optimiseur (il fait toujours son mieux)
+- La facture optimisee (elle reste la meme)
+
+### Comment les bornes sont calculees
+
+Quand vous changez les parametres (PV, PAC, ballon), l'app calcule
+automatiquement les bornes du slider :
+
+1. Simule la baseline avec `alpha = 0` (thermostat pur) → mesure l'AC%
+   resultante → c'est la **borne basse** (ex: 22%)
+2. Simule la baseline avec `alpha = 1` (suivi PV maximal) → mesure l'AC%
+   resultante → c'est la **borne haute** (ex: 68%)
+3. Le slider est contraint entre ces deux bornes
+
+**Pourquoi les bornes changent ?**
+
+Parce que l'autoconsommation possible depend physiquement de votre
+installation :
+
+| Changement | Effet sur les bornes |
+|---|---|
+| Augmenter le PV | Borne basse et haute baissent (plus de surplus a absorber) |
+| Augmenter la PAC | Borne basse et haute montent (plus de capacite d'absorption) |
+| Augmenter le ballon | Borne haute monte (plus de stockage thermique) |
+| Augmenter la tolerance | Borne haute monte (plus de plage de temperature = plus de stockage) |
+
+### Exemple : impact du dimensionnement sur les bornes
+
+Installation de base : 60 kW PAC, 33 kWc PV, ballon 36 000 L, tolerance 5 C.
+
+| Configuration | AC min (alpha=0) | AC max (alpha=1) | Plage du slider |
+|---|---|---|---|
+| Config de base | 22% | 68% | 22% — 68% |
+| PV double (66 kWc) | 12% | 45% | 12% — 45% |
+| PV moitie (16 kWc) | 45% | 85% | 45% — 85% |
+| Ballon petit (5 000 L) | 18% | 38% | 18% — 38% |
+| Tolerance large (10 C) | 22% | 75% | 22% — 75% |
+
+Avec un PV surdimensionne (66 kWc), meme le suivi PV maximal ne depasse pas
+45% d'autoconsommation : il y a structurellement trop de surplus pour que la
+PAC et le ballon puissent tout absorber.
+
+A l'inverse, avec un petit PV (16 kWc), meme le thermostat pur atteint 45% :
+la production PV est presque entierement absorbee par la consommation de base.
+
+### Ce que mesure l'autoconsommation
+
+L'autoconsommation porte sur **toute l'installation**, pas uniquement la PAC :
+
+> AC (%) = (PV produit - PV injecte) / PV produit x 100
+
+A chaque quart d'heure :
+
+```
+PV = 6.0 kWh
+Consommation residuelle = 0.1 kWh  (frigos, VMC — fixe)
+Consommation PAC = 15.0 kWh         (si la PAC tourne)
+─────────────────────────────────
+Consommation totale = 15.1 kWh
+Surplus = 6.0 - 15.1 = -9.1 kWh    (negatif = besoin reseau)
+Soutirage = 9.1 kWh
+Injection = 0 kWh
+→ Autoconsommation = 100% du PV utilise sur place
+```
+
+Autre quart d'heure, PAC eteinte :
+
+```
+PV = 6.0 kWh
+Consommation residuelle = 0.1 kWh
+Consommation PAC = 0.0 kWh
+─────────────────────────────────
+Consommation totale = 0.1 kWh
+Surplus = 6.0 - 0.1 = 5.9 kWh      (positif = surplus)
+Soutirage = 0 kWh
+Injection = 5.9 kWh
+→ Seul 0.1/6.0 = 1.7% du PV est autoconsomme
+```
+
+La consommation residuelle contribue a l'autoconsommation (les 0.1 kWh sont
+toujours couverts par le PV quand il produit), mais c'est un montant fixe et
+faible. **La PAC est le gros levier** : quand elle tourne pendant le surplus
+PV, elle absorbe 15 kWh d'un coup.
+
+C'est pour ca que l'optimiseur peut faire passer l'autoconsommation de 22% a
+68% en changeant uniquement le **moment** ou la PAC tourne — sans toucher a
+rien d'autre.
+
+---
+
+## Donnees reelles vs synthetiques : quel impact sur les resultats ?
+
+### Pourquoi les resultats different
+
+En passant du mode synthetique au mode reel, vous changez simultanement :
+
+1. Le **profil PV** (plus irregulier)
+2. Les **prix Belpex** (2024 au lieu de 2025)
+3. Les **temperatures** (2024 au lieu de 2025)
+
+Ces trois changements affectent le resultat final de maniere croisee.
+
+### Exemple compare sur juillet
+
+| Indicateur | Synthetique (juil. 2025) | Reel (juil. 2024) |
+|---|---|---|
+| Production PV totale | 4 200 kWh | 3 850 kWh |
+| Prix Belpex moyen | 72 EUR/MWh | 65 EUR/MWh |
+| Temperature moyenne | 21.3 C | 20.1 C |
+| COP moyen | 4.3 | 4.1 |
+| Facture baseline | 285 EUR | 268 EUR |
+| Facture optimisee | 142 EUR | 138 EUR |
+| **Gain** | **143 EUR (50%)** | **130 EUR (49%)** |
+
+Les montants absolus changent (annees differentes, prix differents), mais le
+**pourcentage de gain** reste similaire. C'est normal : l'optimiseur exploite
+les memes mecanismes (decalage vers le surplus PV et les prix bas) quelle que
+soit la source.
+
+### Quand preferer les donnees reelles ?
+
+- **Pour valider l'optimiseur** : le profil reel est plus exigeant (variabilite
+  intra-journaliere, passages nuageux). Si l'optimiseur performe bien en reel,
+  il performera bien en vrai.
+- **Pour estimer des gains annuels** : les donnees reelles couvrent une annee
+  complete (2024). Vous pouvez simuler janvier a decembre et obtenir un
+  chiffre annuel base sur des mesures, pas sur un modele.
+- **Pour comparer avec vos factures** : si vous avez les factures 2024 de
+  l'installation, les donnees reelles permettent une comparaison directe.
+
+### Quand preferer les donnees synthetiques ?
+
+- **Pour explorer des scenarios** : changer la taille du PV, du ballon, de la
+  PAC — le mode synthetique permet de simuler n'importe quelle configuration
+  sur n'importe quelle periode.
+- **Pour des periodes futures** : le mode synthetique utilise les prix 2025
+  reels, plus proches de ce que vous paierez demain.
+- **Pour la pedagogie** : les courbes lisses du mode synthetique sont plus
+  faciles a interpreter visuellement.
+
+---
+
+## Resume en 5 points
+
+1. **Les donnees** determinent les entrees de la simulation (PV, prix,
+   temperature). Changer de source change les chiffres absolus mais pas la
+   logique.
+
+2. **La baseline** est le scenario "sans pilotage intelligent". Le thermostat
+   pur est la reference la plus courante. Le suivi PV est utile si votre
+   installation a deja un pilotage basique.
+
+3. **Le slider d'autoconsommation** regle uniquement l'intensite du suivi PV
+   dans la baseline. Il ne touche ni a l'optimiseur ni a la consommation
+   residuelle.
+
+4. **L'autoconsommation** mesure la part du PV consomme sur place (PAC +
+   residuel). La PAC est le levier principal car c'est la seule charge
+   pilotable. La consommation residuelle (~0.1 kWh/qt) contribue mais est
+   fixe.
+
+5. **Le gain affiche** = facture baseline - facture optimisee. Changer la
+   baseline (thermostat → suivi PV 35%) reduit le gain affiche, mais la
+   facture optimisee reste la meme. C'est normal : le gain est plus modeste
+   car on part d'une meilleure situation de reference.

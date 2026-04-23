@@ -387,6 +387,61 @@ Si vous importez vos propres donnees CSV, indiquez egalement le **kWc de referen
 de votre installation pour que l'app puisse correctement rescaler la production si
 vous changez la taille du PV.
 
+### Source PV : synthetique ou donnees reelles
+
+L'app propose deux sources de production solaire :
+
+- **Synthetique** (par defaut) : un profil en cloche mathematique, modifie par
+  la meteo. Pratique pour explorer des scenarios, mais c'est un modele simplifie.
+- **Reel (Wallonie 2024)** : des mesures reelles d'une installation photovoltaique
+  de 16 kWc situee en Wallonie, enregistrees toutes les 15 minutes pendant toute
+  l'annee 2024.
+
+#### Pourquoi utiliser les donnees reelles ?
+
+Les donnees synthetiques produisent des courbes "lisses" — une belle cloche
+chaque jour. En realite, la production PV est bien plus irreguliere : passages
+nuageux, matinees brumeuses, orages d'ete. Ces variations ont un impact reel sur
+les performances de l'optimiseur.
+
+Avec les donnees reelles, vous voyez comment l'optimiseur se comporte face a un
+profil PV **tel qu'il se produit vraiment** en Belgique : journees de canicule
+avec 13 kWh de production, mais aussi journees grises de novembre avec presque
+rien.
+
+#### Comment fonctionne la mise a l'echelle ?
+
+L'installation de reference a une puissance de 16 kWc. Si vous configurez une
+autre puissance dans l'app, la production est mise a l'echelle lineairement :
+
+> Production ajustee = Production mesuree x (votre kWc / 16 kWc)
+
+**Exemple** : vous configurez 10 kWc. A un instant ou l'installation de
+reference produit 8 kWh, votre simulation verra 8 x (10 / 16) = **5 kWh**.
+
+C'est une approximation : deux installations de tailles differentes n'ont pas
+forcement la meme orientation, le meme ombrage, ni les memes onduleurs. Mais
+pour un POC, cette approximation est largement suffisante — l'important est
+d'avoir un **profil temporel realiste**, pas une valeur absolue parfaite.
+
+#### Coherence des donnees : pourquoi tout bascule en 2024 ?
+
+Les donnees reelles PV couvrent l'annee 2024. Si on les combinait avec des prix
+Belpex ou des temperatures de 2025, la simulation melangerait des series
+temporelles qui ne correspondent pas (un apres-midi ensoleille de juin 2024 avec
+un prix Belpex d'un lundi pluvieux de juin 2025).
+
+Pour eviter ca, quand vous selectionnez "Reel (Wallonie 2024)", l'app bascule
+**automatiquement** toutes les series sur 2024 :
+
+- Prix Belpex : fichier `belpex_historical_2024.csv`
+- Temperatures : fichier `openmeteo_temp_2024.csv`
+- Intensite CO2 : fichier `co2_historical_2024.csv`
+- Periode : le calendrier est contraint a 2024
+
+Vous n'avez rien a faire — le basculement est transparent. Quand vous repassez
+en mode synthetique, tout revient en 2025.
+
 ### L'autoconsommation : le nerf de la guerre
 
 L'electricite la moins chere est celle que vous **ne soutirez pas** du reseau. Quand
@@ -401,6 +456,67 @@ directement :
 Sans pilotage, une installation typique autoconsomme 20-30 % de son PV. Avec
 l'optimisation PAC, on peut monter a **60-80 %** : l'optimiseur chauffe le ballon
 quand le soleil brille, stockant ainsi l'energie solaire sous forme de chaleur.
+
+### Ce que mesure l'autoconsommation — et sur quoi l'optimiseur agit
+
+Un point essentiel : l'autoconsommation porte sur **toute** l'installation, pas
+uniquement la PAC. Votre site consomme de l'electricite pour deux choses :
+
+1. **La consommation residuelle** (eclairage, frigos, electromenager, VMC, etc.)
+   — elle est fixe, on n'y touche pas.
+2. **La PAC** — c'est le seul levier que l'optimiseur controle.
+
+Le bilan electrique a chaque quart d'heure est simple :
+
+```
+Consommation totale = consommation residuelle + consommation PAC
+Surplus PV           = production PV - consommation totale
+Soutirage reseau     = surplus negatif (on achete)
+Injection reseau     = surplus positif (on revend)
+```
+
+L'autoconsommation, c'est la part du PV qui n'est **pas** injectee :
+
+> AC (%) = (PV produit - PV injecte) / PV produit x 100
+
+**Pourquoi la consommation residuelle compte ?**
+
+Imaginez une journee ensoleillee. Vos panneaux produisent 5 kW. Votre maison
+consomme en permanence 0,5 kW (frigo, VMC, veille). Ces 0,5 kW sont
+automatiquement couverts par le PV — c'est de l'autoconsommation "gratuite" qui
+se fait sans aucun pilotage. Il reste 4,5 kW de surplus disponible.
+
+C'est sur ce surplus que l'optimiseur intervient : il decide de faire tourner la
+PAC **maintenant** (pour absorber le surplus dans le ballon) ou **plus tard**
+(si le prix sera plus bas cette nuit, par exemple).
+
+**Ce qui ne change pas entre les scenarios** :
+
+La consommation residuelle est **identique** dans la baseline et dans le
+scenario optimise. Seul le profil de fonctionnement de la PAC change. Donc
+toutes les economies affichees (EUR, CO2, %) mesurent exclusivement l'impact
+du **pilotage intelligent de la PAC**.
+
+### Autoconsommation et donnees reelles : quelles differences ?
+
+Quand vous utilisez les donnees reelles (Wallonie 2024), le profil PV est plus
+"bruite" que le synthetique : il y a des creux intra-journaliers (passages
+nuageux), des matinees ou la production demarre lentement, des apres-midi
+coupes net par un orage.
+
+Consequences sur l'autoconsommation :
+
+- Les **bornes du slider** (autoconsommation min/max) sont recalculees a partir
+  du profil reel. Elles peuvent etre differentes du mode synthetique.
+- L'optimiseur doit composer avec des **surplus PV moins previsibles**. En mode
+  synthetique, le surplus est une belle cloche reguliere. En mode reel, il est
+  plus erratique — ce qui peut revealer des strategies d'optimisation differentes.
+- Le COP varie lui aussi avec les temperatures reelles de 2024 (pas un profil
+  sinusoidal lisse). Les jours de grand froid, le COP chute et l'optimiseur
+  doit adapter sa strategie.
+
+En resume : les donnees reelles donnent une vision plus fidele de ce que
+l'optimiseur peut accomplir sur votre installation.
 
 ---
 
@@ -687,20 +803,42 @@ installation reelle differe du dimensionnement theorique.
 
 ---
 
-## Les donnees d'entree : Demo vs CSV
+## Les donnees d'entree : trois modes
 
-### Mode Demo
+### Mode Demo — PV synthetique
 
 L'app genere des donnees synthetiques mais realistes :
 
 - **Production PV** : profil en cloche (lever → midi → coucher), avec variabilite
   meteorologique
-- **Temperature exterieure** : profil sinusoidal journalier, avec moyennes
-  saisonnieres
+- **Temperature exterieure** : donnees reelles Open-Meteo (Profondeville) si
+  disponibles, sinon profil sinusoidal synthetique
 - **Prix Belpex** : **prix reels** charges depuis les fichiers CSV locaux
   (2024-2025) ou l'API ENTSO-E
 - **Consommation hors PAC** : profil domestique ou tertiaire, avec base et pointes
 - **ECS** : tirages aleatoires (douches matin/soir, usages ponctuels)
+
+### Mode Demo — PV reel (Wallonie 2024)
+
+Identique au mode synthetique, sauf que la **production PV** provient de mesures
+reelles d'une installation en Wallonie (16 kWc, 2024), mises a l'echelle selon
+votre configuration kWc. Les prix Belpex, temperatures et intensite CO2 sont
+automatiquement charges depuis les fichiers 2024 pour garantir la coherence
+temporelle.
+
+Ce que cela change concretement :
+
+| | PV synthetique | PV reel (Wallonie 2024) |
+|---|---|---|
+| Profil PV | Cloche lisse, variabilite simulee | Mesures 15-min, nuages reels |
+| Annee | 2025 (par defaut) | 2024 (automatique) |
+| Prix Belpex | Reels 2025 | Reels 2024 |
+| Temperatures | Reelles ou synthetiques 2025 | Reelles 2024 |
+| CO2 | 2025 | 2024 |
+| Consommation residuelle | Synthetique (identique) | Synthetique (identique) |
+
+La consommation residuelle et les tirages ECS restent synthetiques dans les
+deux cas — seule la courbe PV change de source.
 
 ### Mode CSV
 

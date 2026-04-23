@@ -1,6 +1,7 @@
 #' Documentation UI Module
 #'
-#' Displays package vignettes as embedded HTML within the app.
+#' Displays all package vignettes as embedded HTML within the app.
+#' Automatically discovers vignettes from the package.
 #' Loads MathJax (LaTeX rendering) and Mermaid.js (diagrams) for rich content.
 #'
 #' @param id module id
@@ -26,29 +27,14 @@ mod_documentation_ui <- function(id) {
         });"
       ))
     ),
-    bslib::navset_pill(
-      bslib::nav_panel(
-        title = "Guide des reglages",
-        icon = shiny::icon("sliders"),
-        shiny::uiOutput(ns("vignette_installation"))
-      ),
-      bslib::nav_panel(
-        title = "Optimizers",
-        icon = shiny::icon("brain"),
-        shiny::uiOutput(ns("vignette_optimizers"))
-      ),
-      bslib::nav_panel(
-        title = "Hypotheses",
-        icon = shiny::icon("flask"),
-        shiny::uiOutput(ns("vignette_hypotheses"))
-      )
-    )
+    shiny::uiOutput(ns("vignette_tabs"))
   )
 }
 
 #' Documentation Server Module
 #'
-#' Renders package vignettes to HTML fragments and displays them.
+#' Renders all package vignettes to HTML fragments and displays them.
+#' Automatically discovers vignettes at runtime.
 #' Uses pre-built vignettes from inst/doc/ (built at install time),
 #' falling back to rendering from source in dev mode.
 #' Triggers MathJax and Mermaid re-rendering after content insertion.
@@ -57,6 +43,15 @@ mod_documentation_ui <- function(id) {
 #' @noRd
 mod_documentation_server <- function(id) {
   moduleServer(id, function(input, output, session) {
+    ns <- session$ns
+
+    # Icon mapping for known vignettes (fallback: book icon)
+    vignette_icons <- list(
+      "comprendre-votre-installation" = "sliders",
+      "comprendre-les-optimizers" = "brain",
+      "donnees-baseline-autoconsommation" = "chart-line",
+      "hypotheses-et-perimetre" = "flask"
+    )
 
     render_vignette <- function(vignette_name) {
       # Try pre-built HTML from installed package first
@@ -113,16 +108,63 @@ mod_documentation_server <- function(id) {
       )
     }
 
-    output$vignette_installation <- shiny::renderUI({
-      render_vignette("comprendre-votre-installation")
+    # Extract title from Rmd YAML front matter
+    extract_vignette_title <- function(rmd_path) {
+      lines <- readLines(rmd_path, n = 20, warn = FALSE)
+      title_line <- grep("^title:", lines, value = TRUE)
+      if (length(title_line) > 0) {
+        title <- sub("^title:\\s*[\"']?(.+?)[\"']?\\s*$", "\\1", title_line[1])
+        return(title)
+      }
+      # Fallback: humanize filename
+      name <- tools::file_path_sans_ext(basename(rmd_path))
+      gsub("-", " ", name)
+    }
+
+    # Discover all vignettes
+    discover_vignettes <- function() {
+      # Try installed package first
+      rmd_files <- list.files(
+        system.file("vignettes", package = "wisepocpac"),
+        pattern = "\\.Rmd$", full.names = TRUE
+      )
+      # Fallback: dev mode, look in project root
+      if (length(rmd_files) == 0) {
+        rmd_files <- list.files("vignettes", pattern = "\\.Rmd$", full.names = TRUE)
+      }
+
+      vignettes <- lapply(rmd_files, function(f) {
+        name <- tools::file_path_sans_ext(basename(f))
+        title <- extract_vignette_title(f)
+        icon <- vignette_icons[[name]] %||% "book"
+        list(name = name, title = title, icon = icon)
+      })
+
+      vignettes
+    }
+
+    output$vignette_tabs <- shiny::renderUI({
+      vignettes <- discover_vignettes()
+      if (length(vignettes) == 0) {
+        return(shiny::tags$p("Aucune vignette disponible."))
+      }
+
+      # Create nav_panel for each vignette
+      panels <- lapply(vignettes, function(v) {
+        output_id <- paste0("vignette_", gsub("-", "_", v$name))
+        output[[output_id]] <- shiny::renderUI({
+          render_vignette(v$name)
+        })
+        bslib::nav_panel(
+          title = v$title,
+          icon = shiny::icon(v$icon),
+          shiny::uiOutput(ns(output_id))
+        )
+      })
+
+      do.call(bslib::navset_pill, panels)
     })
 
-    output$vignette_optimizers <- shiny::renderUI({
-      render_vignette("comprendre-les-optimizers")
-    })
-
-    output$vignette_hypotheses <- shiny::renderUI({
-      render_vignette("hypotheses-et-perimetre")
-    })
+    shiny::outputOptions(output, "vignette_tabs", suspendWhenHidden = FALSE)
   })
 }

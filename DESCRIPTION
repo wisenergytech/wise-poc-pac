@@ -22,6 +22,7 @@ Imports:
     tidyr,
     ompr,
     ompr.roi,
+    readxl,
     ROI.plugin.glpk,
     golem,
     R6,

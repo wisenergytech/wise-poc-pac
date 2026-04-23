@@ -72,16 +72,24 @@ mod_status_bar_server <- function(id, sidebar) {
 
       date_range <- sidebar$date_range()
 
+      pv_src <- tryCatch(sidebar$pv_data_source(), error = function(e) "synthetic")
+      pv_src_label <- if (!is.null(pv_src) && pv_src == "real_delaunoy") {
+        pv_factor <- if (p$pv_kwc > 0) sprintf("%.2f", p$pv_kwc / 16) else "0"
+        sprintf("R\u00e9el Wallonie \u00d7%s", pv_factor)
+      } else {
+        "Synth\u00e9tique"
+      }
+
       shiny::tags$div(id = "status_bar",
         line_tag("RUN ", as.character(header)),
         line_tag("DIM ", sprintf("PV=<b>%s kWc</b> (ref=%s) &middot; PAC=<b>%s kW</b> COP=%s &middot; Ballon=<b>%s L</b> [%s..%s]&deg;C consigne=%s",
           p$pv_kwc, p$pv_kwc_ref, p$p_pac_kw, p$cop_nominal, p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne)),
-        line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; TOU=<b>%s</b> &middot; Curtail=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; Source=<b>%s</b> &middot; <b>%s</b> &rarr; <b>%s</b>",
+        line_tag("CFG ", sprintf("Contrat=<b>%s</b> &middot; Batterie=<b>%s</b> &middot; TOU=<b>%s</b> &middot; Curtail=<b>%s</b> &middot; Bloc=<b>%s</b> &middot; Slack=<b>%s EUR/C</b> &middot; Baseline=<b>%s</b> &middot; PV: <b>%s</b> &middot; <b>%s</b> &rarr; <b>%s</b>",
           contrat, batt,
           if (isTRUE(sidebar$tou_active())) "on" else "off",
           if (isTRUE(sidebar$curtailment_active())) paste0(sidebar$curtail_kw(), "kW") else "off",
           bloc, if (!is.null(sidebar$slack_penalty())) sidebar$slack_penalty() else "n/a",
-          thermostat, sidebar$data_source(),
+          thermostat, pv_src_label,
           format(date_range[1], "%d/%m/%Y"), format(date_range[2], "%d/%m/%Y")))
       )
     })

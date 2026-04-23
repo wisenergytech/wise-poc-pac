@@ -15,20 +15,14 @@ mod_sidebar_ui <- function(id) {
       shiny::tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:%s;letter-spacing:.1em", cl$accent), shiny::HTML("&#9889; PAC OPTIMIZER")),
       shiny::tags$div(style = sprintf("font-size:.65rem;color:%s;margin-top:2px;letter-spacing:.15em;text-transform:uppercase", cl$text_muted), "Pilotage predictif")),
 
-    # ---- Periode ----
-    shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a simuler. Demo : donnees synthetiques. CSV : vos propres donnees.")),
+    # ---- Data source (hidden baseline_type + CSV) ----
+    shiny::tags$div(style = "display:none;",
       shiny::radioButtons(ns("data_source"), NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::fileInput(ns("csv_file"), NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv")),
-      shiny::conditionalPanel("false",
-        shiny::selectInput(ns("baseline_type"), NULL,
-          choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
-          selected = "parametric")),
-      shiny::dateRangeInput(ns("date_range"), NULL, start = as.Date("2025-07-01"), end = as.Date("2025-08-31"), language = "fr",
-        min = as.Date("2025-01-01"), max = as.Date("2025-12-31")),
-      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-        shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
+      shiny::selectInput(ns("baseline_type"), NULL,
+        choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
+        selected = "parametric")),
 
     # ---- PAC ----
     shiny::tags$div(class = "sidebar-section",
@@ -78,6 +72,12 @@ mod_sidebar_ui <- function(id) {
     # ---- PV ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Dimensionnement PV", tip("Simulez l'impact d'une installation PV plus grande ou plus petite. Les donnees sont mises a l'echelle proportionnellement.")),
+      shiny::radioButtons(ns("pv_data_source"), "Source PV",
+        choices = c("Synth\u00e9tique" = "synthetic", "R\u00e9el (Wallonie 2024)" = "real_delaunoy"),
+        selected = "synthetic", inline = TRUE),
+      shiny::conditionalPanel(sprintf("input['%s']=='real_delaunoy'", ns("pv_data_source")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Donn\u00e9es mesur\u00e9es d'une installation r\u00e9elle en Wallonie (16 kWc, 2024), mises \u00e0 l'\u00e9chelle selon votre kWc."))),
       shiny::checkboxInput(ns("pv_auto"), "PV auto (couvre la PAC)", value = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']", ns("pv_auto")),
         shiny::uiOutput(ns("pv_auto_display"))),
@@ -165,6 +165,14 @@ mod_sidebar_ui <- function(id) {
           shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
             "0 kW = zero injection. 5 kW = limite prosumer typique.")))),
 
+    # ---- Periode ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a simuler. En mode PV reel, la periode est contrainte a 2024.")),
+      shiny::dateRangeInput(ns("date_range"), NULL, start = as.Date("2025-07-01"), end = as.Date("2025-08-31"), language = "fr",
+        min = as.Date("2025-01-01"), max = as.Date("2025-12-31")),
+      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+        shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
+
     # ---- Buttons ----
     shiny::actionButton(ns("run_sim"), "Lancer la simulation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
     shiny::conditionalPanel(sprintf("output['%s']", ns("has_sim_result")),
@@ -202,7 +210,7 @@ mod_sidebar_server <- function(id, sim_state) {
     # circular dependency: ac_bounds -> params_r -> baseline_alpha -> ac_bounds
     ac_bounds <- shiny::reactive({
       df <- raw_data()
-      shiny::req(df)
+      shiny::req(df, nrow(df) > 0)
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
       p_base <- list(
@@ -240,12 +248,28 @@ mod_sidebar_server <- function(id, sim_state) {
       max(0, min(1, alpha))
     })
 
+    # ---- Update date range when PV data source changes ----
+    shiny::observeEvent(input$pv_data_source, {
+      if (input$pv_data_source == "real_delaunoy") {
+        shiny::updateDateRangeInput(session, "date_range",
+          min = as.Date("2024-01-01"), max = as.Date("2024-12-31"),
+          start = as.Date("2024-06-01"), end = as.Date("2024-09-30"))
+      } else {
+        shiny::updateDateRangeInput(session, "date_range",
+          min = as.Date("2025-01-01"), max = as.Date("2025-12-31"),
+          start = as.Date("2025-07-01"), end = as.Date("2025-08-31"))
+      }
+    }, ignoreInit = TRUE)
+
     # ---- Update slider bounds dynamically ----
     shiny::observeEvent(ac_bounds(), {
       bounds <- ac_bounds()
+      if (is.null(bounds) || is.null(bounds$ac_floor) || is.null(bounds$ac_ceiling)) return()
       new_min <- floor(bounds$ac_floor)
       new_max <- ceiling(bounds$ac_ceiling)
+      if (new_max <= new_min) new_max <- new_min + 1
       current <- input$autoconso_cible
+      if (is.null(current)) current <- round((new_min + new_max) / 2)
       new_val <- max(new_min, min(new_max, current))
       shiny::updateSliderInput(session, "autoconso_cible",
         min = new_min, max = new_max, value = new_val)
@@ -357,6 +381,7 @@ mod_sidebar_server <- function(id, sim_state) {
         perte_kwh_par_qt = 0.05,
         pv_kwc = kwc,
         pv_kwc_ref = if (input$data_source == "csv") input$pv_kwc_ref else kwc,
+        pv_data_source = input$pv_data_source,
         batterie_active = input$batterie_active,
         batt_kwh = input$batt_kwh, batt_kw = input$batt_kw,
         batt_rendement = input$batt_rendement / 100,
@@ -378,12 +403,20 @@ mod_sidebar_server <- function(id, sim_state) {
       } else {
         shiny::req(input$date_range)
         gen <- DataGenerator$new()
+        pv_src <- input$pv_data_source
+        delaunoy_path <- "../delaunoy/data/inverters_data_delaunoy.xlsx"
+        if (!is.null(pv_src) && pv_src == "real_delaunoy" && !file.exists(delaunoy_path)) {
+          shiny::showNotification("Fichier Delaunoy introuvable \u2014 donn\u00e9es synth\u00e9tiques utilis\u00e9es", type = "warning", duration = 8)
+          pv_src <- "synthetic"
+        }
         df <- gen$generate_demo(
           date_start = input$date_range[1], date_end = input$date_range[2],
           p_pac_kw = input$p_pac_kw, volume_ballon_l = volume_ballon_eff(),
           pv_kwc = pv_kwc_eff(),
           ecs_kwh_jour = input$ecs_kwh_jour,
-          building_type = if (!is.null(input$building_type)) input$building_type else "standard")
+          building_type = if (!is.null(input$building_type)) input$building_type else "standard",
+          pv_data_source = if (!is.null(pv_src)) pv_src else "synthetic",
+          delaunoy_file_path = if (!is.null(pv_src) && pv_src == "real_delaunoy") delaunoy_path else NULL)
       }
 
       # Inject real Belpex prices (CSV only)
@@ -592,6 +625,7 @@ mod_sidebar_server <- function(id, sim_state) {
       # Expose individual inputs needed by other modules/status bar
       date_range = shiny::reactive(input$date_range),
       data_source = shiny::reactive(input$data_source),
+      pv_data_source = shiny::reactive(input$pv_data_source),
       baseline_type = shiny::reactive(input$baseline_type),
       approche = shiny::reactive(input$approche),
       optim_bloc_h = shiny::reactive(input$optim_bloc_h),

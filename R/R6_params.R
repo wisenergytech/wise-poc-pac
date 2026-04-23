@@ -55,6 +55,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
     # --- PV ---
     pv_kwc = NULL,
     pv_kwc_ref = NULL,
+    pv_data_source = NULL,
 
     # --- Misc (set during prepare_df) ---
     perte_kwh_par_qt = NULL,
@@ -111,7 +112,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
       baseline_mode = "thermostat",
       autoconso_cible = NULL,
       baseline_alpha = NULL,
-      pv_kwc = 33, pv_kwc_ref = 33,
+      pv_kwc = 33, pv_kwc_ref = 33, pv_data_source = "synthetic",
       dt_h = 0.25,
       poids_cout = 0.5,
       horizon_qt = 16,
@@ -161,6 +162,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
       self$baseline_alpha <- baseline_alpha
       self$pv_kwc <- pv_kwc
       self$pv_kwc_ref <- pv_kwc_ref
+      self$pv_data_source <- pv_data_source
       self$perte_kwh_par_qt <- perte_kwh_par_qt
       self$qp_w_comfort <- qp_w_comfort
       self$qp_w_smooth <- qp_w_smooth
@@ -193,6 +195,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
         baseline_alpha = self$baseline_alpha,
         pv_kwc = self$pv_kwc,
         pv_kwc_ref = self$pv_kwc_ref,
+        pv_data_source = self$pv_data_source,
         batterie_active = self$batterie_active,
         batt_kwh = self$batt_kwh,
         batt_kw = self$batt_kw,

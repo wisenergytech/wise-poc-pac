@@ -105,7 +105,7 @@ a nouveau. Deux iterations suffisent en pratique.
 
 ## Donnees d'entree
 
-### Mode demo (donnees synthetiques)
+### Mode demo — PV synthetique
 
 - **Production PV** : profil en cloche base sur la geometrie solaire, module
   par un facteur de couverture nuageuse derive des prix Belpex (quand
@@ -119,6 +119,32 @@ a nouveau. Deux iterations suffisent en pratique.
 - **Tirages ECS** : tirages stochastiques concentres aux heures de pointe
   (matin, midi, soir). Pour les PAC > 10 kW, inclut aussi le chauffage
   ambiance avec un coefficient G dependant du type de batiment.
+
+### Mode demo — PV reel (Wallonie 2024)
+
+La production PV provient de mesures reelles d'une installation de
+**16 kWc en Wallonie**, enregistrees toutes les 15 minutes pendant l'annee
+2024 (~20 600 points). Les donnees sont mises a l'echelle lineairement :
+
+$$PV_{\text{ajuste}} = PV_{\text{mesure}} \times \frac{kWc_{\text{cible}}}{16}$$
+
+**Hypothese de mise a l'echelle** : la mise a l'echelle lineaire suppose que
+l'installation cible a des conditions similaires (orientation, inclinaison,
+ombrage) a l'installation de reference. Les effets non lineaires (saturation
+onduleur, pertes cablage a grande echelle) ne sont pas modelises. Pour un
+POC, cette approximation est conservative et suffisante.
+
+**Coherence temporelle** : quand le PV reel est selectionne, toutes les
+autres series sont automatiquement chargees depuis les fichiers 2024 :
+
+- `belpex_historical_2024.csv` (8 779 enregistrements horaires, annee complete)
+- `openmeteo_temp_2024.csv` (8 785 enregistrements horaires, annee complete)
+- `co2_historical_2024.csv` (2 211 enregistrements horaires, couverture
+  partielle ~25% — les lacunes sont comblees par le profil horaire moyen
+  belge 2024 derive des donnees Elia ODS192)
+
+La consommation hors PAC et les tirages ECS restent synthetiques (identiques
+au mode PV synthetique).
 
 ### Mode CSV (donnees reelles)
 

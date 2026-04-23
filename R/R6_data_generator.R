@@ -23,6 +23,41 @@ DataGenerator <- R6::R6Class("DataGenerator",
       }
     },
 
+    #' @description Load and scale Delaunoy real PV production data.
+    #' @param file_path Path to the Delaunoy Excel file
+    #' @param target_kwc Target PV capacity in kWc
+    #' @param ref_kwc Reference capacity of the Delaunoy installation (default 16)
+    #' @return tibble with columns timestamp, pv_kwh (scaled), or NULL if file not found
+    load_delaunoy = function(file_path, target_kwc, ref_kwc = 16) {
+      if (!file.exists(file_path)) {
+        warning(sprintf("[Delaunoy] Fichier introuvable: %s", file_path))
+        return(NULL)
+      }
+
+      df <- tryCatch(
+        readxl::read_excel(file_path),
+        error = function(e) {
+          warning(sprintf("[Delaunoy] Erreur lecture: %s", e$message))
+          return(NULL)
+        }
+      )
+      if (is.null(df)) return(NULL)
+
+      df <- dplyr::tibble(
+        timestamp = as.POSIXct(df$Timestamp, tz = "Europe/Brussels"),
+        pv_kwh = as.numeric(df$Value)
+      )
+      df$pv_kwh[is.na(df$pv_kwh)] <- 0
+
+      if (target_kwc == 0) {
+        df$pv_kwh <- 0
+      } else {
+        df$pv_kwh <- df$pv_kwh * (target_kwc / ref_kwc)
+      }
+
+      df
+    },
+
     #' @description Generate synthetic demo input data.
     #'   Produces quarter-hourly data with PV production, external temperature,
     #'   electricity prices (from real Belpex data when available), base
@@ -39,7 +74,9 @@ DataGenerator <- R6::R6Class("DataGenerator",
     generate_demo = function(date_start = as.Date("2025-02-01"),
                              date_end = as.Date("2025-07-31"),
                              p_pac_kw = 2, volume_ballon_l = 200, pv_kwc = 6,
-                             ecs_kwh_jour = NULL, building_type = "standard") {
+                             ecs_kwh_jour = NULL, building_type = "standard",
+                             pv_data_source = "synthetic",
+                             delaunoy_file_path = NULL) {
 
       ts_start <- as.POSIXct(paste0(date_start, " 00:00:00"), tz = "Europe/Brussels")
       ts_end   <- as.POSIXct(paste0(as.Date(date_end) + 1, " 00:00:00"), tz = "Europe/Brussels") - 900
@@ -98,9 +135,27 @@ DataGenerator <- R6::R6Class("DataGenerator",
       }
 
       # --- PV production ---
-      env <- 0.5 + 0.5 * sin(2 * pi * (doy - 80) / 365)
-      pv_kw <- pv_kwc * 0.8 * pmax(0, sin(pi * (h - 6) / 14)) * env * couverture
-      pv_kwh <- pv_kw * 0.25
+      if (pv_data_source == "real_delaunoy" && !is.null(delaunoy_file_path)) {
+        delaunoy_df <- self$load_delaunoy(delaunoy_file_path, pv_kwc)
+        if (!is.null(delaunoy_df)) {
+          # Join Delaunoy data to the simulation timestamp grid
+          pv_lookup <- dplyr::tibble(timestamp = ts) %>%
+            dplyr::left_join(delaunoy_df, by = "timestamp")
+          pv_kwh <- pv_lookup$pv_kwh
+          pv_kwh[is.na(pv_kwh)] <- 0
+          message(sprintf("[Delaunoy] Donnees reelles chargees: %d pts, facteur=%.2f (cible=%s kWc / ref=16 kWc)",
+            sum(!is.na(pv_lookup$pv_kwh)), pv_kwc / 16, pv_kwc))
+        } else {
+          message("[Delaunoy] Fallback sur PV synthetique (fichier introuvable)")
+          env <- 0.5 + 0.5 * sin(2 * pi * (doy - 80) / 365)
+          pv_kw <- pv_kwc * 0.8 * pmax(0, sin(pi * (h - 6) / 14)) * env * couverture
+          pv_kwh <- pv_kw * 0.25
+        }
+      } else {
+        env <- 0.5 + 0.5 * sin(2 * pi * (doy - 80) / 365)
+        pv_kw <- pv_kwc * 0.8 * pmax(0, sin(pi * (h - 6) / 14)) * env * couverture
+        pv_kwh <- pv_kw * 0.25
+      }
 
       # --- External temperature (real from Open-Meteo or synthetic fallback) ---
       t_ext_meteo <- tryCatch({
