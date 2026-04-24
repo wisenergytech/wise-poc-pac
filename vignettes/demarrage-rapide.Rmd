@@ -1,0 +1,140 @@
+---
+title: "Demarrage rapide : votre premiere simulation en 3 minutes"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Demarrage rapide : votre premiere simulation en 3 minutes}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Vous venez d'ouvrir l'app pour la premiere fois. Ce guide vous amene a votre
+premier resultat en **3 etapes**, sans rien lire d'autre.
+
+---
+
+## Etape 1 : verifier les reglages par defaut (30 secondes)
+
+L'app demarre avec des valeurs par defaut pensees pour un **immeuble collectif
+de taille moyenne** (PAC 60 kW, 33 kWc PV, ballon ~36 000 L). Si ca
+correspond a peu pres a votre installation, vous n'avez rien a toucher.
+
+**Si votre installation est differente**, modifiez ces 3 reglages :
+
+| Reglage | Ou le trouver | Quoi mettre |
+|---------|---------------|-------------|
+| **Puissance PAC** | Section "Pompe a chaleur" | La puissance electrique nominale de votre PAC (kW) |
+| **COP nominal** | Section "Pompe a chaleur" | Le COP a 7 C de la fiche technique (3.5 si inconnu) |
+| **Type de contrat** | Section "Tarification" | "Dynamique" si contrat spot, "Fixe" sinon |
+
+Le volume du ballon et la puissance PV se calculent automatiquement (cases
+"Volume auto" et "PV auto" cochees par defaut). Vous pourrez les affiner
+plus tard.
+
+---
+
+## Etape 2 : choisir la periode et lancer (30 secondes)
+
+En bas de la barre laterale, dans la section **Periode** :
+
+1. Choisissez les dates de debut et fin (par defaut : juillet-aout 2025)
+2. Cliquez sur **Lancer la simulation**
+
+C'est tout. L'app genere des donnees synthetiques realistes (production PV,
+prix Belpex reels, temperatures, consommation) et lance la simulation.
+
+**Astuce** : pour utiliser des donnees PV reelles, selectionnez "Reel
+(Wallonie 2024)" dans la section "Source PV". La periode basculera
+automatiquement sur 2024.
+
+---
+
+## Etape 3 : lire les resultats (2 minutes)
+
+### La barre de statut (en haut)
+
+Juste au-dessus des onglets, trois lignes resument tout :
+
+- **RUN** : le mode utilise et le **gain total** en EUR et en %
+  — c'est le chiffre cle. Exemple : *GAIN 143.2 EUR (18.5%)*
+- **DIM** : vos parametres de dimensionnement (PV, PAC, ballon)
+- **CFG** : votre configuration (contrat, batterie, source PV, periode)
+
+### L'onglet Energie
+
+C'est le premier onglet, celui qui s'affiche par defaut. En haut, **6 cartes**
+avec les indicateurs cles :
+
+| Carte | Ce qu'elle montre | Ce qui est bien |
+|-------|-------------------|-----------------|
+| Production PV | kWh produits sur la periode | Informatif |
+| Autoconsommation | % du PV consomme sur place | Plus c'est haut, mieux c'est |
+| Autosuffisance | % de la conso couverte par le PV | Plus c'est haut, mieux c'est |
+| Soutirage reseau | kWh achetes au reseau | Plus c'est bas, mieux c'est |
+| Injection reseau | kWh injectes sur le reseau | Plus c'est bas = meilleure AC |
+| Conso PAC | kWh electriques consommes par la PAC | Informatif |
+
+Chaque carte affiche **baseline vs optimise** et le gain entre les deux.
+
+En dessous, 4 graphiques montrent l'evolution dans le temps. Les barres
+cyan/orange superposees permettent de comparer visuellement baseline et
+optimisation.
+
+### L'onglet Finances
+
+3 cartes : facture nette, cout du soutirage, revenu d'injection.
+
+Le graphique **"Facture nette cumulee"** est le plus parlant : deux courbes
+qui divergent au fil du temps. L'ecart entre les deux, c'est votre economie.
+
+Le **tableau mensuel** en bas donne les chiffres mois par mois.
+
+### L'onglet CO2
+
+Montre l'impact carbone : emissions evitees en kg CO2, equivalent en km de
+voiture et en arbres plantes. Le **heatmap** en bas montre quand le reseau
+est propre (vert) ou sale (rouge) — l'optimiseur decale la consommation vers
+les heures vertes.
+
+---
+
+## Et apres ?
+
+Vous avez vos premiers resultats. Voici comment aller plus loin :
+
+| Envie | Action |
+|-------|--------|
+| **Comparer les optimiseurs** | Changez "Approche" (Smart → LP → MILP → QP) et relancez |
+| **Tester une batterie** | Cochez "Activer la batterie" et relancez |
+| **Voir l'impact de la taille du PV** | Decochez "PV auto", ajustez le slider, relancez |
+| **Simuler avec des donnees reelles** | Selectionnez "Reel (Wallonie 2024)" dans Source PV |
+| **Explorer les details** | Utilisez l'onglet "Comparaison" pour croiser n'importe quelles variables |
+| **Comprendre les graphiques** | Lisez la vignette "Lire et interpreter les resultats" |
+| **Comprendre les reglages** | Lisez la vignette "Comprendre votre installation" |
+
+---
+
+## Les 5 erreurs du debutant
+
+1. **"Mon gain est de 0%"** → Verifiez que le contrat est "Dynamique". En
+   contrat fixe sans PV, il n'y a pas de variation de prix a exploiter.
+
+2. **"L'app est tres lente"** → En mode MILP, reduisez la periode ou
+   augmentez la taille du bloc. Ou passez en LP (quasi instantane).
+
+3. **"La temperature du ballon oscille trop"** → Augmentez la penalite
+   slack (section Optimisation) ou passez en mode QP avec un poids confort.
+
+4. **"Le gain est enorme (>50%)"** → Normal si vous comparez au thermostat
+   pur avec un gros PV et un contrat dynamique. Le thermostat est vraiment
+   aveugle — il ne profite d'aucun surplus PV.
+
+5. **"Je veux simuler mon installation exacte"** → Decochez "Volume auto" et
+   "PV auto", entrez vos valeurs reelles. Ajustez l'ECS si vous la
+   connaissez. Le resultat sera plus fidele a votre situation.

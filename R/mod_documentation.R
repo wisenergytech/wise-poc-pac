@@ -22,7 +22,7 @@ mod_documentation_ui <- function(id) {
       shiny::tags$script(shiny::HTML(
         "document.addEventListener('DOMContentLoaded', function() {
           if (typeof mermaid !== 'undefined') {
-            mermaid.initialize({startOnLoad: false, theme: 'dark'});
+            mermaid.initialize({startOnLoad: false, theme: 'default', securityLevel: 'loose'});
           }
         });"
       ))
@@ -50,7 +50,10 @@ mod_documentation_server <- function(id) {
       "comprendre-votre-installation" = "sliders",
       "comprendre-les-optimizers" = "brain",
       "donnees-baseline-autoconsommation" = "chart-line",
-      "hypotheses-et-perimetre" = "flask"
+      "hypotheses-et-perimetre" = "flask",
+      "demarrage-rapide" = "rocket",
+      "lire-les-resultats" = "magnifying-glass-chart",
+      "cas-usage-faq" = "comments"
     )
 
     render_vignette <- function(vignette_name) {
@@ -100,10 +103,20 @@ mod_documentation_server <- function(id) {
             if (typeof MathJax !== 'undefined' && MathJax.typesetPromise) {
               MathJax.typesetPromise();
             }
-            if (typeof mermaid !== 'undefined' && mermaid.run) {
-              mermaid.run({querySelector: '.mermaid:not([data-processed])'});
+            if (typeof mermaid !== 'undefined') {
+              // Find unprocessed mermaid elements, decode HTML entities, render
+              var nodes = document.querySelectorAll('.mermaid:not([data-processed=\"true\"])');
+              nodes.forEach(function(el) {
+                // textContent is already decoded by the browser, but we
+                // reassign to ensure innerHTML matches (Mermaid reads innerHTML)
+                el.innerHTML = el.textContent;
+              });
+              if (nodes.length > 0) {
+                try { mermaid.run({nodes: Array.from(nodes)}); }
+                catch(e) { console.warn('Mermaid render error:', e); }
+              }
             }
-          }, 200);"
+          }, 500);"
         ))
       )
     }

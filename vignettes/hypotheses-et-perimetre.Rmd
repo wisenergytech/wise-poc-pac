@@ -190,7 +190,8 @@ correspondante.
 
 ### Algorithme de decision (zone flexible)
 
-<div class="mermaid">
+```{=html}
+<pre class="mermaid">
 flowchart TD
     A{"T < T_min ?"} -->|Oui| B["PAC ON\n(securite)"]
     A -->|Non| C{"T >= T_max ?"}
@@ -202,7 +203,8 @@ flowchart TD
     G -->|Non| I{"alpha > 0.6 et\nT < consigne et\nCOP > COP_moy x 1.05 ?"}
     I -->|Oui| J["pac_on = alpha x 0.3\n(COP opportuniste)"]
     I -->|Non| K["PAC OFF"]
-</div>
+</pre>
+```
 
 ### Monotonie AC(alpha)
 

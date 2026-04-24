@@ -139,7 +139,8 @@ pour utiliser l'app. Ce qui suit explique *comment* chaque optimizer s'y prend.
 L'application propose quatre stratégies, du plus intuitif au plus sophistiqué.
 Pensez-y comme quatre niveaux de pilotage automatique :
 
-<div class="mermaid">
+```{=html}
+<pre class="mermaid">
 flowchart LR
     A["Smart\n(regles)"] --> B["LP\n(continu)"]
     B --> C["MILP\n(tout-ou-rien)"]
@@ -148,7 +149,8 @@ flowchart LR
     style B fill:#264653,color:#fff,stroke:#264653
     style C fill:#e76f51,color:#fff,stroke:#e76f51
     style D fill:#f4a261,color:#000,stroke:#f4a261
-</div>
+</pre>
+```
 
 *De gauche a droite : simplicite vers sophistication.*
 
@@ -275,7 +277,8 @@ Vous contrôlez l'importance de ces objectifs avec deux curseurs :
 Optimiser un mois entier d'un coup serait trop lourd. L'app découpe la période en
 **blocs** qui se chevauchent légèrement :
 
-<div class="mermaid">
+```{=html}
+<pre class="mermaid">
 flowchart LR
     subgraph J1["Jour 1"]
         B1["Bloc 1"]
@@ -293,7 +296,8 @@ flowchart LR
     B2 -- "T finale" --> B3
     B3 -- "T finale" --> B4
     B4 -. "..." .-> E["..."]
-</div>
+</pre>
+```
 
 Chaque bloc est résolu indépendamment, mais la **température du ballon à la fin d'un
 bloc** devient la condition initiale du bloc suivant. C'est comme un relais : chaque
@@ -325,7 +329,8 @@ Deux itérations suffisent en pratique pour converger.
 
 ## Comment choisir son optimizer ?
 
-<div class="mermaid">
+```{=html}
+<pre class="mermaid">
 flowchart TD
     A{"Votre PAC a-t-elle\nun variateur (inverter) ?"}
     A -->|OUI| B["LP\n(rapide, optimal)"]
@@ -340,7 +345,8 @@ flowchart TD
     style C fill:#e76f51,color:#fff,stroke:#e76f51
     style E fill:#f4a261,color:#000,stroke:#f4a261
     style G fill:#264653,color:#fff,stroke:#264653
-</div>
+</pre>
+```
 
 *Dans tous les cas, Smart est un bon point de depart pour comparer.*
 

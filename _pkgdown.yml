@@ -78,9 +78,16 @@ reference:
       - run_app
 
 articles:
-  - title: Guides
+  - title: Pour commencer
     contents:
-      - comprendre-les-optimizers
+      - demarrage-rapide
+      - lire-les-resultats
+  - title: Guides approfondis
+    contents:
       - comprendre-votre-installation
+      - comprendre-les-optimizers
       - donnees-baseline-autoconsommation
+  - title: Reference
+    contents:
+      - cas-usage-faq
       - hypotheses-et-perimetre

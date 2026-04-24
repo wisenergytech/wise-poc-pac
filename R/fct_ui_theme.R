@@ -141,7 +141,7 @@ tip <- function(text) {
 kpi_card <- function(value, label, unit, color,
                      baseline_val = NULL, opti_val = NULL,
                      gain_val = NULL, gain_unit = NULL, gain_invert = FALSE,
-                     tooltip = NULL) {
+                     tooltip = NULL, is_percentage = FALSE) {
   val_div <- shiny::tags$div(class = "kpi-value", style = sprintf("color:%s;", color),
     value, shiny::tags$span(class = "kpi-unit", unit))
 
@@ -156,16 +156,31 @@ kpi_card <- function(value, label, unit, color,
   # Relative % vs baseline
 
   if (!is.null(baseline_val) && !is.null(opti_val) && abs(baseline_val) > 0.001) {
-    pct <- (opti_val - baseline_val) / abs(baseline_val) * 100
-    cls <- if (gain_invert) {
-      if (pct <= 0) "positive" else "negative"
+    if (is_percentage) {
+      # For metrics already in % (AC, autosuffisance): show point difference
+      diff_pts <- opti_val - baseline_val
+      cls <- if (gain_invert) {
+        if (diff_pts <= 0) "positive" else "negative"
+      } else {
+        if (diff_pts >= 0) "positive" else "negative"
+      }
+      sub_divs <- c(sub_divs, list(
+        shiny::tags$div(class = "kpi-sub",
+          sprintf("baseline: %.0f%%", baseline_val))
+      ))
     } else {
-      if (pct >= 0) "positive" else "negative"
+      # For absolute values (kWh, EUR): show relative % change
+      pct <- (opti_val - baseline_val) / abs(baseline_val) * 100
+      cls <- if (gain_invert) {
+        if (pct <= 0) "positive" else "negative"
+      } else {
+        if (pct >= 0) "positive" else "negative"
+      }
+      sub_divs <- c(sub_divs, list(
+        shiny::tags$div(class = "kpi-sub",
+          sprintf("%s%.1f%% vs baseline", ifelse(pct >= 0, "+", ""), pct))
+      ))
     }
-    sub_divs <- c(sub_divs, list(
-      shiny::tags$div(class = "kpi-sub",
-        sprintf("%s%.1f%% vs baseline", ifelse(pct >= 0, "+", ""), pct))
-    ))
   }
 
   # Gain/reduction line

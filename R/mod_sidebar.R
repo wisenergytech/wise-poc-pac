@@ -93,10 +93,7 @@ mod_sidebar_ui <- function(id) {
       shiny::tags$div(class = "section-title", "Baseline", tip("Scenario de reference sans EMS. Par defaut : thermostat pur (aquastat ON/OFF). Activez le suivi PV si l'installation a deja un pilotage basique du surplus.")),
       shiny::checkboxInput(ns("pv_tracking"), "Suivi PV existant (avance)", value = FALSE),
       shiny::conditionalPanel(sprintf("input['%s']", ns("pv_tracking")),
-        shiny::sliderInput(ns("autoconso_cible"),
-          shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
-          min = 10, max = 90, value = 35, step = 5, post = "%"),
-        shiny::uiOutput(ns("autoconso_bounds_info"))),
+        shiny::uiOutput(ns("autoconso_panel"))),
       shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_tracking")),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
           shiny::HTML("Thermostat pur : la PAC s'allume quand T<sub>ballon</sub> &lt; T<sub>min</sub> et s'arrete a T<sub>consigne</sub>. Aucune conscience du PV ni des prix.")))),
@@ -239,8 +236,10 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- Baseline alpha from AC target ----
     baseline_alpha <- shiny::reactive({
-      bounds <- ac_bounds(); target <- input$autoconso_cible
-      shiny::req(bounds, target)
+      bounds <- ac_bounds()
+      target <- input$autoconso_cible
+      # slider lives inside uiOutput — may not exist yet on first render
+      if (is.null(bounds) || is.null(target)) return(0.5)
       span <- bounds$ac_ceiling - bounds$ac_floor
       if (span < 1) return(0.5)
       clamped <- max(bounds$ac_floor, min(bounds$ac_ceiling, target))
@@ -261,38 +260,38 @@ mod_sidebar_server <- function(id, sim_state) {
       }
     }, ignoreInit = TRUE)
 
-    # ---- Update slider bounds dynamically ----
-    shiny::observeEvent(ac_bounds(), {
-      bounds <- ac_bounds()
-      if (is.null(bounds) || is.null(bounds$ac_floor) || is.null(bounds$ac_ceiling)) return()
-      new_min <- floor(bounds$ac_floor)
-      new_max <- ceiling(bounds$ac_ceiling)
-      if (new_max <= new_min) new_max <- new_min + 1
-      current <- input$autoconso_cible
-      if (is.null(current)) current <- round((new_min + new_max) / 2)
-      new_val <- max(new_min, min(new_max, current))
-      shiny::updateSliderInput(session, "autoconso_cible",
-        min = new_min, max = new_max, value = new_val)
-    })
-
-    # ---- Autoconso bounds info ----
-    output$autoconso_bounds_info <- shiny::renderUI({
+    # ---- Autoconso slider + bounds info (single uiOutput with spinner) ----
+    output$autoconso_panel <- shiny::renderUI({
       bounds <- tryCatch(ac_bounds(), error = function(e) NULL)
-      alpha <- tryCatch(baseline_alpha(), error = function(e) 0.5)
-      target <- input$autoconso_cible
 
       if (is.null(bounds)) {
-        return(shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          "Lancez une premiere simulation pour calibrer les bornes."))
+        return(shiny::tags$div(
+          shiny::sliderInput(ns("autoconso_cible"),
+            shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
+            min = 10, max = 90, value = 35, step = 5, post = "%"),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+            "Lancez une premiere simulation pour calibrer les bornes.")))
       }
 
       # No PV case
       if (bounds$ac_ceiling < 1 && bounds$ac_floor < 1) {
-        return(shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
-          shiny::HTML("Sans PV, la baseline est un thermostat pur. L'autoconsommation est nulle.")))
+        return(shiny::tags$div(
+          shiny::sliderInput(ns("autoconso_cible"),
+            shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
+            min = 0, max = 1, value = 0, step = 1, post = "%"),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
+            shiny::HTML("Sans PV, la baseline est un thermostat pur. L'autoconsommation est nulle."))))
       }
 
-      # Qualitative description based on alpha
+      new_min <- floor(bounds$ac_floor)
+      new_max <- ceiling(bounds$ac_ceiling)
+      if (new_max <= new_min) new_max <- new_min + 1
+      current <- shiny::isolate(input$autoconso_cible)
+      if (is.null(current)) current <- round((new_min + new_max) / 2)
+      new_val <- max(new_min, min(new_max, current))
+
+      span <- bounds$ac_ceiling - bounds$ac_floor
+      alpha <- if (span < 1) 0.5 else max(0, min(1, (new_val - bounds$ac_floor) / span))
       qual <- if (alpha < 0.2) {
         list(txt = "Thermostat aveugle", col = cl$success, marge = "maximale")
       } else if (alpha < 0.45) {
@@ -303,12 +302,16 @@ mod_sidebar_server <- function(id, sim_state) {
         list(txt = "Suivi PV intensif", col = cl$reel, marge = "faible -- gains = valeur du Belpex")
       }
 
-      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
-        shiny::HTML(sprintf(
-          "Plage atteignable : <b>%d%%</b> &ndash; <b>%d%%</b><br><span style='color:%s;font-weight:600;'>%s (AC ~%d%%)</span> &middot; Marge d'optimisation : <b>%s</b>",
-          round(bounds$ac_floor), round(bounds$ac_ceiling),
-          qual$col, qual$txt, round(target),
-          qual$marge)))
+      shiny::tags$div(
+        shiny::sliderInput(ns("autoconso_cible"),
+          shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
+          min = new_min, max = new_max, value = new_val, step = 5, post = "%"),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
+          shiny::HTML(sprintf(
+            "Plage atteignable : <b>%d%%</b> &ndash; <b>%d%%</b><br><span style='color:%s;font-weight:600;'>%s (AC ~%d%%)</span> &middot; Marge d'optimisation : <b>%s</b>",
+            round(bounds$ac_floor), round(bounds$ac_ceiling),
+            qual$col, qual$txt, round(new_val),
+            qual$marge))))
     })
 
     # ---- Volume ballon auto/manual ----
@@ -387,7 +390,7 @@ mod_sidebar_server <- function(id, sim_state) {
         batt_rendement = input$batt_rendement / 100,
         batt_soc_min = input$batt_soc_range[1] / 100,
         batt_soc_max = input$batt_soc_range[2] / 100,
-        autoconso_cible = input$autoconso_cible,
+        autoconso_cible = if (!is.null(input$autoconso_cible)) input$autoconso_cible else 35,
         poids_cout = 0.5,
         slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
         curtailment_active = isTRUE(input$curtailment_active),
@@ -620,6 +623,7 @@ mod_sidebar_server <- function(id, sim_state) {
       pv_kwc_eff = pv_kwc_eff,
       automagic_results = automagic_results,
       autoconso_cible = shiny::reactive(input$autoconso_cible),
+      pv_tracking = shiny::reactive(input$pv_tracking),
       baseline_alpha = baseline_alpha,
       ac_bounds = ac_bounds,
       # Expose individual inputs needed by other modules/status bar

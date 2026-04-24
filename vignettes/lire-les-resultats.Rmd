@@ -1,0 +1,327 @@
+---
+title: "Lire et interpreter les resultats"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Lire et interpreter les resultats}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Vous avez lance une simulation et l'ecran se remplit de graphiques et de
+chiffres. Ce guide explique **ce que chaque element signifie** et **ce qu'il
+faut regarder en priorite**.
+
+---
+
+## La barre de statut : votre tableau de bord
+
+La barre de statut en haut de l'ecran contient trois lignes. C'est la
+premiere chose a lire.
+
+### Ligne RUN — Le resultat cle
+
+```
+RUN  SIMULATION LP -- 61.0 j · 5 856 pts · GAIN 234.5 EUR (15.2%)
+```
+
+- **LP** : l'optimiseur utilise (Smart, MILP, LP ou QP)
+- **61.0 j** : duree de la periode simulee en jours
+- **5 856 pts** : nombre de quarts d'heure simules
+- **GAIN 234.5 EUR (15.2%)** : **c'est LE chiffre a retenir**. C'est
+  l'economie realisee par l'optimiseur par rapport a la baseline
+
+Le gain est en **vert** si positif (l'optimiseur fait mieux) et en **rouge**
+s'il est negatif (cas rare, l'app revient alors au comportement de base).
+
+### Ligne DIM — Votre installation
+
+```
+DIM  PV=33 kWc (ref=33) · PAC=60 kW COP=3.5 · Ballon=36050 L [45..55]°C consigne=50
+```
+
+Resume de votre configuration physique. Utile pour verifier que les
+parametres sont corrects avant d'interpreter les resultats.
+
+### Ligne CFG — Votre configuration
+
+```
+CFG  Contrat=spot (taxe=0.150, coeff_inj=1.00) · Batterie=off · TOU=on ·
+     Curtail=off · Bloc=24h · Slack=2.5 EUR/C · Baseline=AC 35% ·
+     PV: Synthétique · 01/07/2025 → 31/08/2025
+```
+
+Tous les reglages actifs. Points d'attention :
+
+- **TOU=on** : l'optimiseur exploite les variations de prix. Si "off", il
+  optimise uniquement l'autoconsommation PV.
+- **Baseline=AC 35%** : la reference est un suivi PV a 35%. Si "AC 35%",
+  les gains sont mesures par rapport a une installation deja partiellement
+  intelligente.
+- **PV: Synthetique/Reel** : la source des donnees PV.
+
+---
+
+## L'onglet Energie : ou va votre electricite ?
+
+### Les 6 cartes KPI
+
+Chaque carte montre une valeur avec, en dessous, la comparaison baseline vs
+optimise.
+
+#### Production PV
+
+Quantite totale d'electricite produite par les panneaux sur la periode. Ce
+chiffre est **identique** entre baseline et optimise — les panneaux
+produisent la meme chose quoi qu'il arrive. C'est une reference.
+
+#### Autoconsommation (%)
+
+> La part de votre production PV que vous consommez sur place.
+
+```
+Autoconsommation = (PV produit - PV injecte) / PV produit
+```
+
+**Exemple** : PV produit 4 200 kWh. Injecte 2 100 kWh.
+AC = (4200 - 2100) / 4200 = **50%**.
+
+- **Baseline 25%** → **Optimise 65%** = gain de 40 points
+- C'est le signal le plus clair que l'optimiseur fait bien son travail :
+  il decale la PAC vers les heures de surplus PV.
+
+**Quand s'inquieter ?** Si l'AC optimisee est < 30% avec un PV
+correctement dimensionne, verifiez que la taille du ballon est suffisante
+(le ballon est trop petit pour absorber le surplus).
+
+#### Autosuffisance (%)
+
+> La part de votre consommation totale couverte par le PV.
+
+```
+Autosuffisance = (PV produit - PV injecte) / consommation totale
+```
+
+La difference avec l'autoconsommation :
+
+- **Autoconsommation** = combien de votre PV vous utilisez (point de vue PV)
+- **Autosuffisance** = combien de votre conso est couverte (point de vue conso)
+
+Avec un gros PV et une petite PAC, l'autosuffisance peut etre elevee (le PV
+couvre presque tout) mais l'autoconsommation basse (beaucoup de surplus
+injecte).
+
+#### Soutirage reseau (kWh)
+
+L'electricite achetee au reseau. **Moins c'est mieux.** L'optimiseur reduit
+le soutirage en faisant tourner la PAC quand le PV produit.
+
+#### Injection reseau (kWh)
+
+L'electricite revendue au reseau. Une injection elevee signifie du surplus
+PV non absorbe. L'optimiseur reduit l'injection en stockant le surplus
+dans le ballon (via la PAC) ou la batterie.
+
+**Attention** : en contrat dynamique, l'injection n'est pas forcement
+mauvaise — si le prix spot est eleve, injecter est rentable. L'optimiseur
+fait le calcul : stocker dans le ballon vs revendre au reseau.
+
+#### Conso PAC (kWh)
+
+L'electricite consommee par la PAC. Ce chiffre peut **augmenter** avec
+l'optimisation ! C'est normal : l'optimiseur peut faire tourner la PAC
+*plus* longtemps (pour stocker de la chaleur pendant les heures bon marche)
+tout en reduisant la facture globale. Plus de kWh consommes, mais a un
+prix moyen plus bas = facture plus basse.
+
+### Les graphiques en barres
+
+Les 4 graphiques montrent l'evolution temporelle. Chaque barre a deux
+couleurs superposees :
+
+- **Couleur claire (cyan)** : la valeur de la baseline
+- **Couleur foncee (orange)** : le delta apporte par l'optimisation
+
+**Comment les lire** :
+
+- **Soutirage** : les barres orange empilees sur les barres cyan montrent
+  combien de soutirage a ete *evite* par l'optimiseur. Plus d'orange = plus
+  d'economies.
+- **Injection** : les barres orange montrent combien d'injection a ete
+  *reduite* (absorbee dans le ballon). Plus d'orange = meilleure AC.
+- **Autoconsommation** : les barres orange montrent le *gain* d'AC. La somme
+  des deux couleurs = AC totale optimisee.
+
+### Le diagramme Sankey (flux d'energie)
+
+Le Sankey montre **ou va l'energie** sous forme de flux. Basculez entre
+"Baseline" et "Optimise" avec le bouton radio pour voir la difference.
+
+Les noeuds :
+- **PV** : source de production
+- **Reseau** : achat (soutirage) et vente (injection)
+- **PAC** : consommation de la pompe a chaleur
+- **Ballon** : stockage thermique
+- **Residuel** : consommation du batiment hors PAC
+
+Comparez les epaisseurs des flux entre baseline et optimise. Un flux
+"Reseau → PAC" qui diminue = moins d'achat. Un flux "PV → PAC" qui
+augmente = meilleure autoconsommation.
+
+---
+
+## L'onglet Finances : combien vous economisez ?
+
+### Les 3 cartes KPI
+
+- **Facture nette** : le montant total (soutirage paye - injection vendue).
+  C'est la facture que vous auriez payee (baseline) vs ce que vous paieriez
+  avec l'optimiseur. La difference = **votre economie**.
+- **Cout soutirage** : le total paye pour l'electricite achetee au reseau.
+- **Revenu injection** : le total recu pour l'electricite vendue au reseau.
+
+### La courbe de facture cumulee
+
+C'est le graphique le plus parlant de l'app. Deux courbes qui montent au
+fil du temps :
+
+- **Courbe du haut** (orange/marron) : la facture cumulative de la baseline
+- **Courbe du bas** (bleu) : la facture cumulative optimisee
+
+L'ecart entre les deux courbes **s'elargit au fil du temps** — c'est
+votre economie qui s'accumule. Plus l'ecart est grand, plus l'optimisation
+est efficace.
+
+**Ce qu'il faut regarder** :
+
+- L'ecart se creuse-t-il regulierement, ou surtout certains jours ?
+  → Si l'ecart se creuse surtout les jours ensoleilles, c'est le surplus
+  PV qui fait la difference.
+- L'ecart se referme-t-il parfois ?
+  → Rarement, mais possible si l'optimiseur anticipe un pic de prix en
+  pre-chauffant (cout court terme, gain long terme).
+
+### Le waterfall (decomposition de l'economie)
+
+Ce graphique decompose l'economie en ses composantes :
+
+1. **Facture baseline** (point de depart, en rouge)
+2. **Perte d'injection** : l'optimiseur injecte moins (revenu perdu)
+   — c'est normal, il prefere autoconsommer
+3. **Reduction soutirage** : moins d'achat au reseau (gain principal)
+4. **Arbitrage horaire** : gain du decalage vers les heures moins cheres
+5. **Facture optimisee** (point d'arrivee, en bleu)
+
+La somme des barres vertes (gains) moins les barres rouges (pertes) donne
+l'economie totale.
+
+### Le tableau mensuel
+
+Un bilan mois par mois avec : production PV, facture baseline, facture
+optimisee, economie en EUR, et economie par jour. Utile pour voir la
+saisonnalite (les gains sont generalement plus importants en ete quand le
+PV produit davantage).
+
+---
+
+## L'onglet CO2 : votre impact carbone
+
+### Les 4 cartes KPI
+
+- **Emissions CO2** : kg de CO2 equivalent emis par votre soutirage reseau.
+  Baseline vs optimise.
+- **Intensite carbone** : la moyenne ponderee de l'intensite CO2 du reseau
+  belge pendant vos heures de soutirage (gCO2/kWh). L'optimiseur reduit ce
+  chiffre en consommant quand le reseau est propre (eolien, solaire, nucleaire).
+- **Equiv. voiture** : les emissions evitees converties en km de conduite.
+  Un repere concret.
+- **Equiv. arbres** : nombre d'arbres necessaires pour absorber le CO2 evite
+  en un an. Un autre repere parlant.
+
+### Le graphique horaire CO2
+
+Barres vertes (CO2 evite) et rouges (CO2 ajoute) par heure, avec une ligne
+en pointille montrant l'intensite CO2 du reseau.
+
+**Ce qu'il faut regarder** :
+
+- Les barres vertes sont-elles concentrees aux heures de pointe reseau
+  (18h-21h, intensite CO2 elevee) ? → L'optimiseur evite d'acheter quand
+  le reseau est "sale".
+- Y a-t-il des barres rouges ? → L'optimiseur a consomme plus a certaines
+  heures (pour stocker), mais le bilan global est vert.
+
+### Le heatmap d'intensite CO2
+
+Un tableau 2D (heures x jours) colore du vert (reseau propre) au rouge
+(reseau carbone). Il montre les patterns du reseau belge :
+
+- **Nuit (0h-5h)** : souvent vert-jaune (nucleaire + eolien)
+- **Midi (11h-15h)** : souvent vert (solaire)
+- **Soiree (18h-21h)** : souvent orange-rouge (centrales a gaz)
+- **Hiver** : globalement plus rouge que l'ete
+
+L'optimiseur essaie de placer la consommation PAC dans les zones vertes.
+
+---
+
+## L'onglet Comparaison : l'outil d'exploration
+
+L'onglet le plus flexible. Trois menus deroulants permettent de croiser
+**n'importe quelles variables** sur un graphique a double axe Y.
+
+### Combinaisons utiles
+
+| Serie 1 (axe gauche) | Serie 2 (axe droit) | Ce que ca montre |
+|---|---|---|
+| Production PV | Prix spot | Si le PV produit quand le prix est bas (surplus) ou haut |
+| Soutirage baseline | Soutirage optimise | La reduction quart d'heure par quart d'heure |
+| T° ballon baseline | T° ballon optimise | Comment l'optimiseur utilise la plage de temperature |
+| T° ballon optimise | Prix spot | Correlation entre le prix et la strategie de stockage |
+| COP | T° exterieure | Comment le COP varie avec la meteo |
+| PAC ON/OFF | Prix spot | Quand l'optimiseur choisit de chauffer vs. attendre |
+
+### Le zoom temporel
+
+Le selecteur de dates en bas a droite permet de zoomer sur quelques jours.
+C'est la meilleure facon de comprendre la logique de l'optimiseur :
+
+1. Zoomez sur 3-4 jours ensoleilles
+2. Affichez "T° ballon optimise" vs "Prix spot"
+3. Observez : le ballon monte quand le prix est bas et/ou quand le PV produit,
+   et descend quand le prix est haut
+
+C'est l'optimisation en action, visible quart d'heure par quart d'heure.
+
+---
+
+## Checklist de verification
+
+Avant de presenter vos resultats, verifiez ces 5 points :
+
+- [ ] **Le gain est-il realiste ?** 10-30% est normal en contrat dynamique
+  avec PV. >50% est possible mais verifiez les parametres. <5% peut indiquer
+  un PV trop petit ou un contrat fixe.
+
+- [ ] **L'autoconsommation est-elle coherente ?** 40-70% avec un PV bien
+  dimensionne et un ballon suffisant. <20% = ballon trop petit ou PV
+  surdimensionne par rapport a la PAC.
+
+- [ ] **La temperature du ballon reste-t-elle dans la plage ?** Verifiez dans
+  l'onglet Comparaison (T° ballon optimise). Des violations sous T_min sont
+  normales si la penalite slack est basse — augmentez-la si le confort est
+  prioritaire.
+
+- [ ] **La periode est-elle representative ?** Simuler uniquement juillet
+  donnera des resultats tres differents de janvier. Pour une estimation
+  annuelle, simulez 12 mois ou au moins un ete + un hiver.
+
+- [ ] **La baseline est-elle correcte ?** Si votre installation a deja un
+  suivi PV, activez "Suivi PV existant" et reglez le slider. Sinon les
+  gains seront surestimes par rapport a votre situation reelle.

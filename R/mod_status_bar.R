@@ -32,7 +32,11 @@ mod_status_bar_server <- function(id, sidebar) {
       }
       if (is.na(mode_label) || is.null(mode_label)) mode_label <- "?"
 
-      thermostat <- sprintf("AC %d%%", sidebar$autoconso_cible() %||% 35)
+      thermostat <- if (isTRUE(sidebar$pv_tracking())) {
+        sprintf("AC %d%%", sidebar$autoconso_cible() %||% 35)
+      } else {
+        "thermostat"
+      }
       contrat <- if (p$type_contrat == "fixe") {
         sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
       } else {

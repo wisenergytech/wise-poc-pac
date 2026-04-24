@@ -1,0 +1,340 @@
+---
+title: "Cas d'usage typiques et FAQ"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Cas d'usage typiques et FAQ}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Ce guide presente des scenarios concrets et repond aux questions les plus
+frequentes. Trouvez votre profil et suivez les recommandations.
+
+---
+
+## Scenario 1 : Maison individuelle (ECS seule)
+
+### Le profil
+
+- PAC air/eau de **3 kW**, COP 3.5
+- Ballon de **200 L**
+- PV **6 kWc** en toiture
+- Contrat fixe (0.30 EUR/kWh)
+- 2 adultes, 1 enfant
+
+### Les reglages recommandes
+
+| Parametre | Valeur | Pourquoi |
+|-----------|--------|----------|
+| Puissance PAC | 3 kW | Petite PAC domestique |
+| COP nominal | 3.5 | Valeur standard |
+| Volume auto | Decocher, mettre 200 L | Ballon existant |
+| PV auto | Decocher, mettre 6 kWc | Installation existante |
+| Consigne | 50 C | Standard |
+| Tolerance | 5 C | Bon compromis |
+| ECS | 8 kWh/jour | Menage de 3 personnes |
+| Contrat | Fixe, 0.30 / 0.03 EUR/kWh | Contrat classique |
+| Approche | LP | Rapide, bon resultat |
+
+### A quoi s'attendre
+
+- **Gain en contrat fixe** : 2-8% — modeste car pas de variation de prix a
+  exploiter. Le gain vient uniquement de la meilleure utilisation du PV.
+- **Gain en contrat dynamique** : 15-25% — le decalage vers les heures
+  creuses et le surplus PV fait la difference.
+- **Autoconsommation** : de ~30% (thermostat) a ~55% (optimise)
+
+### Conseil cle
+
+Avec une petite PAC et un petit ballon, la marge de manoeuvre est limitee.
+Le gain le plus impactant serait de **passer en contrat dynamique** si ce
+n'est pas deja le cas.
+
+---
+
+## Scenario 2 : Petit immeuble collectif (ECS + chauffage)
+
+### Le profil
+
+- PAC air/eau de **20 kW**, COP 3.5
+- Ballon de **2 000 L**
+- PV **15 kWc** en toiture
+- Contrat dynamique (spot Belpex)
+- 8 appartements
+
+### Les reglages recommandes
+
+| Parametre | Valeur | Pourquoi |
+|-----------|--------|----------|
+| Puissance PAC | 20 kW | |
+| COP nominal | 3.5 | |
+| Volume auto | Decocher, mettre 2 000 L | Ballon existant |
+| PV auto | Decocher, mettre 15 kWc | Installation existante |
+| Consigne | 55 C | Collectif, anti-legionelle |
+| Tolerance | 5 C | |
+| ECS | 80 kWh/jour | ~10 kWh/appart/jour |
+| Type batiment | Standard | Construction recente |
+| Contrat | Dynamique, taxe 0.15 | |
+| Approche | LP ou MILP | MILP si PAC ON/OFF |
+
+### A quoi s'attendre
+
+- **Gain** : 15-25% sur la facture PAC
+- **Autoconsommation** : de ~35% a ~60%
+- **Economies** : 500-1500 EUR/an selon la region et les prix Belpex
+
+### Conseil cle
+
+Verifiez l'impact du **volume du ballon**. Avec un ballon de 2 000 L et une
+PAC de 20 kW, le stockage thermique est limite (~2.3 kWh pour 5 C de plage).
+Un ballon plus grand (5 000-8 000 L) pourrait augmenter significativement les
+gains. Testez avec "Volume auto" pour voir la recommandation de l'app.
+
+---
+
+## Scenario 3 : Grand immeuble ou site tertiaire
+
+### Le profil
+
+- PAC de **60 kW** (ou 2 x 30 kW)
+- Ballon de **10 000-36 000 L** (ou cascade de ballons)
+- PV **33 kWc** en toiture
+- Contrat dynamique + curtailment (limite injection 10 kW)
+- 30+ logements ou bureaux
+
+### Les reglages recommandes
+
+| Parametre | Valeur | Pourquoi |
+|-----------|--------|----------|
+| Puissance PAC | 60 kW | Additionner si 2 PAC |
+| COP nominal | 3.5 | |
+| Volume auto | Cocher | Laisser l'app dimensionner |
+| PV auto | Cocher | Laisser l'app dimensionner |
+| Consigne | 55 C | Collectif |
+| Tolerance | 5 C | |
+| Type batiment | Standard ou Ancien | Selon l'age du batiment |
+| Contrat | Dynamique | |
+| Curtailment | Cocher, 10 kW | Si limite prosumer |
+| Batterie | Optionnel, 20 kWh / 10 kW | Si batterie existante |
+| Approche | LP (premier test), MILP (precision) | |
+
+### A quoi s'attendre
+
+- **Gain** : 15-30% avec curtailment actif
+- **Autoconsommation** : 50-75%
+- **Economies** : 2 000-8 000 EUR/an
+- **Impact curtailment** : le surplus qui aurait ete perdu (ecrete) est
+  absorbe par le ballon — gain supplementaire de 5-15%
+
+### Conseil cle
+
+Activez le **curtailment** si votre installation a une limite d'injection.
+Sans curtailment, l'optimiseur ne sait pas que le surplus au-dela de la
+limite est perdu. Avec curtailment, il pre-chauffe le ballon pour absorber
+ce surplus.
+
+---
+
+## Scenario 4 : Estimation pour un projet neuf
+
+### Le cas
+
+Vous etes architecte ou bureau d'etudes. Vous voulez estimer les gains d'un
+EMS pour une installation qui n'existe pas encore.
+
+### La methode
+
+1. **Laissez tout en auto** : Volume auto, PV auto. Entrez uniquement la
+   puissance PAC prevue et le COP estime.
+2. **Testez les deux contrats** : dynamique et fixe. Ca donne les bornes.
+3. **Simulez une annee complete** : en mode reel (Wallonie 2024), selectionnez
+   janvier a decembre. Les prix et la meteo 2024 sont disponibles.
+4. **Variez la taille du PV** : decochez PV auto et testez 10, 20, 33, 50 kWc
+   pour tracer la courbe gain vs investissement PV.
+5. **Testez avec et sans batterie** : pour justifier (ou non) l'investissement.
+
+### Les indicateurs a extraire
+
+Pour votre rapport :
+
+- Gain annuel en EUR (onglet Finances, tableau mensuel)
+- Autoconsommation baseline vs optimise (onglet Energie)
+- CO2 evite annuel en kg (onglet CO2)
+- Temps de retour batterie = cout batterie / gain supplementaire annuel
+
+---
+
+## FAQ
+
+### Questions sur les resultats
+
+#### "Mon gain est de 2%, c'est normal ?"
+
+Oui, dans ces cas :
+
+- **Contrat fixe** sans PV : pas de variation de prix a exploiter et pas de
+  surplus PV a absorber. Le seul levier est le COP (chauffer quand il fait
+  doux), ce qui donne 1-5%.
+- **PV tres petit** par rapport a la PAC : peu de surplus disponible.
+- **Baseline deja intelligente** (suivi PV a 50%+) : la marge d'amelioration
+  est faible, c'est normal.
+
+Pour augmenter le gain : passez en contrat dynamique, augmentez le PV, ou
+comparez au thermostat pur (decochez "Suivi PV existant").
+
+#### "Mon gain est de 60%, c'est vraiment possible ?"
+
+Possible dans des conditions favorables :
+
+- Gros PV (surplus important en journee)
+- Contrat dynamique avec des prix tres volatils
+- Grand ballon (beaucoup de stockage thermique)
+- Baseline = thermostat pur (pas de suivi PV existant)
+
+Ce gain est le **potentiel maximal**. En pratique, des imprecisions
+(previsions meteo, profil de consommation reel vs synthetique) reduiront
+un peu ce chiffre. Tablez sur 70-80% du gain simule en conditions reelles.
+
+#### "La facture optimisee est plus elevee que la baseline !"
+
+C'est impossible dans les resultats finaux — l'app a un **garde-fou** qui
+revient a la baseline si l'optimisation est moins bonne. Mais dans le
+waterfall, vous pouvez voir des composantes negatives (ex: "perte
+d'injection" si l'optimiseur injecte moins pour autoconsommer plus). C'est
+normal : la perte d'injection est compensee par la reduction de soutirage.
+
+#### "La conso PAC est plus elevee en optimise qu'en baseline !"
+
+Normal. L'optimiseur peut faire tourner la PAC **plus** longtemps — mais a
+des moments ou l'electricite est gratuite (surplus PV) ou bon marche. Plus
+de kWh consommes a un prix moyen plus bas = facture plus basse.
+
+C'est comme faire un detour de 10 km pour une station-service 30% moins
+chere : vous consommez plus de carburant, mais vous payez moins au total.
+
+### Questions sur les reglages
+
+#### "Quel optimiseur choisir ?"
+
+| Votre situation | Recommandation |
+|---|---|
+| Premier test, decouverte | **Smart** — instantane, bon apercu |
+| PAC avec variateur (inverter) | **LP** — optimal, rapide |
+| PAC ON/OFF sans variateur | **MILP** — modelise fidelement le ON/OFF |
+| Confort prioritaire | **QP** — temperature stable, charge lisse |
+| Simulation longue (>3 mois) | **LP** — rapide meme sur 12 mois |
+
+En pratique, commencez par LP. Si le resultat vous convient, inutile d'aller
+plus loin. Si vous voulez affiner : MILP pour le realisme ON/OFF, QP pour
+le confort.
+
+#### "Faut-il activer la batterie ?"
+
+Activez-la **uniquement si vous avez (ou envisagez) une batterie physique**.
+La batterie dans l'app modelise un stockage electrochimique reel, pas un
+concept theorique.
+
+Ce que la batterie apporte :
+
+- Absorbe le surplus PV que le ballon ne peut plus stocker (ballon deja a
+  T_max)
+- Restitue l'electricite le soir pour la consommation residuelle
+- Gain supplementaire typique : 3-8% (depend de la taille)
+
+Ce que la batterie ne fait pas :
+
+- Elle ne remplace pas un ballon suffisamment grand. Le ballon est un
+  stockage beaucoup moins cher par kWh que la batterie.
+
+#### "Pourquoi le slider d'autoconsommation est bloque ?"
+
+Le slider est contraint entre les bornes physiques de votre installation :
+
+- **Borne basse** = autoconsommation en thermostat pur (pas de suivi PV)
+- **Borne haute** = autoconsommation en suivi PV maximal
+
+Si les bornes sont tres proches (ex: 45% — 48%), c'est que le suivi PV ne
+peut pas faire beaucoup plus que le thermostat (PV trop petit ou trop grand
+par rapport a la PAC).
+
+Si le slider ne s'affiche pas du tout, verifiez que "Suivi PV existant"
+est coche dans la section Baseline.
+
+#### "C'est quoi la penalite slack ?"
+
+C'est le prix fictif que l'optimiseur paie pour laisser le ballon descendre
+sous T_min. A **2.5 EUR/C** (defaut), il tolere de breves violations
+(<1 C, quelques minutes) si le gain economique le justifie. A **20 EUR/C**,
+il traite T_min comme un mur infranchissable.
+
+**Recommandation** :
+- Menage, confort prioritaire : 10-20 EUR/C
+- Collectif, economies prioritaires : 2-5 EUR/C
+- Exploration, voir le maximum d'economies : 0.5-1 EUR/C
+
+### Questions sur les donnees
+
+#### "Synthetique ou reel, lequel est le plus fiable ?"
+
+Aucun n'est "meilleur" — ils repondent a des questions differentes :
+
+| Question | Mode a utiliser |
+|---|---|
+| "Que donnerait un EMS sur mon installation ?" | Reel (Wallonie 2024) |
+| "Que se passerait-il si j'augmentais mon PV ?" | Synthetique (flexible) |
+| "Quel est le gain annuel possible ?" | Reel sur 12 mois (janv-dec 2024) |
+| "Comment ca marche avec les prix de 2025 ?" | Synthetique (utilise Belpex 2025) |
+
+#### "Les donnees reelles sont celles de mon installation ?"
+
+Non. Les donnees reelles proviennent d'une installation de **16 kWc en
+Wallonie**. Elles sont mises a l'echelle proportionnellement a votre
+configuration kWc. C'est une approximation : le profil temporel (quand le
+soleil brille, les passages nuageux) est realiste, mais l'amplitude exacte
+depend de l'orientation et de l'ombrage de votre installation.
+
+#### "Pourquoi la periode est contrainte a 2024 en mode reel ?"
+
+Les donnees PV mesurees couvrent 2024. Pour que la simulation soit coherente,
+les prix Belpex, les temperatures et l'intensite CO2 sont aussi charges
+depuis les fichiers 2024. Melanger du PV 2024 avec des prix 2025 donnerait
+des resultats incoherents (un apres-midi ensoleille de juin 2024 avec les
+prix d'un jour nuageux de juin 2025).
+
+### Questions sur l'interpretation
+
+#### "Le gain en EUR est-il mon economie reelle ?"
+
+C'est une **estimation**. Les ecarts avec la realite viennent de :
+
+- **Consommation residuelle** : le profil synthetique est generique, votre
+  consommation reelle peut etre differente.
+- **Tirages ECS** : les douches simulees sont aleatoires. Vos habitudes
+  reelles sont differentes.
+- **Precision des previsions** : l'optimiseur connait les prix Belpex a
+  l'avance (donnees historiques). En temps reel, il travaillerait avec des
+  previsions imparfaites (reduction de gain de 5-15%).
+
+**Regle empirique** : tablez sur **70-85% du gain simule** en conditions
+reelles.
+
+#### "Comment extrapoler a l'annee ?"
+
+Deux methodes :
+
+1. **Simple** : simulez 2 mois repressentatifs (un ete, un hiver) et
+   extrapolez. Gain annuel ≈ gain ete x 6 + gain hiver x 6.
+
+2. **Precise** : en mode reel (Wallonie 2024), simulez janvier a decembre.
+   Le tableau mensuel dans l'onglet Finances donne le gain mois par mois.
+   Sommez pour l'annee.
+
+La methode 2 est meilleure car elle capture la saisonnalite (le PV produit
+3-4x plus en ete qu'en hiver, mais le chauffage consomme plus en hiver).
