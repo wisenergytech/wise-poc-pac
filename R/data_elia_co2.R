@@ -50,10 +50,10 @@ ELIA_PAGE_SIZE <- 100
 ELIA_TIMEOUT <- 12
 
 # ---------------------------------------------------------------------------
-# Charger les CSV locaux co2_historical_YYYY.csv (meme pattern que Belpex)
+# Charger les CSV locaux elia_co2_YYYY.csv (meme pattern que Belpex)
 # ---------------------------------------------------------------------------
 load_local_co2 <- function(data_dir = "data") {
-  files <- list.files(data_dir, pattern = "co2_historical_.*\\.csv$", full.names = TRUE)
+  files <- list.files(data_dir, pattern = "elia_co2_.*\\.csv$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
 
   dfs <- lapply(files, function(f) {

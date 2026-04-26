@@ -26,7 +26,7 @@ library(readr)
 PLANT_CODE <- "NE=146048791"
 INVERTER_DNS <- c("NE=146049818", "NE=146048777", "NE=193143992")
 DEV_TYPE_ID <- 38  # residential inverter
-YEARS <- c(2024, 2025)
+YEARS <- c(2026)
 DATA_DIR <- "data"
 PAUSE_SECONDS <- 210  # 3.5 min entre appels (marge sur les 200s theoriques)
 RETRY_PAUSE <- 300    # 5 min si rate limited

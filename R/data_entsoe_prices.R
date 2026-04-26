@@ -17,7 +17,7 @@ ENTSOE_DOMAIN_BE <- "10YBE----------2"
 # 1. Charger les prix depuis les CSV historiques locaux
 # -----------------------------------------------------------------------------
 load_local_belpex <- function(data_dir = "data") {
-  files <- list.files(data_dir, pattern = "belpex_historical_.*\\.csv$", full.names = TRUE)
+  files <- list.files(data_dir, pattern = "entsoe_prices_.*\\.csv$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
 
   dfs <- lapply(files, function(f) {
@@ -97,7 +97,9 @@ parse_entsoe_xml <- function(xml_text) {
 
       if (is.na(start_node) || is.na(resolution_node)) next
 
-      start_time <- ymd_hms(xml_text(start_node), tz = "UTC")
+      start_text <- xml_text(start_node)
+      # ENTSO-E peut renvoyer "2026-01-01T23:00Z" (sans secondes)
+      start_time <- lubridate::parse_date_time(start_text, orders = c("ymd HMS", "ymd HM"), tz = "UTC")
       resolution <- xml_text(resolution_node)
 
       # Determiner le pas de temps

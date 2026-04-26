@@ -192,8 +192,8 @@ de 15 minutes.
 
 | Source | Donnee | Resolution | Fichiers | Fallback |
 |---|---|---|---|---|
-| Open-Meteo | T_ext reelle | Horaire → interpole 15 min | `data/openmeteo_temp_YYYY.csv` | Modele sinusoidal + bruit |
-| ENTSO-E | Prix Belpex | Horaire | `data/belpex_historical_YYYY.csv` | Modele sinusoidal + bruit |
+| Open-Meteo | T_ext reelle | Horaire → interpole 15 min | `data/openmeteo_temperature_YYYY.csv` | Modele sinusoidal + bruit |
+| ENTSO-E | Prix Belpex | Horaire | `data/entsoe_prices_YYYY.csv` | Modele sinusoidal + bruit |
 | Synthetique | Production PV | 15 min | Genere a la volee | Bruit aleatoire |
 | Synthetique | Tirages ECS | 15 min | Genere a la volee | — |
 | Synthetique | Chauffage ambiance | 15 min | Genere a la volee (PAC > 10 kW) | — |

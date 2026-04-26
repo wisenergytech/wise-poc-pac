@@ -367,7 +367,7 @@ En hiver, le chauffage represente >98% de la demande thermique.
 ### Source des temperatures
 
 Les temperatures exterieures proviennent des fichiers CSV locaux
-`data/openmeteo_temp_YYYY.csv`, generes via l'API Open-Meteo
+`data/openmeteo_temperature_YYYY.csv`, generes via l'API Open-Meteo
 (historique horaire, localisation Profondeville, Belgique).
 
 Les donnees horaires sont interpolees au quart d'heure via interpolation

@@ -30,9 +30,9 @@ if (file.exists(".env")) {
 }
 
 # Source helper modules (same as app.R does)
-source("R/data_belpex.R", local = TRUE)
+source("R/data_entsoe_prices.R", local = TRUE)
 source("R/optimizer_lp.R", local = TRUE)
-source("R/data_openmeteo.R", local = TRUE)
+source("R/data_openmeteo_temperature.R", local = TRUE)
 
 # Define calc_cop (same as in app.R)
 calc_cop <- function(t_ext, cop_nominal = 3.5, t_ref = 7, t_ballon = NULL, t_ballon_ref = 50) {

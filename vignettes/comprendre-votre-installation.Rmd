@@ -434,9 +434,9 @@ un prix Belpex d'un lundi pluvieux de juin 2025).
 Pour eviter ca, quand vous selectionnez "Reel (Wallonie 2024)", l'app bascule
 **automatiquement** toutes les series sur 2024 :
 
-- Prix Belpex : fichier `belpex_historical_2024.csv`
-- Temperatures : fichier `openmeteo_temp_2024.csv`
-- Intensite CO2 : fichier `co2_historical_2024.csv`
+- Prix Belpex : fichier `entsoe_prices_2024.csv`
+- Temperatures : fichier `openmeteo_temperature_2024.csv`
+- Intensite CO2 : fichier `elia_co2_2024.csv`
 - Periode : le calendrier est contraint a 2024
 
 Vous n'avez rien a faire — le basculement est transparent. Quand vous repassez

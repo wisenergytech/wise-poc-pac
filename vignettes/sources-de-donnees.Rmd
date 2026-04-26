@@ -1,0 +1,287 @@
+---
+title: "Sources de donnees externes"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Sources de donnees externes}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+Ce document decrit les sources de donnees externes utilisees par l'application,
+leur couverture temporelle, leur resolution, et les transformations appliquees
+pour les adapter a la simulation.
+
+Chaque source suit le meme pattern : **CSV local en priorite, puis appel API
+en fallback**. Les CSV locaux sont stockes dans `data/` et nommes selon la
+convention `<type>_historical_YYYY.csv`. Les fichiers R correspondants sont dans
+`R/` et nommes `data_<source>_<mesure>.R`.
+
+---
+
+## Vue d'ensemble
+
+| Mesure | Source | Fichier R | Resolution native | Resolution simulation | Couverture |
+|--------|--------|-----------|-------------------|-----------------------|------------|
+| Prix electricite | ENTSO-E Transparency | `data_entsoe_prices.R` | Horaire ou 15 min | 15 min | 2015+ |
+| Temperature | Open-Meteo Archive | `data_openmeteo_temperature.R` | Horaire | 15 min (interpolee) | 2020+ |
+| Intensite CO2 | Elia Open Data | `data_elia_co2.R` | Horaire | 15 min (interpolee) | 2020+ |
+| Production PV | Elia Open Data | `data_elia_solar.R` | 15 min | 15 min | 2020+ |
+
+---
+
+## 1. Prix electricite day-ahead (ENTSO-E)
+
+### Source
+
+**ENTSO-E Transparency Platform** — document type A44 (Day-Ahead Prices),
+domaine Belgique (`10YBE----------2`).
+
+- API : `https://web-api.tp.entsoe.eu/api`
+- Authentification : cle API (variable d'environnement `ENTSO-E_API_KEY`)
+- Documentation : <https://transparency.entsoe.eu/content/static_content/Static%20content/web%20api/Guide.html>
+
+### Donnees recuperees
+
+| Champ | Description | Unite |
+|-------|-------------|-------|
+| `datetime` | Horodatage UTC | ISO 8601 |
+| `price_eur_mwh` | Prix spot day-ahead | EUR/MWh |
+
+### Resolution et couverture
+
+- **Resolution native** : horaire (marche belge historique) ou quart-horaire
+  (depuis la transition au trading 15 min). Le format XML indique la resolution
+  via le champ `resolution` (PT60M ou PT15M).
+- **Couverture** : donnees disponibles depuis 2015. L'API limite les requetes
+  a 365 jours par appel ; le code effectue un chunking automatique pour les
+  periodes plus longues (`fetch_entsoe_chunked()`).
+- **CSV locaux** : `entsoe_prices_YYYY.csv` (datetime UTC, price_eur_mwh)
+
+### Transformations
+
+1. **Parsing XML** : extraction des TimeSeries/Period/Point depuis le XML
+   ENTSO-E. Le champ `timeInterval/start` peut etre au format `YYYY-MM-DDTHH:MMZ`
+   (sans secondes) — gere par `parse_date_time()` avec ordres `ymd HMS` et
+   `ymd HM`.
+2. **Expansion quart-horaire** : si les donnees sont horaires (PT60M), chaque
+   prix est repete 4 fois pour obtenir un pas de 15 minutes
+   (`to_quarter_hourly()`).
+3. **Injection dans la simulation** : les prix sont joints au dataframe de
+   simulation par arrondi a l'heure (`floor_date()`), puis convertis de
+   EUR/MWh en EUR/kWh (`inject_belpex_prices()` dans `fct_data.R`).
+
+---
+
+## 2. Temperature exterieure (Open-Meteo)
+
+### Source
+
+**Open-Meteo Archive API** — donnees ERA5 reanalysees. API gratuite, sans cle.
+
+- API : `https://archive-api.open-meteo.com/v1/archive`
+- Variable : `temperature_2m` (temperature a 2 m du sol)
+- Documentation : <https://open-meteo.com/en/docs/historical-weather-api>
+
+### Donnees recuperees
+
+| Champ | Description | Unite |
+|-------|-------------|-------|
+| `timestamp` | Horodatage Europe/Brussels | ISO 8601 |
+| `t_ext` | Temperature a 2 m | degres C |
+
+### Resolution et couverture
+
+- **Resolution native** : horaire
+- **Couverture** : donnees historiques disponibles depuis 1940. L'API archive
+  a un retard de ~5 jours par rapport au temps reel. Le code plafonne
+  automatiquement la date de fin a `Sys.Date() - 5`.
+- **CSV locaux** : `openmeteo_temperature_YYYY.csv` (timestamp Europe/Brussels, t_ext)
+- **Coordonnees** : Profondeville, Belgique (50.38 N, 4.86 E) par defaut.
+  Configurable via les parametres `latitude` et `longitude`.
+
+### Transformations
+
+1. **Interpolation 15 min** : les temperatures horaires sont interpolees
+   lineairement au pas de 15 minutes via `approx()` pour s'aligner sur les
+   timestamps de simulation (`interpolate_temperature_15min()`).
+2. **Valeurs manquantes** : les NA apres interpolation sont remplaces par la
+   mediane de la serie horaire.
+3. **Usage dans la simulation** : la temperature exterieure sert au calcul
+   du COP de la PAC (`COP = COP_nominal + 0.1 * (t_ext - 7)`).
+
+---
+
+## 3. Intensite carbone du reseau (Elia)
+
+### Source
+
+**Elia Open Data Platform** — API publique, sans cle.
+
+- API : `https://opendata.elia.be/api/explore/v2.1/catalog/datasets`
+- Documentation : <https://opendata.elia.be/>
+
+Trois datasets sont interroges en cascade (fallback) :
+
+| Dataset | Description | Methodologie |
+|---------|-------------|--------------|
+| ODS192 | Historical consumption-based CO2 intensity | Scope 2 (imports inclus) |
+| ODS191 | Near real-time consumption-based CO2 intensity | Scope 2, ~7 derniers jours |
+| ODS201 | Generation mix par type de combustible | Production-based via facteurs IPCC |
+
+### Donnees recuperees
+
+| Champ | Description | Unite |
+|-------|-------------|-------|
+| `datetime` | Horodatage UTC | ISO 8601 |
+| `co2_g_per_kwh` | Intensite carbone du mix electrique | gCO2eq/kWh |
+
+### Resolution et couverture
+
+- **Resolution native** : horaire (ODS192, ODS191) ou quart-horaire (ODS201,
+  agrege a l'heure).
+- **Couverture** : ODS192 depuis 2020 (historique, peut avoir quelques mois
+  de retard). ODS191 pour les ~7 derniers jours. ODS201 depuis 2020 (mix de
+  generation).
+- **CSV locaux** : `elia_co2_YYYY.csv` (datetime UTC, co2_g_per_kwh)
+
+### Chaine de fallback
+
+```
+CSV local (couverture >= 90%) → ODS192 → ODS191 → ODS201 → profil synthetique
+```
+
+Le **profil synthetique** (`FALLBACK_CO2_PROFILE`) est un vecteur de 24 valeurs
+horaires representant l'intensite carbone moyenne belge (derivee des donnees
+Elia ODS192 2024). Valeurs typiques : 115-130 gCO2/kWh la nuit (nucleaire
+dominant), 215-252 gCO2/kWh en pointe (gaz marginal).
+
+### Transformations
+
+1. **Calcul production-based (ODS201)** : quand ODS192/191 ne sont pas
+   disponibles, l'intensite est calculee a partir du mix de generation :
+   - Pour chaque quart d'heure et chaque type de combustible, on multiplie la
+     puissance generee par le facteur d'emission IPCC AR5 correspondant.
+   - L'intensite horaire est la moyenne ponderee :
+     `co2 = sum(puissance * facteur) / sum(puissance)`
+   - Facteurs IPCC utilises : nucleaire 12, eolien 11-12, solaire 41, gaz 490,
+     fioul 650, biomasse 230 gCO2eq/kWh.
+2. **Interpolation 15 min** : meme methode que pour la temperature
+   (`interpolate_co2_15min()`).
+3. **Usage dans la simulation** : l'intensite CO2 est multipliee par le
+   soutirage reseau pour calculer les emissions baseline et optimisees.
+   La difference donne le CO2 evite par le pilotage intelligent.
+
+---
+
+## 4. Production photovoltaique (Elia)
+
+### Source
+
+**Elia Open Data Platform** — production PV mesuree du reseau belge.
+
+| Dataset | Description | Retention |
+|---------|-------------|-----------|
+| ODS032 | PV power estimation and forecast (Historical) | Depuis 2020-04 |
+| ODS087 | PV power estimation and forecast (Near real-time) | ~7 derniers jours |
+
+### Donnees recuperees
+
+| Champ | Description | Unite |
+|-------|-------------|-------|
+| `datetime` | Horodatage UTC | ISO 8601 |
+| `measured_mw` | Production PV reelle mesuree | MW |
+| `monitoredcapacity_mw` | Capacite PV totale installee dans la region | MWc |
+| `loadfactor` | Facteur de charge (measured / monitoredcapacity) | % |
+
+### Resolution et couverture
+
+- **Resolution native** : quart-horaire (PT15M)
+- **Couverture** : depuis avril 2020. ODS087 ne couvre que les ~7 derniers jours
+  et sert de fallback pour les donnees tres recentes.
+- **Granularite geographique** : par region (province). Region par defaut :
+  "Namur" (province de Profondeville). Capacite monitoree pour Namur :
+  ~449 MWc (avril 2026).
+- **Regions disponibles** : Belgium, Antwerp, Brussels, East-Flanders,
+  Flemish-Brabant, Hainaut, Liege, Limburg, Luxembourg, Namur,
+  Walloon-Brabant, West-Flanders.
+
+### Ce que les donnees representent
+
+Les donnees `measured` sont la **production PV reelle injectee sur le reseau
+belge**, mesuree par Elia. Elles refletent les conditions meteorologiques
+reelles (ensoleillement, nuages, pluie, neige) et les caracteristiques du parc
+installe (orientation, inclinaison, ombrage — moyennees sur toutes les
+installations de la region).
+
+### Transformations
+
+1. **Scaling lineaire** : la production regionale (MW) est convertie en
+   production locale (kWh/quart d'heure) via un ratio de puissance crete :
+
+   ```
+   pv_kwh = measured_mw * 1000 * 0.25 * (target_kwc / monitoredcapacity_kwc)
+   ```
+
+   - `* 1000` : MW vers kW
+   - `* 0.25` : puissance moyenne sur 15 min vers energie (kWh)
+   - `target_kwc / monitoredcapacity_kwc` : ratio de scaling
+
+   Exemple : pour une installation de 30 kWc, avec Namur a 449 MWc
+   (449 000 kWc), le ratio est 30 / 449 000 = 6.68e-5. Si Elia mesure
+   220 MW a midi, la production locale estimee est :
+   `220 * 1000 * 0.25 * 6.68e-5 = 3.67 kWh` par quart d'heure.
+
+2. **Valeurs nocturnes** : les NA dans `measured` sont remplaces par 0
+   (pas de production solaire la nuit).
+
+### Limites du scaling lineaire
+
+- Le profil est **regional**, pas site-specific. Un passage nuageux local
+  a Profondeville mais pas a Dinant sera moyenne sur la province de Namur.
+- Le scaling suppose que l'installation cible a des conditions similaires
+  (orientation, inclinaison, ombrage) a la moyenne du parc regional.
+- Les effets non lineaires (saturation onduleur, pertes cablage) ne sont
+  pas modelises. Pour un POC, cette approximation est suffisante.
+
+---
+
+## Architecture des fichiers
+
+```
+R/
+  data_entsoe_prices.R          # Prix day-ahead (ENTSO-E API)
+  data_openmeteo_temperature.R  # Temperature (Open-Meteo Archive API)
+  data_elia_co2.R               # Intensite CO2 (Elia ODS192/191/201)
+  data_elia_solar.R             # Production PV (Elia ODS032/087)
+  fct_data.R                    # Helpers (inject_belpex_prices)
+  R6_data_provider.R            # Classe R6 unifiant les sources
+
+data/
+  entsoe_prices_YYYY.csv    # Cache local prix
+  openmeteo_temperature_YYYY.csv       # Cache local temperature
+  elia_co2_YYYY.csv       # Cache local CO2
+```
+
+### Convention de nommage
+
+Les fichiers de donnees suivent le pattern `data_<source>_<mesure>.R` :
+
+- `<source>` : nom de l'API ou du fournisseur (entsoe, openmeteo, elia)
+- `<mesure>` : grandeur physique recuperee (prices, temperature, co2, solar)
+
+### Ajout d'une nouvelle source
+
+Pour ajouter une nouvelle source de donnees :
+
+1. Creer `R/data_<source>_<mesure>.R` avec une fonction principale
+   documentee (roxygen2)
+2. Implementer le pattern CSV local + API fallback
+3. Ajouter la methode correspondante dans `R6_data_provider.R`
+4. Documenter dans cette vignette

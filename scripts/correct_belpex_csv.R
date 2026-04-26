@@ -13,7 +13,7 @@
 # 4. Ecrire en format propre sans suffixe timezone
 #
 # Usage : Rscript scripts/correct_belpex_csv.R
-# Entree : data/belpex_historical_*.csv
+# Entree : data/entsoe_prices_*.csv
 # Sortie : ecrase les fichiers originaux avec la version corrigee
 # ============================================================
 
@@ -52,8 +52,8 @@ correct_belpex_csv <- function(input_file) {
 }
 
 # Trouver et corriger tous les CSV Belpex
-files <- list.files("data", pattern = "belpex_historical_.*\\.csv$", full.names = TRUE)
-if (length(files) == 0) stop("Aucun fichier belpex_historical_*.csv trouve dans data/")
+files <- list.files("data", pattern = "entsoe_prices_.*\\.csv$", full.names = TRUE)
+if (length(files) == 0) stop("Aucun fichier entsoe_prices_*.csv trouve dans data/")
 
 cat("=== Correction des CSV Belpex ===\n\n")
 dfs <- lapply(files, correct_belpex_csv)

@@ -41,8 +41,8 @@ if (file.exists(env_file)) {
 
 # Source helpers and R6 classes in dependency order
 source(file.path(project_root, "R", "fct_helpers.R"), local = FALSE)
-source(file.path(project_root, "R", "data_belpex.R"), local = FALSE)
-source(file.path(project_root, "R", "data_openmeteo.R"), local = FALSE)
+source(file.path(project_root, "R", "data_entsoe_prices.R"), local = FALSE)
+source(file.path(project_root, "R", "data_openmeteo_temperature.R"), local = FALSE)
 source(file.path(project_root, "R", "optimizer_lp.R"), local = FALSE)
 # optimizer_milp.R requires ROI.plugin.highs which may not be installed
 tryCatch(

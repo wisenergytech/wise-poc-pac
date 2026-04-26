@@ -137,9 +137,9 @@ POC, cette approximation est conservative et suffisante.
 **Coherence temporelle** : quand le PV reel est selectionne, toutes les
 autres series sont automatiquement chargees depuis les fichiers 2024 :
 
-- `belpex_historical_2024.csv` (8 779 enregistrements horaires, annee complete)
-- `openmeteo_temp_2024.csv` (8 785 enregistrements horaires, annee complete)
-- `co2_historical_2024.csv` (2 211 enregistrements horaires, couverture
+- `entsoe_prices_2024.csv` (8 779 enregistrements horaires, annee complete)
+- `openmeteo_temperature_2024.csv` (8 785 enregistrements horaires, annee complete)
+- `elia_co2_2024.csv` (2 211 enregistrements horaires, couverture
   partielle ~25% — les lacunes sont comblees par le profil horaire moyen
   belge 2024 derive des donnees Elia ODS192)
 
