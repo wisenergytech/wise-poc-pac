@@ -69,8 +69,8 @@ fetch_solar_elia <- function(start_date, end_date,
   start_date <- as.POSIXct(paste0(as.Date(start_date), " 00:00:00"), tz = "UTC")
   end_date   <- as.POSIXct(paste0(as.Date(end_date),   " 23:59:59"), tz = "UTC")
 
-  # 1. ODS032 — historique complet
-  df <- fetch_solar_dataset("ods032", start_date, end_date, region)
+  # 1. ODS032 — historique complet (chunke par semaine pour rester < 10K offset)
+  df <- fetch_solar_chunked("ods032", start_date, end_date, region)
   if (!is.null(df) && nrow(df) > 0) {
     message(sprintf("[Solar Elia] ODS032 %s : %d enregistrements", region, nrow(df)))
     return(list(df = df, source = "ods032", region = region))
@@ -86,6 +86,33 @@ fetch_solar_elia <- function(start_date, end_date,
   message(sprintf("[Solar Elia] Aucune donnee pour %s (%s -> %s)",
     region, as.Date(start_date), as.Date(end_date)))
   list(df = NULL, source = "none", region = region)
+}
+
+# ---------------------------------------------------------------------------
+# Fetch chunke par semaine (evite la limite offset 10K de l'API Elia)
+# 1 semaine Namur = 7 * 96 = 672 records << 10K
+# ---------------------------------------------------------------------------
+fetch_solar_chunked <- function(dataset_id, start_date, end_date, region) {
+  weeks <- seq(as.Date(start_date), as.Date(end_date), by = "7 days")
+  all_chunks <- list()
+
+  for (i in seq_along(weeks)) {
+    w_start_date <- weeks[i]
+    w_start <- as.POSIXct(paste0(w_start_date, " 00:00:00"), tz = "UTC")
+    w_end_date <- min(w_start_date + 6, as.Date(end_date))
+    w_end <- as.POSIXct(paste0(w_end_date, " 23:59:59"), tz = "UTC")
+
+    chunk <- fetch_solar_dataset(dataset_id, w_start, w_end, region)
+    if (!is.null(chunk) && nrow(chunk) > 0) {
+      all_chunks[[length(all_chunks) + 1]] <- chunk
+    }
+  }
+
+  if (length(all_chunks) == 0) return(NULL)
+  df <- dplyr::bind_rows(all_chunks)
+  df <- dplyr::distinct(df, datetime, .keep_all = TRUE)
+  df <- dplyr::arrange(df, datetime)
+  df
 }
 
 # ---------------------------------------------------------------------------
