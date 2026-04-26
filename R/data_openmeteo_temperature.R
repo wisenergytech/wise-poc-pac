@@ -27,19 +27,38 @@ load_openmeteo_temperature <- function(start_date, end_date, data_dir = "data",
   start_date <- as.Date(start_date)
   end_date <- as.Date(end_date)
 
+  # Priorite 1 : objet package (lazy-loaded, instantane)
+  pkg_data <- NULL
+  if (exists("openmeteo_temperature", where = asNamespace("wisepocpac"), inherits = FALSE)) {
+    pkg_data <- get("openmeteo_temperature", envir = asNamespace("wisepocpac"))
+  } else if (exists("openmeteo_temperature", envir = .GlobalEnv)) {
+    pkg_data <- get("openmeteo_temperature", envir = .GlobalEnv)
+  }
+
   years <- seq(lubridate::year(start_date), lubridate::year(end_date))
   all_data <- list()
 
   for (yr in years) {
-    csv_file <- file.path(data_dir, sprintf("openmeteo_temperature_%d.csv", yr))
+    # Check .rda coverage for this year
+    if (!is.null(pkg_data)) {
+      yr_data <- pkg_data[lubridate::year(pkg_data$timestamp) == yr, ]
+      if (nrow(yr_data) > 0) {
+        message(sprintf("[Open-Meteo] .rda : %d points pour %d", nrow(yr_data), yr))
+        all_data[[as.character(yr)]] <- yr_data
+        next
+      }
+    }
 
+    # Priorite 2 : CSV local
+    csv_file <- file.path(data_dir, sprintf("openmeteo_temperature_%d.csv", yr))
     if (file.exists(csv_file)) {
       message(sprintf("[Open-Meteo] Lecture %s", csv_file))
       df_year <- readr::read_csv(csv_file, show_col_types = FALSE)
       df_year$timestamp <- as.POSIXct(df_year$timestamp, tz = "Europe/Brussels")
       all_data[[as.character(yr)]] <- df_year
     } else {
-      message(sprintf("[Open-Meteo] CSV manquant pour %d, appel API...", yr))
+      # Priorite 3 : API fallback
+      message(sprintf("[Open-Meteo] Donnees manquantes pour %d, appel API...", yr))
       df_api <- fetch_openmeteo_year(yr, latitude, longitude)
       if (!is.null(df_api) && nrow(df_api) > 0) {
         all_data[[as.character(yr)]] <- df_api

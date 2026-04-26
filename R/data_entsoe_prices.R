@@ -14,18 +14,26 @@ ENTSOE_BASE_URL <- "https://web-api.tp.entsoe.eu/api"
 ENTSOE_DOMAIN_BE <- "10YBE----------2"
 
 # -----------------------------------------------------------------------------
-# 1. Charger les prix depuis les CSV historiques locaux
+# 1. Charger les prix : .rda package data -> CSV fallback
 # -----------------------------------------------------------------------------
 load_local_belpex <- function(data_dir = "data") {
+  # Priorite 1 : objet package (lazy-loaded, instantane)
+  if (exists("entsoe_prices", where = asNamespace("wisepocpac"), inherits = FALSE)) {
+    return(get("entsoe_prices", envir = asNamespace("wisepocpac")))
+  }
+  # Aussi essayer l'environnement global (quand source() hors package)
+  if (exists("entsoe_prices", envir = .GlobalEnv)) {
+    return(get("entsoe_prices", envir = .GlobalEnv))
+  }
+
+  # Priorite 2 : CSV locaux
   files <- list.files(data_dir, pattern = "entsoe_prices_.*\\.csv$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
 
   dfs <- lapply(files, function(f) {
-    # Lire datetime en texte brut pour eviter l'auto-parsing de readr
     df <- read_csv(f, show_col_types = FALSE, col_types = cols(datetime = col_character()))
     names(df) <- c("datetime_raw", "price_eur_mwh")
     df %>% mutate(
-      # Supprimer le suffixe timezone (+00:00) avant parsing
       datetime_clean = gsub("Z$", "", gsub("[+-]\\d{2}:\\d{2}$", "", datetime_raw)),
       datetime = ymd_hms(datetime_clean, tz = "UTC")
     ) %>%

@@ -335,14 +335,19 @@ Ce que le slider **ne modifie pas** :
 
 ### Comment les bornes sont calculees
 
-Quand vous changez les parametres (PV, PAC, ballon), l'app calcule
-automatiquement les bornes du slider :
+Le calcul des bornes necessite de simuler la baseline sur les donnees reelles
+(profil PV, temperatures, prix). C'est pourquoi il est declenche **manuellement**
+via le bouton "Calibrer les bornes" :
 
-1. Simule la baseline avec `alpha = 0` (thermostat pur) → mesure l'AC%
+1. Genere les donnees brutes (PV, meteo, prix) pour la periode selectionnee
+2. Simule la baseline avec `alpha = 0` (thermostat pur) → mesure l'AC%
    resultante → c'est la **borne basse** (ex: 22%)
-2. Simule la baseline avec `alpha = 1` (suivi PV maximal) → mesure l'AC%
+3. Simule la baseline avec `alpha = 1` (suivi PV maximal) → mesure l'AC%
    resultante → c'est la **borne haute** (ex: 68%)
-3. Le slider est contraint entre ces deux bornes
+4. Le slider est contraint entre ces deux bornes
+
+Si vous modifiez les parametres (PV, PAC, ballon, periode) apres un calibrage,
+un avertissement s'affiche pour vous inviter a recalibrer.
 
 **Pourquoi les bornes changent ?**
 

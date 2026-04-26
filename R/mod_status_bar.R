@@ -20,7 +20,11 @@ mod_status_bar_server <- function(id, sidebar) {
   moduleServer(id, function(input, output, session) {
 
     output$status_bar <- shiny::renderUI({
-      p <- sidebar$params_r()
+      p <- tryCatch(sidebar$params_r(), error = function(e) NULL)
+      if (is.null(p)) return(shiny::tags$div(id = "status_bar",
+        shiny::tags$div(class = "status-line",
+          shiny::tags$span(class = "status-tag", "RUN "),
+          shiny::HTML("Initialisation..."))))
       running <- sidebar$sim_running()
       res <- tryCatch(sidebar$sim_result(), error = function(e) NULL)
       has_sim <- !running && !is.null(res) && !is.null(res$sim)
@@ -77,9 +81,11 @@ mod_status_bar_server <- function(id, sidebar) {
       date_range <- sidebar$date_range()
 
       pv_src <- tryCatch(sidebar$pv_data_source(), error = function(e) "synthetic")
-      pv_src_label <- if (!is.null(pv_src) && pv_src == "real_delaunoy") {
+      pv_src_label <- if (!is.null(pv_src) && pv_src == "real_elia") {
+        "R\u00e9el Elia (Namur)"
+      } else if (!is.null(pv_src) && pv_src == "real_delaunoy") {
         pv_factor <- if (p$pv_kwc > 0) sprintf("%.2f", p$pv_kwc / 16) else "0"
-        sprintf("R\u00e9el Wallonie \u00d7%s", pv_factor)
+        sprintf("R\u00e9el Delaunoy \u00d7%s", pv_factor)
       } else {
         "Synth\u00e9tique"
       }

@@ -73,8 +73,13 @@ mod_sidebar_ui <- function(id) {
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Dimensionnement PV", tip("Simulez l'impact d'une installation PV plus grande ou plus petite. Les donnees sont mises a l'echelle proportionnellement.")),
       shiny::radioButtons(ns("pv_data_source"), "Source PV",
-        choices = c("Synth\u00e9tique" = "synthetic", "R\u00e9el (Wallonie 2024)" = "real_delaunoy"),
-        selected = "synthetic", inline = TRUE),
+        choices = c("Synth\u00e9tique" = "synthetic",
+                    "R\u00e9el Elia (Namur)" = "real_elia",
+                    "R\u00e9el Delaunoy (2024)" = "real_delaunoy"),
+        selected = "real_elia", inline = FALSE),
+      shiny::conditionalPanel(sprintf("input['%s']=='real_elia'", ns("pv_data_source")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Production PV r\u00e9elle du parc namurois (Elia ODS032), mise \u00e0 l'\u00e9chelle selon votre kWc."))),
       shiny::conditionalPanel(sprintf("input['%s']=='real_delaunoy'", ns("pv_data_source")),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
           shiny::HTML("Donn\u00e9es mesur\u00e9es d'une installation r\u00e9elle en Wallonie (16 kWc, 2024), mises \u00e0 l'\u00e9chelle selon votre kWc."))),
@@ -93,7 +98,11 @@ mod_sidebar_ui <- function(id) {
       shiny::tags$div(class = "section-title", "Baseline", tip("Scenario de reference sans EMS. Par defaut : thermostat pur (aquastat ON/OFF). Activez le suivi PV si l'installation a deja un pilotage basique du surplus.")),
       shiny::checkboxInput(ns("pv_tracking"), "Suivi PV existant (avance)", value = FALSE),
       shiny::conditionalPanel(sprintf("input['%s']", ns("pv_tracking")),
-        shiny::uiOutput(ns("autoconso_panel"))),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:8px;", cl$text_muted),
+          shiny::HTML("Simule deux baselines (alpha=0 et alpha=1) sur les donn\u00e9es r\u00e9elles pour d\u00e9terminer la plage d'autoconsommation atteignable. Cliquez ci-dessous apr\u00e8s avoir configur\u00e9 vos param\u00e8tres.")),
+        shiny::actionButton(ns("calibrate_ac"), "Calibrer les bornes", class = "btn-outline-secondary btn-sm w-100",
+          icon = shiny::icon("crosshairs")),
+        shiny::uiOutput(ns("autoconso_panel_calibrated"))),
       shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_tracking")),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
           shiny::HTML("Thermostat pur : la PAC s'allume quand T<sub>ballon</sub> &lt; T<sub>min</sub> et s'arrete a T<sub>consigne</sub>. Aucune conscience du PV ni des prix.")))),
@@ -165,10 +174,10 @@ mod_sidebar_ui <- function(id) {
     # ---- Periode ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a simuler. En mode PV reel, la periode est contrainte a 2024.")),
-      shiny::dateRangeInput(ns("date_range"), NULL, start = as.Date("2025-07-01"), end = as.Date("2025-08-31"), language = "fr",
-        min = as.Date("2025-01-01"), max = as.Date("2025-12-31")),
+      shiny::dateRangeInput(ns("date_range"), NULL, start = Sys.Date() - 60, end = Sys.Date() - 5, language = "fr",
+        min = as.Date("2020-01-01"), max = Sys.Date()),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-        shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux (2024-2025) + API si besoin."))),
+        shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux + API si besoin."))),
 
     # ---- Buttons ----
     shiny::actionButton(ns("run_sim"), "Lancer la simulation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
@@ -202,12 +211,23 @@ mod_sidebar_server <- function(id, sim_state) {
   moduleServer(id, function(input, output, session) {
     ns <- session$ns
 
-    # ---- AC bounds computation ----
-    # Build a minimal param list from raw inputs (NOT params_r) to avoid
-    # circular dependency: ac_bounds -> params_r -> baseline_alpha -> ac_bounds
-    ac_bounds <- shiny::reactive({
-      df <- raw_data()
-      shiny::req(df, nrow(df) > 0)
+    # ---- AC bounds computation (triggered by button click only) ----
+    ac_bounds <- shiny::reactiveVal(NULL)
+    ac_bounds_stale <- shiny::reactiveVal(FALSE)
+
+    # Track params that affect bounds — mark stale when they change
+    shiny::observe({
+      # Touch all inputs that affect ac_bounds
+      input$p_pac_kw; input$cop_nominal; input$t_consigne; input$t_tolerance
+      input$pv_data_source; input$date_range; input$type_contrat
+      volume_ballon_eff(); pv_kwc_eff()
+      # Only mark stale if bounds were previously calibrated
+      if (!is.null(shiny::isolate(ac_bounds()))) {
+        ac_bounds_stale(TRUE)
+      }
+    })
+
+    shiny::observeEvent(input$calibrate_ac, {
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
       p_base <- list(
@@ -231,14 +251,22 @@ mod_sidebar_server <- function(id, sim_state) {
         slack_penalty = 2.5, optim_bloc_h = 4, poids_cout = 0.5,
         qp_w_comfort = 0.001, qp_w_smooth = 0.01
       )
-      compute_ac_bounds(df, p_base)
-    })
+
+      shiny::withProgress(message = "Calibrage des bornes AC...", value = 0.3, {
+        df <- raw_data()
+        shiny::setProgress(0.6, detail = "Simulation baseline alpha=0/1...")
+        bounds <- compute_ac_bounds(df, p_base)
+        shiny::setProgress(1, detail = "Termine!")
+      })
+
+      ac_bounds(bounds)
+      ac_bounds_stale(FALSE)
+    }, ignoreInit = TRUE)
 
     # ---- Baseline alpha from AC target ----
     baseline_alpha <- shiny::reactive({
-      bounds <- ac_bounds()
+      bounds <- ac_bounds()  # reactiveVal, NULL until calibrated
       target <- input$autoconso_cible
-      # slider lives inside uiOutput — may not exist yet on first render
       if (is.null(bounds) || is.null(target)) return(0.5)
       span <- bounds$ac_ceiling - bounds$ac_floor
       if (span < 1) return(0.5)
@@ -253,40 +281,45 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::updateDateRangeInput(session, "date_range",
           min = as.Date("2024-01-01"), max = as.Date("2024-12-31"),
           start = as.Date("2024-06-01"), end = as.Date("2024-09-30"))
+      } else if (input$pv_data_source == "real_elia") {
+        shiny::updateDateRangeInput(session, "date_range",
+          min = as.Date("2020-04-01"), max = Sys.Date(),
+          start = Sys.Date() - 60, end = Sys.Date() - 5)
       } else {
         shiny::updateDateRangeInput(session, "date_range",
-          min = as.Date("2025-01-01"), max = as.Date("2025-12-31"),
-          start = as.Date("2025-07-01"), end = as.Date("2025-08-31"))
+          min = as.Date("2020-01-01"), max = Sys.Date(),
+          start = Sys.Date() - 60, end = Sys.Date() - 5)
       }
     }, ignoreInit = TRUE)
 
-    # ---- Autoconso slider + bounds info (single uiOutput with spinner) ----
-    output$autoconso_panel <- shiny::renderUI({
-      bounds <- tryCatch(ac_bounds(), error = function(e) NULL)
+    # ---- Autoconso: update slider + show info after calibration ----
+    output$autoconso_panel_calibrated <- shiny::renderUI({
+      bounds <- ac_bounds()
+      stale <- ac_bounds_stale()
+      current <- input$autoconso_cible
+      ns <- session$ns
 
+      # Not yet calibrated
       if (is.null(bounds)) {
-        return(shiny::tags$div(
+        return(shiny::tags$div(style = "margin-top:8px;",
           shiny::sliderInput(ns("autoconso_cible"),
             shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
             min = 10, max = 90, value = 35, step = 5, post = "%"),
           shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-            "Lancez une premiere simulation pour calibrer les bornes.")))
+            "Cliquez sur \"Calibrer les bornes\" pour ajuster la plage.")))
       }
 
       # No PV case
       if (bounds$ac_ceiling < 1 && bounds$ac_floor < 1) {
-        return(shiny::tags$div(
-          shiny::sliderInput(ns("autoconso_cible"),
-            shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
-            min = 0, max = 1, value = 0, step = 1, post = "%"),
-          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:4px;", cl$text_muted),
+        return(shiny::tags$div(style = "margin-top:8px;",
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
             shiny::HTML("Sans PV, la baseline est un thermostat pur. L'autoconsommation est nulle."))))
       }
 
+      # Calibrated: show slider with proper bounds
       new_min <- floor(bounds$ac_floor)
       new_max <- ceiling(bounds$ac_ceiling)
       if (new_max <= new_min) new_max <- new_min + 1
-      current <- shiny::isolate(input$autoconso_cible)
       if (is.null(current)) current <- round((new_min + new_max) / 2)
       new_val <- max(new_min, min(new_max, current))
 
@@ -302,7 +335,13 @@ mod_sidebar_server <- function(id, sim_state) {
         list(txt = "Suivi PV intensif", col = cl$reel, marge = "faible -- gains = valeur du Belpex")
       }
 
-      shiny::tags$div(
+      stale_warning <- if (stale) {
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;font-weight:600;margin-bottom:4px;", cl$danger),
+          shiny::HTML("&#9888; Param\u00e8tres modifi\u00e9s depuis le dernier calibrage &mdash; recalibrez pour mettre \u00e0 jour."))
+      } else NULL
+
+      shiny::tags$div(style = "margin-top:8px;",
+        stale_warning,
         shiny::sliderInput(ns("autoconso_cible"),
           shiny::tags$span("Autoconsommation actuelle (%)", tip("Estimez le taux d'autoconsommation de votre installation actuelle. Le simulateur construira une baseline avec suivi PV correspondant.")),
           min = new_min, max = new_max, value = new_val, step = 5, post = "%"),
@@ -335,6 +374,7 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::HTML(sprintf("<b>%s L</b> &middot; stockage <b>%s kWh<sub>th</sub></b> (%s kWh<sub>e</sub>) &middot; <b>%sh</b> de flexibilite",
           formatC(vol, format = "d", big.mark = " "), round(cap_kwh, 1), cap_elec, heures_flex)))
     })
+    shiny::outputOptions(output, "volume_auto_display", suspendWhenHidden = FALSE)
 
     # ---- PV auto ----
     pv_kwc_eff <- shiny::reactive({
@@ -365,6 +405,7 @@ mod_sidebar_server <- function(id, sim_state) {
         cl$opti, cl$bg_input),
         shiny::HTML(sprintf("<b>%.1f kWc</b> (%d kWh/an &mdash; %s)", kwc, conso, detail)))
     })
+    shiny::outputOptions(output, "pv_auto_display", suspendWhenHidden = FALSE)
 
     # ---- params_r ----
     params_r <- shiny::reactive({
@@ -399,7 +440,9 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- raw_data ----
-    raw_data <- shiny::reactive({
+    # Compute raw_data from current inputs. Also triggers once at boot
+    # via the observe below (ignoreInit = FALSE on input$date_range).
+    compute_raw_data <- function() {
       if (input$data_source == "csv") {
         shiny::req(input$csv_file)
         df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE) %>% dplyr::mutate(timestamp = lubridate::ymd_hms(timestamp))
@@ -419,7 +462,8 @@ mod_sidebar_server <- function(id, sim_state) {
           ecs_kwh_jour = input$ecs_kwh_jour,
           building_type = if (!is.null(input$building_type)) input$building_type else "standard",
           pv_data_source = if (!is.null(pv_src)) pv_src else "synthetic",
-          delaunoy_file_path = if (!is.null(pv_src) && pv_src == "real_delaunoy") delaunoy_path else NULL)
+          delaunoy_file_path = if (!is.null(pv_src) && pv_src == "real_delaunoy") delaunoy_path else NULL,
+          solar_region = "Namur")
       }
 
       # Inject real Belpex prices (CSV only)
@@ -435,6 +479,18 @@ mod_sidebar_server <- function(id, sim_state) {
         }
       }
       df
+    }
+
+    raw_data <- shiny::reactive({ compute_raw_data() })
+
+    # Trigger raw_data computation at boot (once inputs are initialized)
+    boot_done <- shiny::reactiveVal(FALSE)
+    shiny::observe({
+      shiny::req(input$date_range, !boot_done())
+      message("[Boot] Pre-computing raw_data with default inputs...")
+      raw_data()
+      boot_done(TRUE)
+      message("[Boot] raw_data ready.")
     })
 
     # ---- Simulation ----

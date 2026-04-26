@@ -50,9 +50,18 @@ ELIA_PAGE_SIZE <- 100
 ELIA_TIMEOUT <- 12
 
 # ---------------------------------------------------------------------------
-# Charger les CSV locaux elia_co2_YYYY.csv (meme pattern que Belpex)
+# Charger les donnees CO2 : .rda package data -> CSV fallback
 # ---------------------------------------------------------------------------
 load_local_co2 <- function(data_dir = "data") {
+  # Priorite 1 : objet package (lazy-loaded, instantane)
+  if (exists("elia_co2", where = asNamespace("wisepocpac"), inherits = FALSE)) {
+    return(get("elia_co2", envir = asNamespace("wisepocpac")))
+  }
+  if (exists("elia_co2", envir = .GlobalEnv)) {
+    return(get("elia_co2", envir = .GlobalEnv))
+  }
+
+  # Priorite 2 : CSV locaux
   files <- list.files(data_dir, pattern = "elia_co2_.*\\.csv$", full.names = TRUE)
   if (length(files) == 0) return(NULL)
 

@@ -1,6 +1,7 @@
 #' Comparaison Tab Module UI
 #'
-#' Contains multi-variable comparison chart with dual Y axes.
+#' Explorateur de donnees progressif : sources externes (toujours disponible),
+#' baseline (apres simulation), optimise (apres simulation).
 #'
 #' @param id module id
 #' @noRd
@@ -9,7 +10,10 @@ mod_comparaison_ui <- function(id) {
   ns <- shiny::NS(id)
   shiny::tagList(
     bslib::layout_columns(col_widths = 12,
-      bslib::card(full_screen = TRUE, bslib::card_header("Comparer 2 ou 3 series temporelles"),
+      bslib::card(full_screen = TRUE,
+        bslib::card_header(shiny::tags$span(
+          "Explorateur de donn\u00e9es",
+          tip("Comparez 2 ou 3 series temporelles. Les donnees externes sont disponibles immediatement. Les series baseline et optimisees apparaissent apres simulation."))),
         bslib::card_body(
           bslib::layout_columns(col_widths = c(3, 3, 3, 3),
             shiny::selectInput(ns("compare_var1"), "Serie 1 (axe gauche)",
@@ -19,9 +23,8 @@ mod_comparaison_ui <- function(id) {
             shiny::selectInput(ns("compare_var3"), "Serie 3 (optionnelle)",
               choices = NULL, selected = NULL),
             shiny::dateRangeInput(ns("compare_range"), "Zoom periode",
-              start = Sys.Date() - 7, end = Sys.Date(), language = "fr")),
-          plotly::plotlyOutput(ns("plot_compare"), height = "480px"))))
-  )
+              start = Sys.Date() - 60, end = Sys.Date() - 5, language = "fr")),
+          plotly::plotlyOutput(ns("plot_compare"), height = "480px")))))
 }
 
 #' Comparaison Tab Module Server
@@ -33,90 +36,251 @@ mod_comparaison_server <- function(id, sidebar) {
   shiny::moduleServer(id, function(input, output, session) {
 
     sim_result   <- sidebar$sim_result
-    sim_filtered <- sidebar$sim_filtered
     date_range   <- sidebar$date_range
 
-    compare_vars <- c(
-      "Production PV (kWh)" = "pv_kwh",
-      "Soutirage baseline (kWh)" = "offtake_kwh",
-      "Soutirage optimise (kWh)" = "sim_offtake",
-      "Injection baseline (kWh)" = "intake_kwh",
-      "Injection optimisee (kWh)" = "sim_intake",
-      "Autoconsommation baseline (kWh)" = "autoconso_baseline",
-      "Autoconsommation optimisee (kWh)" = "autoconso_opti",
-      "Facture baseline (EUR)" = "facture_baseline",
-      "Facture optimisee (EUR)" = "facture_opti",
-      "Conso hors PAC (kWh)" = "conso_hors_pac",
-      "Soutirage ECS (kWh)" = "soutirage_estime_kwh",
-      "Temperature ballon baseline (C)" = "t_ballon",
-      "Temperature ballon optimisee (C)" = "sim_t_ballon",
-      "Temperature exterieure (C)" = "t_ext",
-      "COP" = "sim_cop",
-      "PAC on (optimise)" = "sim_pac_on",
-      "Prix soutirage (EUR/kWh)" = "prix_offtake",
-      "Prix injection (EUR/kWh)" = "prix_injection",
-      "Prix spot (EUR/kWh)" = "prix_eur_kwh"
+    # ---- Variable definitions by category ----
+    vars_external <- c(
+      "Prix spot (EUR/kWh)"          = "ext_prix",
+      "Temp\u00e9rature ext\u00e9rieure (\u00b0C)" = "ext_temperature",
+      "Intensit\u00e9 CO2 (gCO2/kWh)" = "ext_co2",
+      "Production PV Elia (kWh)"     = "ext_pv"
     )
 
-    compare_derived <- c("autoconso_baseline", "autoconso_opti", "facture_baseline", "facture_opti")
+    vars_baseline <- c(
+      "Production PV (kWh)"              = "pv_kwh",
+      "Soutirage baseline (kWh)"         = "offtake_kwh",
+      "Injection baseline (kWh)"         = "intake_kwh",
+      "Autoconsommation baseline (kWh)"  = "autoconso_baseline",
+      "Facture baseline (EUR)"           = "facture_baseline",
+      "Conso hors PAC (kWh)"             = "conso_hors_pac",
+      "Soutirage ECS (kWh)"              = "soutirage_estime_kwh",
+      "Temp\u00e9rature ballon baseline (\u00b0C)" = "t_ballon",
+      "Temp\u00e9rature ext\u00e9rieure sim (\u00b0C)" = "t_ext",
+      "Prix soutirage (EUR/kWh)"         = "prix_offtake",
+      "Prix injection (EUR/kWh)"         = "prix_injection"
+    )
 
-    shiny::observeEvent(sim_result(), {
-      sim <- sim_result()$sim
-      avail_native <- compare_vars[compare_vars %in% names(sim)]
-      avail_derived <- compare_vars[compare_vars %in% compare_derived]
-      avail <- c(avail_native, avail_derived)
-      shiny::updateSelectInput(session, "compare_var1", choices = avail,
-        selected = if ("pv_kwh" %in% avail) "pv_kwh" else avail[1])
-      shiny::updateSelectInput(session, "compare_var2", choices = avail,
-        selected = if ("prix_eur_kwh" %in% avail) "prix_eur_kwh" else avail[min(2, length(avail))])
-      avail3 <- c("Aucune" = "", avail)
-      shiny::updateSelectInput(session, "compare_var3", choices = avail3, selected = "")
-    })
+    vars_optimised <- c(
+      "Soutirage optimis\u00e9 (kWh)"         = "sim_offtake",
+      "Injection optimis\u00e9e (kWh)"         = "sim_intake",
+      "Autoconsommation optimis\u00e9e (kWh)"  = "autoconso_opti",
+      "Facture optimis\u00e9e (EUR)"            = "facture_opti",
+      "Temp\u00e9rature ballon optimis\u00e9e (\u00b0C)" = "sim_t_ballon",
+      "COP"                                     = "sim_cop",
+      "PAC on (optimis\u00e9)"                  = "sim_pac_on"
+    )
+
+    all_vars <- c(vars_external, vars_baseline, vars_optimised)
+
+    summable <- c("ext_pv", "pv_kwh", "offtake_kwh", "sim_offtake",
+      "intake_kwh", "sim_intake", "conso_hors_pac", "soutirage_estime_kwh",
+      "sim_pac_on", "autoconso_baseline", "autoconso_opti",
+      "facture_baseline", "facture_opti")
 
     get_unit <- function(var) {
       if (is.null(var) || var == "") return(NA_character_)
-      label <- names(compare_vars)[compare_vars == var]
+      label <- names(all_vars)[all_vars == var]
       if (length(label) == 0) return(NA_character_)
       m <- regmatches(label, regexpr("\\(([^)]+)\\)", label))
       if (length(m) == 0) return(NA_character_)
       gsub("[()]", "", m)
     }
 
+    # ---- State tracking ----
+    has_sim <- shiny::reactiveVal(FALSE)
+
+    shiny::observeEvent(sim_result(), {
+      has_sim(TRUE)
+    })
+
+    # ---- External data reactive (loads on date range change) ----
+    external_data <- shiny::reactive({
+      shiny::req(date_range())
+      dr <- date_range()
+      dp <- DataProvider$new()
+
+      # Prix Belpex
+      belpex <- tryCatch({
+        b <- dp$get_belpex(dr[1], dr[2])
+        if (!is.null(b$data) && nrow(b$data) > 0) {
+          df <- b$data
+          df$timestamp <- lubridate::with_tz(df$datetime, "Europe/Brussels")
+          df$ext_prix <- df$price_eur_mwh / 1000
+          df[, c("timestamp", "ext_prix")]
+        }
+      }, error = function(e) NULL)
+
+      # Temperature
+      temp <- tryCatch({
+        t <- dp$get_temperature(dr[1], dr[2])
+        if (!is.null(t) && nrow(t) > 0) {
+          t$ext_temperature <- t$t_ext
+          t[, c("timestamp", "ext_temperature")]
+        }
+      }, error = function(e) NULL)
+
+      # CO2
+      co2 <- tryCatch({
+        c <- dp$get_co2(dr[1], dr[2])
+        if (!is.null(c$df) && nrow(c$df) > 0) {
+          df <- c$df
+          df$timestamp <- lubridate::with_tz(df$datetime, "Europe/Brussels")
+          df$ext_co2 <- df$co2_g_per_kwh
+          df[, c("timestamp", "ext_co2")]
+        }
+      }, error = function(e) NULL)
+
+      # Solar PV
+      solar <- tryCatch({
+        s <- fetch_solar_elia(dr[1], dr[2], region = "Namur")
+        if (!is.null(s$df) && nrow(s$df) > 0) {
+          pv_kwc <- tryCatch(sidebar$pv_kwc_eff(), error = function(e) 30)
+          scaled <- scale_solar_to_local(s$df, pv_kwc)
+          scaled$timestamp <- lubridate::with_tz(scaled$datetime, "Europe/Brussels")
+          scaled[, c("timestamp", "pv_kwh")]
+          dplyr::rename(scaled[, c("timestamp", "pv_kwh")], ext_pv = pv_kwh)
+        }
+      }, error = function(e) NULL)
+
+      # Build quarter-hourly grid and join all
+      ts_start <- as.POSIXct(paste0(dr[1], " 00:00:00"), tz = "Europe/Brussels")
+      ts_end   <- as.POSIXct(paste0(dr[2], " 23:45:00"), tz = "Europe/Brussels")
+      grid <- dplyr::tibble(timestamp = seq(ts_start, ts_end, by = "15 min"))
+
+      # Join each source by nearest timestamp (floor to hour for hourly sources)
+      if (!is.null(belpex)) {
+        belpex$join_h <- lubridate::floor_date(belpex$timestamp, "hour")
+        grid$join_h <- lubridate::floor_date(grid$timestamp, "hour")
+        grid <- dplyr::left_join(grid, dplyr::distinct(belpex[, c("join_h", "ext_prix")], join_h, .keep_all = TRUE), by = "join_h")
+        grid$join_h <- NULL
+      }
+      if (!is.null(temp)) {
+        temp$join_h <- lubridate::floor_date(temp$timestamp, "hour")
+        grid$join_h <- lubridate::floor_date(grid$timestamp, "hour")
+        grid <- dplyr::left_join(grid, dplyr::distinct(temp[, c("join_h", "ext_temperature")], join_h, .keep_all = TRUE), by = "join_h")
+        grid$join_h <- NULL
+      }
+      if (!is.null(co2)) {
+        co2$join_h <- lubridate::floor_date(co2$timestamp, "hour")
+        grid$join_h <- lubridate::floor_date(grid$timestamp, "hour")
+        grid <- dplyr::left_join(grid, dplyr::distinct(co2[, c("join_h", "ext_co2")], join_h, .keep_all = TRUE), by = "join_h")
+        grid$join_h <- NULL
+      }
+      if (!is.null(solar)) {
+        grid <- dplyr::left_join(grid, solar, by = "timestamp")
+      }
+
+      grid
+    })
+
+    # ---- Build grouped choices based on data availability ----
+    build_choices <- function() {
+      ext <- external_data()
+      ext_avail <- vars_external[vars_external %in% names(ext)]
+
+      if (has_sim()) {
+        sim <- sim_result()$sim
+        bl_avail <- vars_baseline[vars_baseline %in% names(sim)]
+        op_avail <- vars_optimised[vars_optimised %in% names(sim)]
+        # Add derived columns
+        bl_avail <- c(bl_avail, vars_baseline[vars_baseline %in% c("autoconso_baseline", "facture_baseline")])
+        op_avail <- c(op_avail, vars_optimised[vars_optimised %in% c("autoconso_opti", "facture_opti")])
+        bl_avail <- bl_avail[!duplicated(bl_avail)]
+        op_avail <- op_avail[!duplicated(op_avail)]
+      } else {
+        bl_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
+        op_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
+      }
+
+      list(
+        "\U0001f4e1 Sources externes" = ext_avail,
+        "\U0001f3e0 Baseline"         = bl_avail,
+        "\u2728 Optimis\u00e9"        = op_avail
+      )
+    }
+
+    # ---- Update selectInputs on external data load ----
+    shiny::observeEvent(external_data(), {
+      choices <- build_choices()
+      shiny::updateSelectInput(session, "compare_var1", choices = choices,
+        selected = if ("ext_pv" %in% unlist(choices)) "ext_pv" else unlist(choices)[1])
+      shiny::updateSelectInput(session, "compare_var2", choices = choices,
+        selected = if ("ext_prix" %in% unlist(choices)) "ext_prix" else unlist(choices)[min(2, length(unlist(choices)))])
+      choices3 <- c(list("Aucune" = ""), choices)
+      shiny::updateSelectInput(session, "compare_var3", choices = choices3, selected = "")
+    })
+
+    # ---- Update selectInputs when sim becomes available ----
+    shiny::observeEvent(sim_result(), {
+      choices <- build_choices()
+      cur1 <- shiny::isolate(input$compare_var1)
+      cur2 <- shiny::isolate(input$compare_var2)
+      cur3 <- shiny::isolate(input$compare_var3)
+      all_vals <- unlist(choices)
+      shiny::updateSelectInput(session, "compare_var1", choices = choices,
+        selected = if (!is.null(cur1) && cur1 %in% all_vals) cur1 else all_vals[1])
+      shiny::updateSelectInput(session, "compare_var2", choices = choices,
+        selected = if (!is.null(cur2) && cur2 %in% all_vals) cur2 else all_vals[min(2, length(all_vals))])
+      choices3 <- c(list("Aucune" = ""), choices)
+      shiny::updateSelectInput(session, "compare_var3", choices = choices3,
+        selected = if (!is.null(cur3) && cur3 %in% all_vals) cur3 else "")
+    })
+
+    # ---- Sync compare_range with sidebar date range ----
     shiny::observeEvent(date_range(), {
       shiny::req(date_range())
       shiny::updateDateRangeInput(session, "compare_range",
         start = date_range()[1], end = date_range()[2],
-        min = date_range()[1], max = date_range()[2])
+        min = as.Date("2020-01-01"), max = Sys.Date())
     })
 
+    # ---- Merge data for plotting ----
     compare_data <- shiny::reactive({
-      shiny::req(sim_result(), input$compare_range)
-      sim <- sim_result()$sim
+      shiny::req(input$compare_range)
       d1 <- as.POSIXct(input$compare_range[1], tz = "Europe/Brussels")
       d2 <- as.POSIXct(input$compare_range[2], tz = "Europe/Brussels") + lubridate::days(1)
-      sim %>%
-        dplyr::filter(timestamp >= d1, timestamp < d2) %>%
-        dplyr::mutate(
-          autoconso_baseline = pmax(0, pv_kwh - intake_kwh),
-          autoconso_opti = pmax(0, pv_kwh - sim_intake),
-          facture_baseline = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
-          facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection
-        )
+
+      # Start from external data
+      df <- external_data()
+      df <- dplyr::filter(df, timestamp >= d1, timestamp < d2)
+
+      # Merge sim data if available
+      if (has_sim()) {
+        sim <- sim_result()$sim
+        sim_cols <- sim %>%
+          dplyr::mutate(
+            autoconso_baseline = pmax(0, pv_kwh - intake_kwh),
+            autoconso_opti = pmax(0, pv_kwh - sim_intake),
+            facture_baseline = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
+            facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection
+          )
+        # Join sim columns to external grid
+        sim_to_join <- sim_cols %>%
+          dplyr::select(timestamp, dplyr::any_of(c(
+            names(vars_baseline), names(vars_optimised),
+            unname(vars_baseline), unname(vars_optimised)
+          )))
+        # Keep only value columns (not labels)
+        sim_val_cols <- intersect(names(sim_to_join), c(unname(vars_baseline), unname(vars_optimised)))
+        sim_to_join <- sim_to_join[, c("timestamp", sim_val_cols)]
+        df <- dplyr::left_join(df, sim_to_join, by = "timestamp")
+      }
+
+      df
     })
 
+    # ---- Plot ----
     output$plot_compare <- plotly::renderPlotly({
       shiny::req(compare_data(), input$compare_var1, input$compare_var2)
-      df <- compare_data()
       v1 <- input$compare_var1; v2 <- input$compare_var2
       v3 <- input$compare_var3
+      # Ignore placeholder selections
+      if (v1 == "" || v2 == "") return(plotly::plot_ly())
       if (is.null(v3) || v3 == "") v3 <- NA_character_
       vars <- c(v1, v2, if (!is.na(v3)) v3 else NULL)
-      if (!all(vars %in% names(df))) return(plotly::plot_ly())
 
-      summable <- c("pv_kwh", "offtake_kwh", "sim_offtake", "intake_kwh", "sim_intake",
-        "conso_hors_pac", "soutirage_estime_kwh", "sim_pac_on",
-        "autoconso_baseline", "autoconso_opti",
-        "facture_baseline", "facture_opti")
+      df <- compare_data()
+      if (!all(vars %in% names(df))) return(plotly::plot_ly())
 
       nr <- nrow(df)
       level <- if (nr <= 14 * 96) "qt" else if (nr <= 60 * 96) "hour" else if (nr <= 180 * 96) "day" else "week"
@@ -137,9 +301,8 @@ mod_comparaison_server <- function(id, sidebar) {
         dplyr::summarise(!!!agg_exprs, .groups = "drop") %>%
         dplyr::rename(timestamp = .w)
 
-      label1 <- names(compare_vars)[compare_vars == v1]
-      label2 <- names(compare_vars)[compare_vars == v2]
-      unit1 <- get_unit(v1); unit2 <- get_unit(v2)
+      label1 <- names(all_vars)[all_vars == v1]
+      label2 <- names(all_vars)[all_vars == v2]
 
       add_smart_trace <- function(p, y_vals, var_name, label, color, yaxis, dash = NULL) {
         if (var_name %in% summable) {
@@ -156,22 +319,20 @@ mod_comparaison_server <- function(id, sidebar) {
         add_smart_trace(df_agg[[v2]], v2, label2, cl$accent3, "y2")
 
       if (!is.na(v3)) {
-        label3 <- names(compare_vars)[compare_vars == v3]
-        unit3 <- get_unit(v3)
+        label3 <- names(all_vars)[all_vars == v3]
+        unit1 <- get_unit(v1); unit2 <- get_unit(v2); unit3 <- get_unit(v3)
         if (!is.na(unit3) && !is.na(unit1) && unit3 == unit1) {
           axe3 <- "y"; col3 <- cl$success
         } else if (!is.na(unit3) && !is.na(unit2) && unit3 == unit2) {
           axe3 <- "y2"; col3 <- cl$pv
         } else {
           axe3 <- "y"; col3 <- cl$success
-          shiny::showNotification(sprintf("Serie 3 (unite %s) placee sur l'axe gauche par defaut", unit3),
-            type = "warning", duration = 3)
         }
         p <- p %>% add_smart_trace(df_agg[[v3]], v3, label3, col3, axe3, dash = "dot")
       }
 
       p %>% plotly::layout(
-        title = paste0("Agregation: ", label),
+        title = paste0("Agr\u00e9gation: ", label),
         yaxis = list(title = label1, tickfont = list(color = cl$opti),
           titlefont = list(color = cl$opti)),
         yaxis2 = list(title = label2, overlaying = "y", side = "right",

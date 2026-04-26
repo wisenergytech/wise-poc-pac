@@ -72,12 +72,26 @@ DataProvider <- R6::R6Class("DataProvider",
     },
 
     #' @description Interpolate hourly CO2 intensity to 15-min resolution.
-    #'   Delegates to interpolate_co2_15min() from R/co2_elia.R.
+    #'   Delegates to interpolate_co2_15min() from R/data_elia_co2.R.
     #' @param co2_hourly tibble with datetime and co2_g_per_kwh (hourly, UTC)
     #' @param ts_15min Vector of timestamps at 15-min intervals
     #' @return Numeric vector of interpolated CO2 intensity
     interpolate_co2 = function(co2_hourly, ts_15min) {
       interpolate_co2_15min(co2_hourly, ts_15min)
+    },
+
+    #' @description Load solar PV production from Elia.
+    #'   Delegates to fetch_solar_elia() from R/data_elia_solar.R.
+    #' @param date_start Start date
+    #' @param date_end End date
+    #' @param region Elia region (default "Namur")
+    #' @return A list with $df (tibble) and $source
+    get_solar = function(date_start, date_end, region = "Namur") {
+      fetch_solar_elia(
+        start_date = date_start,
+        end_date = date_end,
+        region = region
+      )
     }
   ),
 

@@ -76,7 +76,8 @@ DataGenerator <- R6::R6Class("DataGenerator",
                              p_pac_kw = 2, volume_ballon_l = 200, pv_kwc = 6,
                              ecs_kwh_jour = NULL, building_type = "standard",
                              pv_data_source = "synthetic",
-                             delaunoy_file_path = NULL) {
+                             delaunoy_file_path = NULL,
+                             solar_region = "Namur") {
 
       ts_start <- as.POSIXct(paste0(date_start, " 00:00:00"), tz = "Europe/Brussels")
       ts_end   <- as.POSIXct(paste0(as.Date(date_end) + 1, " 00:00:00"), tz = "Europe/Brussels") - 900
@@ -135,10 +136,28 @@ DataGenerator <- R6::R6Class("DataGenerator",
       }
 
       # --- PV production ---
-      if (pv_data_source == "real_delaunoy" && !is.null(delaunoy_file_path)) {
+      if (pv_data_source == "real_elia") {
+        elia_result <- private$data_provider$get_solar(date_start, date_end, solar_region)
+        if (!is.null(elia_result$df) && nrow(elia_result$df) > 0) {
+          scaled <- scale_solar_to_local(elia_result$df, pv_kwc)
+          # Convert Elia UTC timestamps to Europe/Brussels for join
+          scaled$timestamp <- lubridate::with_tz(scaled$datetime, "Europe/Brussels")
+          pv_lookup <- dplyr::tibble(timestamp = ts) %>%
+            dplyr::left_join(scaled[, c("timestamp", "pv_kwh")], by = "timestamp")
+          pv_kwh <- pv_lookup$pv_kwh
+          pv_kwh[is.na(pv_kwh)] <- 0
+          cap_mwc <- elia_result$df$monitoredcapacity_mw[1]
+          message(sprintf("[Elia Solar] %s: %d pts, facteur=%.5f (cible=%s kWc / region=%.0f MWc)",
+            solar_region, sum(pv_lookup$pv_kwh > 0, na.rm = TRUE), pv_kwc / (cap_mwc * 1000), pv_kwc, cap_mwc))
+        } else {
+          message("[Elia Solar] Pas de donnees, fallback synthetique")
+          env <- 0.5 + 0.5 * sin(2 * pi * (doy - 80) / 365)
+          pv_kw <- pv_kwc * 0.8 * pmax(0, sin(pi * (h - 6) / 14)) * env * couverture
+          pv_kwh <- pv_kw * 0.25
+        }
+      } else if (pv_data_source == "real_delaunoy" && !is.null(delaunoy_file_path)) {
         delaunoy_df <- self$load_delaunoy(delaunoy_file_path, pv_kwc)
         if (!is.null(delaunoy_df)) {
-          # Join Delaunoy data to the simulation timestamp grid
           pv_lookup <- dplyr::tibble(timestamp = ts) %>%
             dplyr::left_join(delaunoy_df, by = "timestamp")
           pv_kwh <- pv_lookup$pv_kwh

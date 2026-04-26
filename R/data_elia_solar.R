@@ -69,14 +69,33 @@ fetch_solar_elia <- function(start_date, end_date,
   start_date <- as.POSIXct(paste0(as.Date(start_date), " 00:00:00"), tz = "UTC")
   end_date   <- as.POSIXct(paste0(as.Date(end_date),   " 23:59:59"), tz = "UTC")
 
-  # 1. ODS032 — historique complet (chunke par semaine pour rester < 10K offset)
+  # 1. Objet package .rda (instantane)
+  pkg_data <- NULL
+  if (exists("elia_solar", where = asNamespace("wisepocpac"), inherits = FALSE)) {
+    pkg_data <- get("elia_solar", envir = asNamespace("wisepocpac"))
+  } else if (exists("elia_solar", envir = .GlobalEnv)) {
+    pkg_data <- get("elia_solar", envir = .GlobalEnv)
+  }
+  if (!is.null(pkg_data)) {
+    df <- dplyr::filter(pkg_data, datetime >= start_date, datetime <= end_date)
+    if (nrow(df) > 0) {
+      coverage <- as.numeric(difftime(max(df$datetime), min(df$datetime), units = "days"))
+      requested <- as.numeric(difftime(end_date, start_date, units = "days"))
+      if (coverage >= requested * 0.9) {
+        message(sprintf("[Solar Elia] .rda : %d enregistrements", nrow(df)))
+        return(list(df = df, source = "rda", region = region))
+      }
+    }
+  }
+
+  # 2. ODS032 — historique complet (chunke par semaine pour rester < 10K offset)
   df <- fetch_solar_chunked("ods032", start_date, end_date, region)
   if (!is.null(df) && nrow(df) > 0) {
     message(sprintf("[Solar Elia] ODS032 %s : %d enregistrements", region, nrow(df)))
     return(list(df = df, source = "ods032", region = region))
   }
 
-  # 2. ODS087 — near real-time (fallback pour les 7 derniers jours)
+  # 3. ODS087 — near real-time (fallback pour les 7 derniers jours)
   df <- fetch_solar_dataset("ods087", start_date, end_date, region)
   if (!is.null(df) && nrow(df) > 0) {
     message(sprintf("[Solar Elia] ODS087 %s : %d enregistrements", region, nrow(df)))

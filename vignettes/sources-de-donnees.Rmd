@@ -220,35 +220,79 @@ reelles (ensoleillement, nuages, pluie, neige) et les caracteristiques du parc
 installe (orientation, inclinaison, ombrage — moyennees sur toutes les
 installations de la region).
 
+Le champ `monitoredcapacity_mw` est la **capacite PV totale installee** (en
+MWc) dans la province, c'est-a-dire la somme des puissances cretes de toutes
+les installations PV raccordees au reseau dans cette region. Ce n'est pas la
+capacite d'Elia en tant que producteur — Elia est le gestionnaire de reseau qui
+monitore l'ensemble du parc. Pour Namur, cette valeur est d'environ 449 MWc
+(avril 2026), soit des milliers d'installations residentielles et commerciales.
+
+### Principe de la mise a l'echelle
+
+Le ratio `measured / monitoredcapacity` donne le **facteur de charge moyen**
+de la province a chaque instant. Ce facteur de charge integre les conditions
+meteorologiques reelles (ensoleillement, nuages, pluie) et les
+caracteristiques moyennes du parc (orientations, inclinaisons, ombrages
+varies).
+
+L'hypothese de scaling est que l'installation cible, situee dans la meme
+province, subit les memes conditions meteorologiques et se comporte donc
+avec un facteur de charge similaire a la moyenne du parc :
+
+$$PV_{\text{local}}(t) = kWc_{\text{cible}} \times \frac{measured(t)}{monitoredcapacity(t)}$$
+
+Ce qui est equivalent a :
+
+$$PV_{\text{local}}(t) = kWc_{\text{cible}} \times loadfactor(t) / 100$$
+
 ### Transformations
 
 1. **Scaling lineaire** : la production regionale (MW) est convertie en
-   production locale (kWh/quart d'heure) via un ratio de puissance crete :
+   production locale (kWh/quart d'heure) :
 
    ```
    pv_kwh = measured_mw * 1000 * 0.25 * (target_kwc / monitoredcapacity_kwc)
    ```
 
-   - `* 1000` : MW vers kW
-   - `* 0.25` : puissance moyenne sur 15 min vers energie (kWh)
-   - `target_kwc / monitoredcapacity_kwc` : ratio de scaling
+   Decomposition :
 
-   Exemple : pour une installation de 30 kWc, avec Namur a 449 MWc
-   (449 000 kWc), le ratio est 30 / 449 000 = 6.68e-5. Si Elia mesure
-   220 MW a midi, la production locale estimee est :
-   `220 * 1000 * 0.25 * 6.68e-5 = 3.67 kWh` par quart d'heure.
+   - `measured_mw * 1000` : puissance MW vers kW
+   - `* 0.25` : puissance moyenne sur 15 min vers energie (kWh par quart d'heure)
+   - `* (target_kwc / monitoredcapacity_kwc)` : ratio de mise a l'echelle
+
+   **Exemple** : installation de 30 kWc, province de Namur (449 MWc = 449 000
+   kWc), un quart d'heure ensoleille ou Elia mesure 220 MW :
+
+   - Facteur de charge = 220 / 449 = 49%
+   - Puissance locale = 30 kWc x 49% = 14.7 kW
+   - Energie locale = 14.7 kW x 0.25 h = **3.67 kWh** par quart d'heure
+
+   Verification : `220 * 1000 * 0.25 * (30 / 449000) = 3.67 kWh`
 
 2. **Valeurs nocturnes** : les NA dans `measured` sont remplaces par 0
    (pas de production solaire la nuit).
 
-### Limites du scaling lineaire
+### Limites de la mise a l'echelle
 
-- Le profil est **regional**, pas site-specific. Un passage nuageux local
-  a Profondeville mais pas a Dinant sera moyenne sur la province de Namur.
-- Le scaling suppose que l'installation cible a des conditions similaires
-  (orientation, inclinaison, ombrage) a la moyenne du parc regional.
-- Les effets non lineaires (saturation onduleur, pertes cablage) ne sont
-  pas modelises. Pour un POC, cette approximation est suffisante.
+- **Profil regional, pas site-specific**. Le `measured` est la somme de
+  milliers d'installations dans la province. Un passage nuageux localise
+  a Profondeville mais pas a Dinant sera moyenne. Cependant, a l'echelle
+  d'une province belge (~50 km), les conditions meteorologiques sont
+  relativement homogenes au pas quart-horaire.
+- **Orientation et inclinaison moyennes**. Le scaling suppose que
+  l'installation cible a un comportement proche de la moyenne du parc
+  regional. Une installation avec une orientation ou inclinaison atypique
+  (ex: plein nord, facade verticale) ne sera pas bien representee.
+- **Effets non lineaires ignores**. La saturation des onduleurs, les
+  pertes par cablage a grande echelle, et les effets de temperature sur le
+  rendement des panneaux ne sont pas modelises. Pour un POC, cette
+  approximation est conservative et suffisante.
+- **Meme principe que le scaling Delaunoy**. L'alternative "Reel Delaunoy"
+  utilise exactement le meme raisonnement : `pv_kwh = mesure * (cible_kwc
+  / ref_kwc)`. La difference est que Delaunoy est une seule installation
+  (16 kWc) tandis qu'Elia est un parc regional (~449 000 kWc). Le profil
+  Elia est donc plus lisse (effet de foisonnement) mais disponible pour
+  n'importe quelle periode depuis 2020.
 
 ---
 
@@ -264,9 +308,10 @@ R/
   R6_data_provider.R            # Classe R6 unifiant les sources
 
 data/
-  entsoe_prices_YYYY.csv    # Cache local prix
-  openmeteo_temperature_YYYY.csv       # Cache local temperature
-  elia_co2_YYYY.csv       # Cache local CO2
+  entsoe_prices_YYYY.csv          # Cache local prix
+  openmeteo_temperature_YYYY.csv  # Cache local temperature
+  elia_co2_YYYY.csv               # Cache local CO2
+  elia_solar_YYYY.csv             # Cache local production PV
 ```
 
 ### Convention de nommage

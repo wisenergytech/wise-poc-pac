@@ -82,19 +82,15 @@ plot_overlay_bar <- function(data, baseline_col, opti_col, ylab) {
   bottom_color <- ifelse(bl_bigger, cl$opti, cl$reel)
   top_color    <- ifelse(bl_bigger, cl$reel, cl$opti)
 
+  hover_text <- sprintf("Baseline: %.1f<br>Optimis\u00e9: %.1f", bl, op)
+
   plotly::plot_ly(data, x = ~timestamp) %>%
     plotly::add_bars(y = bottom, name = "Commun",
       marker = list(color = bottom_color), showlegend = FALSE,
-      hovertemplate = paste0(
-        "Baseline: %{customdata[0]:.1f}<br>",
-        "Optimise: %{customdata[1]:.1f}<extra></extra>"),
-      customdata = cbind(bl, op)) %>%
+      text = hover_text, hoverinfo = "text+x") %>%
     plotly::add_bars(y = top, name = "Delta",
       marker = list(color = top_color), showlegend = FALSE,
-      hovertemplate = paste0(
-        "Baseline: %{customdata[0]:.1f}<br>",
-        "Optimise: %{customdata[1]:.1f}<extra></extra>"),
-      customdata = cbind(bl, op)) %>%
+      text = hover_text, hoverinfo = "text+x") %>%
     plotly::add_bars(y = 0, name = "Baseline", marker = list(color = cl$reel),
       showlegend = TRUE, hoverinfo = "skip") %>%
     plotly::add_bars(y = 0, name = "Optimise", marker = list(color = cl$opti),
