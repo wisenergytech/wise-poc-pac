@@ -40,10 +40,10 @@ mod_comparaison_server <- function(id, sidebar) {
 
     # ---- Variable definitions by category ----
     vars_external <- c(
-      "Prix spot (EUR/kWh)"          = "ext_prix",
-      "Temp\u00e9rature ext\u00e9rieure (\u00b0C)" = "ext_temperature",
-      "Intensit\u00e9 CO2 (gCO2/kWh)" = "ext_co2",
-      "Production PV Elia (kWh)"     = "ext_pv"
+      "[ENTSO-E] Prix spot (EUR/kWh)"          = "ext_prix",
+      "[Open-Meteo] Temp\u00e9rature ext. (\u00b0C)" = "ext_temperature",
+      "[Elia] Intensit\u00e9 CO2 (gCO2/kWh)"   = "ext_co2",
+      "[Elia] Production PV Namur (kWh)"        = "ext_pv"
     )
 
     vars_baseline <- c(
@@ -71,6 +71,29 @@ mod_comparaison_server <- function(id, sidebar) {
     )
 
     all_vars <- c(vars_external, vars_baseline, vars_optimised)
+
+    # Color palettes per category (primary + fallbacks for dedup)
+    palette_baseline  <- c(cl$reel, cl$pv, cl$accent2)
+    palette_optimised <- c(cl$opti, cl$pac, cl$accent)
+    palette_external  <- c(cl$accent3, cl$prix, cl$danger)
+
+    get_palette <- function(var) {
+      if (var %in% vars_baseline) palette_baseline
+      else if (var %in% vars_optimised) palette_optimised
+      else palette_external
+    }
+
+    pick_colors <- function(vars) {
+      cols <- character(length(vars))
+      used <- character(0)
+      for (i in seq_along(vars)) {
+        pal <- get_palette(vars[i])
+        available <- setdiff(pal, used)
+        cols[i] <- if (length(available) > 0) available[1] else pal[1]
+        used <- c(used, cols[i])
+      }
+      cols
+    }
 
     summable <- c("ext_pv", "pv_kwh", "offtake_kwh", "sim_offtake",
       "intake_kwh", "sim_intake", "conso_hors_pac", "soutirage_estime_kwh",
@@ -304,42 +327,55 @@ mod_comparaison_server <- function(id, sidebar) {
       label1 <- names(all_vars)[all_vars == v1]
       label2 <- names(all_vars)[all_vars == v2]
 
+      all_sel <- c(v1, v2, if (!is.na(v3)) v3)
+      colors <- pick_colors(all_sel)
+      col1 <- colors[1]; col2 <- colors[2]
+
+      rgba <- function(hex, alpha) {
+        r <- strtoi(substr(hex, 2, 3), 16)
+        g <- strtoi(substr(hex, 4, 5), 16)
+        b <- strtoi(substr(hex, 6, 7), 16)
+        sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
+      }
+
       add_smart_trace <- function(p, y_vals, var_name, label, color, yaxis, dash = NULL) {
         if (var_name %in% summable) {
           p %>% plotly::add_bars(y = y_vals, name = label,
-            marker = list(color = color, opacity = 0.7), yaxis = yaxis)
+            marker = list(color = rgba(color, 0.7)), yaxis = yaxis)
         } else {
           p %>% plotly::add_trace(y = y_vals, type = "scatter", mode = "lines",
+            fill = "tozeroy", fillcolor = rgba(color, 0.15),
             name = label, line = list(color = color, width = 2, dash = dash), yaxis = yaxis)
         }
       }
 
       p <- plotly::plot_ly(df_agg, x = ~timestamp) %>%
-        add_smart_trace(df_agg[[v1]], v1, label1, cl$opti, "y") %>%
-        add_smart_trace(df_agg[[v2]], v2, label2, cl$accent3, "y2")
+        add_smart_trace(df_agg[[v1]], v1, label1, col1, "y") %>%
+        add_smart_trace(df_agg[[v2]], v2, label2, col2, "y2")
 
       if (!is.na(v3)) {
         label3 <- names(all_vars)[all_vars == v3]
+        col3 <- colors[3]
         unit1 <- get_unit(v1); unit2 <- get_unit(v2); unit3 <- get_unit(v3)
         if (!is.na(unit3) && !is.na(unit1) && unit3 == unit1) {
-          axe3 <- "y"; col3 <- cl$success
+          axe3 <- "y"
         } else if (!is.na(unit3) && !is.na(unit2) && unit3 == unit2) {
-          axe3 <- "y2"; col3 <- cl$pv
+          axe3 <- "y2"
         } else {
-          axe3 <- "y"; col3 <- cl$success
+          axe3 <- "y"
         }
         p <- p %>% add_smart_trace(df_agg[[v3]], v3, label3, col3, axe3, dash = "dot")
       }
 
       p %>% plotly::layout(
         title = paste0("Agr\u00e9gation: ", label),
-        yaxis = list(title = label1, tickfont = list(color = cl$opti),
-          titlefont = list(color = cl$opti)),
+        yaxis = list(title = label1, tickfont = list(color = col1),
+          titlefont = list(color = col1)),
         yaxis2 = list(title = label2, overlaying = "y", side = "right",
-          tickfont = list(color = cl$accent3), titlefont = list(color = cl$accent3),
+          tickfont = list(color = col2), titlefont = list(color = col2),
           gridcolor = "rgba(0,0,0,0)"),
         hovermode = "x unified",
-        barmode = "group"
+        barmode = "stack"
       ) %>%
         pl_layout()
     })

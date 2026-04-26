@@ -24,7 +24,8 @@ mod_status_bar_server <- function(id, sidebar) {
       if (is.null(p)) return(shiny::tags$div(id = "status_bar",
         shiny::tags$div(class = "status-line",
           shiny::tags$span(class = "status-tag", "RUN "),
-          shiny::HTML("Initialisation..."))))
+          shiny::tags$span(shiny::HTML("Chargement des donn\u00e9es..."),
+            shiny::tags$span(class = "spinner")))))
       running <- sidebar$sim_running()
       res <- tryCatch(sidebar$sim_result(), error = function(e) NULL)
       has_sim <- !running && !is.null(res) && !is.null(res$sim)
