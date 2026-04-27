@@ -9,7 +9,6 @@ quand les utiliser.
 | Mode | Minimise | Voit le futur ? | PAC | Solveur |
 |---|---|---|---|---|
 | Baseline | Rien | Non | ON/OFF bete | Aucun (thermostat) |
-| Smart | Facture (estimation locale) | ~2h devant | ON/OFF intelligent | Aucun (heuristique) |
 | MILP | Facture (optimum garanti) | Bloc entier (4-24h) | ON/OFF optimal | HiGHS (ompr) |
 | LP | Facture (optimum garanti) | Bloc entier | 0-100% optimal | HiGHS (ompr) |
 | QP | Facture + confort + lissage | Bloc entier | 0-100% lisse | CLARABEL (CVXR) |
@@ -28,30 +27,6 @@ C'est le scenario "je ne fais rien d'intelligent". Il sert uniquement de
 
 **Quand l'utiliser** : jamais directement — la baseline est toujours calculee
 en arriere-plan pour servir de reference.
-
-## Smart (heuristique)
-
-**Fichier** : `app.R` — fonctions `decider()` + `run_simulation()`
-
-Cherche a **reduire la facture** en decidant a chaque quart d'heure s'il vaut
-mieux chauffer maintenant ou attendre. Il compare :
-- Le cout de chauffer tout de suite (cher si pas de soleil et prix eleve)
-- Le cout estime de chauffer plus tard (peut-etre moins cher s'il y a du PV
-  prevu ou si les prix baissent)
-
-C'est un systeme de regles de priorite :
-1. Confort d'abord — si T est proche de T_min, chauffer quoi qu'il arrive
-2. Prix negatifs — toujours autoconsommer si l'injection rapporte moins que zero
-3. Optimisation cout — comparer le cout thermique maintenant vs plus tard
-4. Attente — si du surplus PV arrive bientot et que le ballon tient, attendre
-
-**Avantages** : instantane, pas de solveur, fonctionne en temps reel.
-**Limites** : decision locale (ne voit que ~2h devant), pas d'optimum garanti.
-Le Smart peut ponctuellement laisser T descendre sous T_min pendant 1 qt avant
-de reagir (decision basee sur T du qt precedent, pas T resultante).
-
-**Quand l'utiliser** : pour une estimation rapide, ou en mode temps reel
-quand on n'a pas le temps de resoudre un probleme d'optimisation.
 
 ## MILP (Mixed Integer Linear Programming)
 
@@ -157,7 +132,6 @@ chauffants ou des systemes sensibles aux variations.
 
 | Mode | Economie >= 0 vs baseline ? | Raison |
 |---|---|---|
-| Smart | Quasi-oui | Heuristique, retard d'1 qt possible, mais en pratique toujours meilleur |
 | MILP | **Oui (garanti)** | Minimise exactement la meme facture sous les memes contraintes |
 | LP | **Oui (garanti)** | Idem, avec en plus la flexibilite de la charge continue |
 | QP | **Non** | Les penalites confort/lissage peuvent augmenter la facture au-dela de la baseline |
@@ -167,7 +141,6 @@ chauffants ou des systemes sensibles aux variations.
 | Mode | Temps typique (6 mois, blocs 4h) |
 |---|---|
 | Baseline | < 1s |
-| Smart | < 1s |
 | MILP | ~50s |
 | LP | ~5s |
 | QP | ~10s |
@@ -177,7 +150,6 @@ chauffants ou des systemes sensibles aux variations.
 | Mode | Optimalite |
 |---|---|
 | Baseline | Aucune (reference) |
-| Smart | Bonne heuristique, pas d'optimum garanti |
 | MILP | Optimum global pour le modele on/off |
 | LP | Optimum global pour le modele continu |
 | QP | Optimum global pour le compromis cout/confort/lissage |

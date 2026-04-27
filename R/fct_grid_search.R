@@ -12,14 +12,14 @@
 #'
 #' @param df Raw data dataframe
 #' @param params Parameter list for this scenario
-#' @param mode Optimisation mode: \code{"smart"}, \code{"milp"}, \code{"lp"},
+#' @param mode Optimisation mode: \code{"milp"}, \code{"lp"},
 #'   or \code{"qp"}
-#' @param baseline_mode Baseline mode (default \code{"parametric"})
+#' @param baseline_mode Baseline mode (default \code{"thermostat"})
 #' @return A single-row tibble with columns: \code{Cout_EUR},
 #'   \code{Autoconso_pct}, \code{Injection_kWh}, \code{Soutirage_kWh},
 #'   or \code{NULL} on failure
 #' @export
-run_scenario <- function(df, params, mode = "smart",
+run_scenario <- function(df, params, mode = "lp",
                          baseline_mode = "thermostat") {
   sim_obj <- Simulation$new(params)
   sim_obj$load_raw_dataframe(df)
@@ -54,7 +54,7 @@ run_scenario <- function(df, params, mode = "smart",
 #' @param pv_range Numeric vector of PV capacities to test (kWc)
 #' @param batt_range Numeric vector of battery capacities to test (kWh)
 #' @param modes Character vector of optimisation modes. Use sidebar names:
-#'   \code{"smart"}, \code{"optimizer"}, \code{"optimizer_lp"},
+#'   \code{"optimizer"}, \code{"optimizer_lp"},
 #'   \code{"optimizer_qp"}
 #' @param contrats Character vector of contract types: \code{"fixe"},
 #'   \code{"dynamique"}
@@ -71,7 +71,7 @@ run_scenario <- function(df, params, mode = "smart",
 #'   df, params,
 #'   pv_range = seq(5, 15, by = 2),
 #'   batt_range = c(0, 10),
-#'   modes = c("smart", "optimizer"),
+#'   modes = c("optimizer", "optimizer_lp"),
 #'   contrats = "dynamique"
 #' )
 #' head(results)
@@ -79,7 +79,7 @@ run_scenario <- function(df, params, mode = "smart",
 #' @export
 run_grid_search <- function(df, params,
                             pv_range, batt_range,
-                            modes = c("smart", "optimizer", "optimizer_lp",
+                            modes = c("optimizer", "optimizer_lp",
                                       "optimizer_qp"),
                             contrats = c("fixe", "dynamique"),
                             baseline_mode = "thermostat",
@@ -87,8 +87,7 @@ run_grid_search <- function(df, params,
 
   # Map sidebar mode names to R6 optimizer modes
   mode_map <- c(
-    optimizer = "milp", optimizer_lp = "lp", optimizer_qp = "qp",
-    smart = "smart"
+    optimizer = "milp", optimizer_lp = "lp", optimizer_qp = "qp"
   )
 
   total <- length(pv_range) * length(batt_range) * length(modes) * length(contrats)
@@ -124,7 +123,7 @@ run_grid_search <- function(df, params,
           }
 
           r6_m <- mode_map[m]
-          if (is.na(r6_m)) r6_m <- "smart"
+          if (is.na(r6_m)) r6_m <- "lp"
 
           if (m == "optimizer_qp") {
             p_sim$qp_w_comfort <- 0.1

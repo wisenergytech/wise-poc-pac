@@ -26,13 +26,12 @@ reference:
       - Baseline
 
   - title: Optimizers
-    desc: LP, MILP, QP solvers and smart selection
+    desc: LP, MILP, QP solvers
     contents:
       - BaseOptimizer
       - LPOptimizer
       - MILPOptimizer
       - QPOptimizer
-      - SmartOptimizer
 
   - title: KPI
     desc: Financial and energy KPI calculation

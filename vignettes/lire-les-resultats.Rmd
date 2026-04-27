@@ -31,7 +31,7 @@ premiere chose a lire.
 RUN  SIMULATION LP -- 61.0 j · 5 856 pts · GAIN 234.5 EUR (15.2%)
 ```
 
-- **LP** : l'optimiseur utilise (Smart, MILP, LP ou QP)
+- **LP** : l'optimiseur utilise (MILP, LP ou QP)
 - **61.0 j** : duree de la periode simulee en jours
 - **5 856 pts** : nombre de quarts d'heure simules
 - **GAIN 234.5 EUR (15.2%)** : **c'est LE chiffre a retenir**. C'est

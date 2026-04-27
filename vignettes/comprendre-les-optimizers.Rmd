@@ -142,10 +142,8 @@ Pensez-y comme quatre niveaux de pilotage automatique :
 ```{=html}
 <pre class="mermaid">
 flowchart LR
-    A["Smart\n(regles)"] --> B["LP\n(continu)"]
-    B --> C["MILP\n(tout-ou-rien)"]
+    B["LP\n(continu)"] --> C["MILP\n(tout-ou-rien)"]
     C --> D["QP\n(confort+)"]
-    style A fill:#2a9d8f,color:#fff,stroke:#2a9d8f
     style B fill:#264653,color:#fff,stroke:#264653
     style C fill:#e76f51,color:#fff,stroke:#e76f51
     style D fill:#f4a261,color:#000,stroke:#f4a261
@@ -153,20 +151,6 @@ flowchart LR
 ```
 
 *De gauche a droite : simplicite vers sophistication.*
-
-### 1. Smart (règles expertes)
-
-**Analogie** : un conducteur expérimenté qui prend ses décisions au feeling.
-
-Le Smart optimizer applique des **règles de bon sens**, une par une, à chaque quart
-d'heure :
-
-- Le ballon est trop froid ? → PAC ON (urgence)
-- Le prix est négatif et il y a du surplus PV ? → PAC ON (autant en profiter)
-- Le prix actuel est bien en dessous de la médiane des prochaines heures ? → PAC ON
-  (c'est le moment)
-- Il y a du surplus PV gratuit ? → PAC ON
-- Sinon → PAC OFF
 
 **Forces** : rapide, transparent, facile à comprendre.
 **Limites** : il décide quart d'heure par quart d'heure, sans vision globale. C'est
@@ -258,15 +242,15 @@ Vous contrôlez l'importance de ces objectifs avec deux curseurs :
 
 ## Tableau comparatif
 
-| Critère | Smart | LP | MILP | QP |
-|---------|-------|----|------|----|
-| **Type de décision** | Règles si/alors | PAC 0-100 % | PAC ON/OFF | PAC 0-100 % |
-| **Vision temporelle** | 1 quart d'heure | 24 h (un bloc) | 4 h (un bloc) | 24 h (un bloc) |
-| **Optimalité** | Bonne | Optimale (globale) | Optimale (par bloc) | Optimale (par bloc) |
-| **Vitesse** | Instantané | Rapide (~1 s) | Modéré (~50 s/mois) | Rapide (~2 s) |
-| **Confort** | Basique | T entre min/max | T entre min/max | T proche consigne |
-| **PAC ON/OFF compatible** | Oui | Approximation | Oui | Approximation |
-| **Batterie supportée** | Non | Oui | Oui | Oui |
+| Critère | LP | MILP | QP |
+|---------|-----|------|----|
+| **Type de décision** | PAC 0-100 % | PAC ON/OFF | PAC 0-100 % |
+| **Vision temporelle** | 24 h (un bloc) | 4 h (un bloc) | 24 h (un bloc) |
+| **Optimalité** | Optimale (globale) | Optimale (par bloc) | Optimale (par bloc) |
+| **Vitesse** | Rapide (~1 s) | Modéré (~50 s/mois) | Rapide (~2 s) |
+| **Confort** | T entre min/max | T entre min/max | T proche consigne |
+| **PAC ON/OFF compatible** | Approximation | Oui | Approximation |
+| **Batterie supportée** | Oui | Oui | Oui |
 
 ---
 
@@ -348,7 +332,7 @@ flowchart TD
 </pre>
 ```
 
-*Dans tous les cas, Smart est un bon point de depart pour comparer.*
+*LP est recommande comme point de depart pour comparer.*
 
 ---
 
@@ -387,9 +371,8 @@ L'optimisation de votre PAC, c'est comme avoir un assistant qui :
 - Vérifie à la fin qu'il n'a pas fait pire que le thermostat basique
 
 Les différents optimizers ne sont que des degrés de sophistication dans cette
-planification. Le Smart raisonne au quart d'heure. Le LP, le MILP et le QP
-raisonnent sur des heures, voire des journées entières, en tenant compte de toutes
-les contraintes simultanément.
+planification. Le LP, le MILP et le QP raisonnent sur des heures, voire des
+journées entières, en tenant compte de toutes les contraintes simultanément.
 
 Le résultat ? Des économies typiques de **10 à 30 %** sur la facture électrique
 liée à la PAC, selon le type de contrat et les conditions météo — sans aucun
@@ -565,47 +548,6 @@ Les poids $w_c$ et $w_s$ contrôlent le compromis :
 
 Il n'y a pas de valeur "correcte" universelle : le bon compromis dépend des
 préférences de l'utilisateur.
-
-### Smart — Heuristique séquentielle
-
-Le Smart optimizer n'est **pas** un optimiseur mathématique au sens classique.
-Il n'a pas de fonction objectif explicite ni de solveur. Il prend des
-décisions **locales** à chaque quart d'heure via un arbre de règles.
-
-#### Algorithme de décision
-
-À chaque pas $t$, dans l'ordre de priorité :
-
-1. **Sécurité thermique** : si $T_t < T_\mathrm{min}$ → PAC ON
-2. **Ballon plein** : si $T_t \geq T_\mathrm{max}$ → PAC OFF
-3. **Anticipation** : simulation forward de $N$ pas sans PAC ; si
-   $T_\mathrm{min}$ est atteint sous 8 quarts d'heure → PAC ON (préchauffage)
-4. **Décision économique** : calcul du coût marginal par kWh~th~ maintenant
-   vs coût médian futur :
-   - Si prix d'injection négatif et surplus PV → PAC ON (éviter de payer
-     pour injecter)
-   - Si surplus PV couvre la consommation PAC et coût < 1,5× futur → PAC ON
-   - Si coût < 0,7× médiane future et $T < T_\mathrm{consigne}$ → PAC ON
-   - Sinon → PAC OFF
-
-#### Coût marginal par kWh thermique
-
-Le coût marginal dépend du surplus PV disponible :
-
-$$c_t^\mathrm{th} = \frac{c_t^\mathrm{elec}}{Q_t}$$
-
-où le coût électrique $c_t^\mathrm{elec}$ est :
-
-- Si $\mathrm{surplus}_t \geq q$ : $c_t^\mathrm{elec} = q \cdot \pi_t^-$ (coût d'opportunité de l'injection perdue)
-- Si $0 < \mathrm{surplus}_t < q$ : $c_t^\mathrm{elec} = \mathrm{surplus}_t \cdot \pi_t^- + (q - \mathrm{surplus}_t) \cdot \pi_t^+$
-- Si $\mathrm{surplus}_t \leq 0$ : $c_t^\mathrm{elec} = q \cdot \pi_t^+$ (soutirage pur)
-
-#### Propriétés
-
-L'heuristique Smart est $O(N)$ en temps, sans appel à un solveur externe.
-Elle n'offre aucune garantie d'optimalité globale (décisions *greedy*), mais
-elle est robuste (jamais infaisable) et transparente (chaque décision est
-accompagnée d'une raison textuelle).
 
 ### Décomposition en blocs
 

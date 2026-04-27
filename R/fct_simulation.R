@@ -30,6 +30,11 @@ guard_baseline <- function(sim, df_baseline, params, mode_label) {
   if (facture_opti > facture_baseline) {
     message(sprintf("[%s] Facture opti (%.1f) > baseline (%.1f) -- fallback baseline",
                     mode_label, facture_opti, facture_baseline))
+    # Reconstruct baseline pac_on from energy balance
+    pac_qt <- params$p_pac_kw * params$dt_h
+    baseline_pac_elec <- pmax(0, df_baseline$offtake_kwh + df_baseline$pv_kwh -
+      df_baseline$intake_kwh - df_baseline$conso_hors_pac)
+    sim$sim_pac_on <- as.integer(baseline_pac_elec > pac_qt * 0.1)
     sim$sim_t_ballon <- df_baseline$t_ballon
     sim$sim_offtake <- df_baseline$offtake_kwh
     sim$sim_intake <- df_baseline$intake_kwh
@@ -49,11 +54,11 @@ guard_baseline <- function(sim, df_baseline, params, mode_label) {
 #' @param df Raw data dataframe (with timestamp, pv_kwh, t_ext, etc.)
 #' @param params Parameter list (as returned by sidebar params_r or
 #'   SimulationParams)
-#' @param mode Optimisation mode: \code{"smart"}, \code{"milp"}, \code{"lp"},
+#' @param mode Optimisation mode: \code{"milp"}, \code{"lp"},
 #'   or \code{"qp"}
-#' @param baseline_mode Baseline mode (default \code{"parametric"})
+#' @param baseline_mode Baseline mode (default \code{"thermostat"})
 #' @param fallback_mode If optimisation fails, fall back to this mode
-#'   (default \code{"smart"}). Set to \code{NULL} to disable fallback.
+#'   (default \code{NULL}). Set to a valid mode or \code{NULL} to disable.
 #' @return A named list with:
 #'   \describe{
 #'     \item{sim}{Simulation results dataframe}
@@ -70,9 +75,9 @@ guard_baseline <- function(sim, df_baseline, params, mode_label) {
 #' KPICalculator$new()$compute(result$sim, result$sim, result$params)
 #' }
 #' @export
-run_simulation <- function(df, params, mode = "smart",
+run_simulation <- function(df, params, mode = "lp",
                            baseline_mode = "thermostat",
-                           fallback_mode = "smart") {
+                           fallback_mode = NULL) {
   sim_obj <- Simulation$new(params)
   sim_obj$load_raw_dataframe(df)
   params <- sim_obj$get_params()

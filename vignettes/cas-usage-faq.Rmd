@@ -225,7 +225,7 @@ chere : vous consommez plus de carburant, mais vous payez moins au total.
 
 | Votre situation | Recommandation |
 |---|---|
-| Premier test, decouverte | **Smart** — instantane, bon apercu |
+| Premier test, decouverte | **LP** — optimal, rapide (choix par defaut) |
 | PAC avec variateur (inverter) | **LP** — optimal, rapide |
 | PAC ON/OFF sans variateur | **MILP** — modelise fidelement le ON/OFF |
 | Confort prioritaire | **QP** — temperature stable, charge lisse |

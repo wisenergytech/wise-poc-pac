@@ -140,7 +140,7 @@ mod_dimensionnement_server <- function(id, sidebar) {
         } else if (best$Mode == "optimizer_qp") {
           shiny::updateRadioButtons(parent_session, "approche", selected = "optimiseur_qp")
         } else {
-          shiny::updateRadioButtons(parent_session, "approche", selected = "rulebased")
+          shiny::updateRadioButtons(parent_session, "approche", selected = "optimiseur_lp")
         }
         shiny::updateRadioButtons(parent_session, "type_contrat", selected = best$Contrat)
       }
@@ -196,7 +196,7 @@ mod_dimensionnement_server <- function(id, sidebar) {
       scenarii <- dplyr::bind_rows(lapply(kwc_range, function(kwc) {
         p_sc <- p; p_sc$pv_kwc <- kwc; p_sc$pv_kwc_ref <- p$pv_kwc
         df_sc <- df_base %>% dplyr::mutate(pv_kwh = pv_kwh * kwc / kwc_ref)
-        res <- run_scenario(df_sc, p_sc, mode = "smart")
+        res <- run_scenario(df_sc, p_sc, mode = "lp")
         tibble::tibble(
           kWc = kwc,
           `Injection (kWh)` = res$Injection_kWh,
@@ -241,7 +241,7 @@ mod_dimensionnement_server <- function(id, sidebar) {
         p_sc <- p
         p_sc$batterie_active <- cap > 0
         p_sc$batt_kwh <- cap
-        res <- run_scenario(df_base, p_sc, mode = "smart")
+        res <- run_scenario(df_base, p_sc, mode = "lp")
         tibble::tibble(
           `Batterie (kWh)` = cap,
           `Injection (kWh)` = res$Injection_kWh,

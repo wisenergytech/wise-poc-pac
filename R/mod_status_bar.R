@@ -31,9 +31,9 @@ mod_status_bar_server <- function(id, sidebar) {
       has_sim <- !running && !is.null(res) && !is.null(res$sim)
 
       approche <- sidebar$approche()
-      ml <- c(rulebased = "SMART", smart = "SMART", optimizer = "MILP", optimizer_lp = "LP", optimizer_qp = "QP")
+      ml <- c(optimizer = "MILP", milp = "MILP", lp = "LP", optimizer_lp = "LP", optimizer_qp = "QP", qp = "QP")
       mode_label <- if (has_sim) ml[res$mode] else {
-        c(rulebased = "SMART", optimiseur = "MILP", optimiseur_lp = "LP", optimiseur_qp = "QP")[approche]
+        c(optimiseur = "MILP", optimiseur_lp = "LP", optimiseur_qp = "QP")[approche]
       }
       if (is.na(mode_label) || is.null(mode_label)) mode_label <- "?"
 
@@ -49,7 +49,7 @@ mod_status_bar_server <- function(id, sidebar) {
       }
       batt <- if (p$batterie_active) sprintf("%skWh/%skW rend=%.2f SoC[%d-%d]%%",
         p$batt_kwh, p$batt_kw, p$batt_rendement, round(p$batt_soc_min * 100), round(p$batt_soc_max * 100)) else "off"
-      bloc <- switch(approche %||% "rulebased",
+      bloc <- switch(approche %||% "optimiseur_lp",
         optimiseur = paste0(sidebar$optim_bloc_h() %||% 4, "h"),
         optimiseur_lp = paste0(sidebar$optim_bloc_h_lp() %||% 24, "h"),
         optimiseur_qp = paste0(sidebar$optim_bloc_h_qp() %||% 24, "h"),

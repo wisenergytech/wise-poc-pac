@@ -115,7 +115,7 @@ Simulation <- R6::R6Class("Simulation",
     },
 
     #' @description Run the optimization.
-    #' @param mode Optimization mode: "smart", "milp", "lp" (default), or "qp"
+    #' @param mode Optimization mode: "milp", "lp" (default), or "qp"
     #' @return self (for chaining)
     run_optimization = function(mode = "lp") {
       if (is.null(private$baseline_result)) stop("Call run_baseline() first")
@@ -124,7 +124,6 @@ Simulation <- R6::R6Class("Simulation",
 
       # Create the appropriate optimizer
       optimizer <- switch(mode,
-        smart = SmartOptimizer$new(private$params, private$baseline_result),
         milp  = MILPOptimizer$new(private$params, private$baseline_result),
         lp    = LPOptimizer$new(private$params, private$baseline_result),
         qp    = QPOptimizer$new(private$params, private$baseline_result),

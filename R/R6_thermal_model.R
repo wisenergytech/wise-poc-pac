@@ -9,7 +9,7 @@
 #' @title Thermal Model
 #' @description R6 class for thermal dynamics (COP, heat balance, losses).
 #'   Provides the same thermal equations used throughout the simulation:
-#'   baseline, smart mode, and all optimizer variants.
+#'   baseline and all optimizer variants (MILP, LP, QP).
 #' @export
 ThermalModel <- R6::R6Class("ThermalModel",
   public = list(

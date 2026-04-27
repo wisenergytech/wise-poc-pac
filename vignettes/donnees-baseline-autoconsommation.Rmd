@@ -40,7 +40,7 @@ Avant de plonger dans les details, voici le schema general :
   Production PV ─────────┐
   Temperature    ─────────┤
   Prix Belpex    ─────────┼──► Simulation baseline ──► Simulation optimisee
-  Conso residuelle ───────┤    (thermostat ou          (MILP, LP, QP, Smart)
+  Conso residuelle ───────┤    (thermostat ou          (MILP, LP, QP)
   Tirages ECS    ─────────┘     suivi PV)
                                     │                        │
                                     ▼                        ▼

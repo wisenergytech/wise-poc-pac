@@ -110,7 +110,7 @@ Vous avez vos premiers resultats. Voici comment aller plus loin :
 
 | Envie | Action |
 |-------|--------|
-| **Comparer les optimiseurs** | Changez "Approche" (Smart → LP → MILP → QP) et relancez |
+| **Comparer les optimiseurs** | Changez "Approche" (LP → MILP → QP) et relancez |
 | **Tester une batterie** | Cochez "Activer la batterie" et relancez |
 | **Voir l'impact de la taille du PV** | Decochez "PV auto", ajustez le slider, relancez |
 | **Simuler avec des donnees reelles** | Selectionnez "Reel (Wallonie 2024)" dans Source PV |

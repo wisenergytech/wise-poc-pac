@@ -97,17 +97,3 @@ test_that("LPOptimizer pac_load is between 0 and 1", {
   expect_true(all(result$sim_pac_on <= 1.001, na.rm = TRUE))
 })
 
-test_that("SmartOptimizer solves without error", {
-  td <- make_optimizer_test_data()
-  # Smart mode needs these extra params
-  td$params$horizon_qt <- 16
-  td$params$poids_cout <- 0.5
-
-  opt <- SmartOptimizer$new(td$params, td$df)
-  result <- opt$solve()
-
-  expect_s3_class(result, "tbl_df")
-  expect_equal(nrow(result), 96)
-  expect_true("sim_t_ballon" %in% names(result))
-  expect_true("decision_raison" %in% names(result))
-})
