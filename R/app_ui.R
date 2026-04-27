@@ -83,6 +83,9 @@ golem_add_external_resources <- function() {
       Shiny.addCustomMessageHandler('auth-to-loading', function(msg) {
         var login = document.getElementById('auth-login-page');
         if (login) login.remove();
+        document.querySelectorAll('[inert]').forEach(function(el) {
+          el.removeAttribute('inert');
+        });
         var loading = document.getElementById('app-loading-overlay');
         if (loading) loading.style.display = 'flex';
       });

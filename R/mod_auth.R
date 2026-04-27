@@ -33,6 +33,15 @@ mod_auth_ui <- function(id) {
       jsonlite::toJSON(ns(""), auto_unbox = TRUE)
     ))),
 
+    # Block keyboard interaction with app behind overlay
+    shiny::tags$script(shiny::HTML(
+      "document.addEventListener('DOMContentLoaded', function() {
+        document.querySelectorAll('body > *:not(.auth-container):not(script):not(head)').forEach(function(el) {
+          el.setAttribute('inert', '');
+        });
+      });"
+    )),
+
     # Supabase JS SDK
     shiny::tags$script(src = "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"),
     shiny::tags$script(src = "www/auth.js"),
