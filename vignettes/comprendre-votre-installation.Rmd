@@ -947,7 +947,63 @@ Certaines donnees manquantes sont recuperees automatiquement :
   heures faussent la simulation. Verifiez la continuite de vos series.
 - **kWc de reference** : si votre PV fait 30 kWc et que vous voulez simuler
   avec 60 kWc, indiquez 30 dans "kWc reference" et 60 dans le slider PV.
-  La production sera doublee proportionnellement.
+  La production sera doublee proportionnellement. Voir la section suivante
+  pour le detail du mecanisme.
+
+#### Rescaling PV : comment ca marche et quand c'est valide
+
+Quand vous importez un CSV, les valeurs `pv_kwh` refletent la production
+**reelle** de votre installation. Si votre PV fait 33 kWc, chaque
+quart d'heure du CSV contient ce que 33 kWc ont reellement produit (avec
+la vraie meteo, les vrais passages nuageux, les vrais ombrages).
+
+Le champ **kWc de reference** (`pv_kwc_ref`) indique a l'app la taille du
+PV qui a **produit** ces donnees. Le champ **kWc simule** (`pv_kwc`)
+indique la taille que vous voulez tester.
+
+L'app applique un ratio lineaire a chaque pas de temps :
+
+```
+pv_kwh_simule = pv_kwh_csv × (pv_kwc / pv_kwc_ref)
+```
+
+**Exemple** : votre CSV vient d'un PV de 33 kWc. A 14h00 un jour
+ensoleille, le CSV indique `pv_kwh = 7.5 kWh` (sur 15 min). Vous testez
+50 kWc :
+
+```
+pv_kwh_simule = 7.5 × (50 / 33) = 11.36 kWh
+```
+
+Le profil temporel (la forme de la courbe — quand le soleil brille, les
+passages nuageux) est conserve. Seule l'amplitude change.
+
+**Quand c'est valide** :
+
+- Les nouveaux panneaux seraient sur le **meme toit** (meme orientation,
+  meme inclinaison, meme ombrage)
+- Pas d'ecretage onduleur (si votre onduleur est bride a 25 kW, simuler
+  50 kWc n'a pas de sens car la production reelle plafonne)
+
+**Quand c'est une approximation** :
+
+- Les panneaux supplementaires seraient sur un **autre pan de toit** (autre
+  orientation, autre ombrage). Le profil temporel serait different.
+- L'onduleur ecrete deja (le max observe dans le CSV est inferieur a ce
+  qu'un PV de cette taille devrait produire par ciel clair)
+
+**Impact sur la baseline** :
+
+Quand `pv_kwc == pv_kwc_ref`, les donnees PV du CSV sont utilisees telles
+quelles. Si votre CSV contient aussi `pac_kwh` et le compteur, la baseline
+est **mesuree** (vos donnees reelles = le scenario de reference).
+
+Quand `pv_kwc != pv_kwc_ref`, le PV est rescale et la baseline mesuree
+n'est plus valide. En effet, le soutirage et l'injection mesures dans
+votre CSV refletent l'equilibre energetique avec votre PV reel — pas avec
+le PV rescale. L'app bascule alors en **baseline simulee** (thermostat ou
+suivi PV) pour construire un scenario de reference coherent avec le PV
+what-if.
 
 ---
 
