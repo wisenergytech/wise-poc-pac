@@ -19,6 +19,8 @@ fetch.log
 
 # Large data files
 data/fusionsolar_5min_2026.csv
+data/test_csv_complet.csv
+data/test_csv_complet_partial.csv
 
 # OS
 .DS_Store
