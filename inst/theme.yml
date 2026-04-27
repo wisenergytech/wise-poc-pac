@@ -33,14 +33,17 @@ series:
   pv: "#F59E0B"
   pac: "#059669"
   prix: "#0D9488"
+  external1: "#0D9488"
+  external2: "#0D9488"
+  external3: "#DC2626"
 
 # ---- Scenario visual style (baseline vs optimise, beyond color) ----
 scenarios:
   baseline:
     line_dash: "dash"
-    bar_pattern: "/"
+    bar_opacity: 0.4
     fill_opacity: 0.08
   optimise:
     line_dash: "solid"
-    bar_pattern: ""
+    bar_opacity: 1.0
     fill_opacity: 0.08

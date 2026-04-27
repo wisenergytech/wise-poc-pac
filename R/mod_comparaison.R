@@ -75,7 +75,7 @@ mod_comparaison_server <- function(id, sidebar) {
     # Color palettes per category (primary + fallbacks for dedup)
     palette_baseline  <- c(cl$reel, cl$pv, cl$accent2)
     palette_optimised <- c(cl$opti, cl$pac, cl$accent)
-    palette_external  <- c(cl$accent3, cl$prix, cl$danger)
+    palette_external  <- c(cl$external1, cl$external2, cl$external3)
 
     get_palette <- function(var) {
       if (var %in% vars_baseline) palette_baseline
@@ -222,6 +222,28 @@ mod_comparaison_server <- function(id, sidebar) {
       )
     }
 
+    # Filter choices for serie 3: only variables whose unit matches v1 or v2
+    build_choices3 <- function(choices, v1, v2) {
+      u1 <- get_unit(v1); u2 <- get_unit(v2)
+      compatible_units <- unique(stats::na.omit(c(u1, u2)))
+      filtered <- lapply(choices, function(group) {
+        group[sapply(unname(group), function(v) {
+          if (v == "" || v == v1 || v == v2) return(FALSE)
+          u <- get_unit(v)
+          !is.na(u) && u %in% compatible_units
+        })]
+      })
+      filtered <- filtered[lengths(filtered) > 0]
+      c(list("Aucune" = ""), filtered)
+    }
+
+    update_var3 <- function(choices, v1, v2) {
+      c3 <- build_choices3(choices, v1, v2)
+      cur3 <- shiny::isolate(input$compare_var3)
+      sel <- if (!is.null(cur3) && cur3 %in% unlist(c3)) cur3 else ""
+      shiny::updateSelectInput(session, "compare_var3", choices = c3, selected = sel)
+    }
+
     # ---- Update selectInputs on external data load ----
     shiny::observeEvent(external_data(), {
       choices <- build_choices()
@@ -229,8 +251,9 @@ mod_comparaison_server <- function(id, sidebar) {
         selected = if ("ext_pv" %in% unlist(choices)) "ext_pv" else unlist(choices)[1])
       shiny::updateSelectInput(session, "compare_var2", choices = choices,
         selected = if ("ext_prix" %in% unlist(choices)) "ext_prix" else unlist(choices)[min(2, length(unlist(choices)))])
-      choices3 <- c(list("Aucune" = ""), choices)
-      shiny::updateSelectInput(session, "compare_var3", choices = choices3, selected = "")
+      update_var3(choices,
+        if ("ext_pv" %in% unlist(choices)) "ext_pv" else unlist(choices)[1],
+        if ("ext_prix" %in% unlist(choices)) "ext_prix" else unlist(choices)[min(2, length(unlist(choices)))])
     })
 
     # ---- Update selectInputs when sim becomes available ----
@@ -238,15 +261,18 @@ mod_comparaison_server <- function(id, sidebar) {
       choices <- build_choices()
       cur1 <- shiny::isolate(input$compare_var1)
       cur2 <- shiny::isolate(input$compare_var2)
-      cur3 <- shiny::isolate(input$compare_var3)
       all_vals <- unlist(choices)
-      shiny::updateSelectInput(session, "compare_var1", choices = choices,
-        selected = if (!is.null(cur1) && cur1 %in% all_vals) cur1 else all_vals[1])
-      shiny::updateSelectInput(session, "compare_var2", choices = choices,
-        selected = if (!is.null(cur2) && cur2 %in% all_vals) cur2 else all_vals[min(2, length(all_vals))])
-      choices3 <- c(list("Aucune" = ""), choices)
-      shiny::updateSelectInput(session, "compare_var3", choices = choices3,
-        selected = if (!is.null(cur3) && cur3 %in% all_vals) cur3 else "")
+      sel1 <- if (!is.null(cur1) && cur1 %in% all_vals) cur1 else all_vals[1]
+      sel2 <- if (!is.null(cur2) && cur2 %in% all_vals) cur2 else all_vals[min(2, length(all_vals))]
+      shiny::updateSelectInput(session, "compare_var1", choices = choices, selected = sel1)
+      shiny::updateSelectInput(session, "compare_var2", choices = choices, selected = sel2)
+      update_var3(choices, sel1, sel2)
+    })
+
+    # ---- Update serie 3 choices when v1 or v2 changes ----
+    shiny::observeEvent(list(input$compare_var1, input$compare_var2), {
+      shiny::req(input$compare_var1, input$compare_var2)
+      update_var3(build_choices(), input$compare_var1, input$compare_var2)
     })
 
     # ---- Sync compare_range with sidebar date range ----
@@ -306,7 +332,8 @@ mod_comparaison_server <- function(id, sidebar) {
       if (!all(vars %in% names(df))) return(plotly::plot_ly())
 
       nr <- nrow(df)
-      level <- if (nr <= 14 * 96) "qt" else if (nr <= 60 * 96) "hour" else if (nr <= 180 * 96) "day" else "week"
+      agg_level <- if (nr <= 14 * 96) "15 min" else if (nr <= 60 * 96) "hour" else if (nr <= 180 * 96) "day" else "week"
+      level <- c("15 min" = "qt", hour = "hour", day = "day", week = "week")[agg_level]
       label <- c(qt = "15 min", hour = "Horaire", day = "Journalier", week = "Hebdomadaire")[level]
 
       df_work <- df %>% dplyr::mutate(.w = dplyr::case_when(
@@ -344,23 +371,17 @@ mod_comparaison_server <- function(id, sidebar) {
           name = label, line = list(color = color, width = 2, dash = dash), yaxis = yaxis)
       }
 
-      # Overlay bars: both start from 0, smaller drawn first, delta on top
-      add_overlay_bars <- function(p, vals_a, vals_b, label_a, label_b, col_a, col_b, yaxis) {
-        bottom <- pmin(vals_a, vals_b, na.rm = TRUE)
-        top    <- pmax(vals_a, vals_b, na.rm = TRUE) - bottom
-        a_bigger <- vals_a > vals_b
-        bottom_col <- ifelse(a_bigger, col_b, col_a)
-        top_col    <- ifelse(a_bigger, col_a, col_b)
-        hover <- sprintf("%s: %.1f<br>%s: %.1f", label_a, vals_a, label_b, vals_b)
+      # Grouped bars: side-by-side comparison
+      add_grouped_bars <- function(p, vals_a, vals_b, label_a, label_b, col_a, col_b, yaxis) {
+        col_a_rgba <- rgba(col_a, cl$scenarios$baseline$bar_opacity)
+        col_b_rgba <- rgba(col_b, cl$scenarios$optimise$bar_opacity)
         p %>%
-          plotly::add_bars(y = bottom, name = "Commun", showlegend = FALSE,
-            marker = list(color = bottom_col), text = hover, hoverinfo = "text+x", yaxis = yaxis) %>%
-          plotly::add_bars(y = top, name = "Delta", showlegend = FALSE,
-            marker = list(color = top_col), text = hover, hoverinfo = "text+x", yaxis = yaxis) %>%
-          plotly::add_bars(y = 0, name = label_a, marker = list(color = col_a),
-            showlegend = TRUE, hoverinfo = "skip", yaxis = yaxis) %>%
-          plotly::add_bars(y = 0, name = label_b, marker = list(color = col_b),
-            showlegend = TRUE, hoverinfo = "skip", yaxis = yaxis)
+          plotly::add_bars(y = vals_a, name = label_a,
+            marker = list(color = col_a_rgba), yaxis = yaxis,
+            textposition = "none") %>%
+          plotly::add_bars(y = vals_b, name = label_b,
+            marker = list(color = col_b_rgba), yaxis = yaxis,
+            textposition = "none")
       }
 
       # Identify bar variables per axis
@@ -377,7 +398,7 @@ mod_comparaison_server <- function(id, sidebar) {
       # Bars on y-axis: overlay if 2+, simple if 1
       if (length(bar_y) >= 2) {
         idx_a <- which(all_sel == bar_y[1]); idx_b <- which(all_sel == bar_y[2])
-        p <- add_overlay_bars(p, df_agg[[bar_y[1]]], df_agg[[bar_y[2]]],
+        p <- add_grouped_bars(p, df_agg[[bar_y[1]]], df_agg[[bar_y[2]]],
           names(all_vars)[all_vars == bar_y[1]], names(all_vars)[all_vars == bar_y[2]],
           colors[idx_a], colors[idx_b], "y")
       } else if (length(bar_y) == 1) {
@@ -390,7 +411,7 @@ mod_comparaison_server <- function(id, sidebar) {
       # Bars on y2-axis: overlay if 2+, simple if 1
       if (length(bar_y2) >= 2) {
         idx_a <- which(all_sel == bar_y2[1]); idx_b <- which(all_sel == bar_y2[2])
-        p <- add_overlay_bars(p, df_agg[[bar_y2[1]]], df_agg[[bar_y2[2]]],
+        p <- add_grouped_bars(p, df_agg[[bar_y2[1]]], df_agg[[bar_y2[2]]],
           names(all_vars)[all_vars == bar_y2[1]], names(all_vars)[all_vars == bar_y2[2]],
           colors[idx_a], colors[idx_b], "y2")
       } else if (length(bar_y2) == 1) {
@@ -413,17 +434,24 @@ mod_comparaison_server <- function(id, sidebar) {
         p <- add_line_trace(p, df_agg[[lv]], lbl, colors[idx], ax, dash)
       }
 
-      p %>% plotly::layout(
-        title = paste0("Agr\u00e9gation: ", label),
-        yaxis = list(title = label1, tickfont = list(color = col1),
-          titlefont = list(color = col1)),
-        yaxis2 = list(title = label2, overlaying = "y", side = "right",
-          tickfont = list(color = col2), titlefont = list(color = col2),
-          gridcolor = "rgba(0,0,0,0)"),
-        hovermode = "x unified",
-        barmode = "stack"
-      ) %>%
-        pl_layout()
+      # Extract units for concise axis labels
+      u1 <- get_unit(v1); u2 <- get_unit(v2)
+      ytitle1 <- if (!is.na(u1)) u1 else label1
+      ytitle2 <- if (!is.na(u2)) u2 else label2
+
+      p %>%
+        pl_layout(agg_level = agg_level, n_points = nrow(df_agg)) %>%
+        plotly::layout(
+          yaxis = list(title = ytitle1, gridcolor = cl$grid,
+            tickfont = list(size = 10, color = col1),
+            titlefont = list(color = col1)),
+          yaxis2 = list(title = ytitle2, overlaying = "y", side = "right",
+            showgrid = FALSE,
+            tickfont = list(size = 10, color = col2),
+            titlefont = list(color = col2)),
+          hovermode = "x unified",
+          barmode = "group"
+        )
     })
   })
 }

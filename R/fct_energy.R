@@ -36,7 +36,7 @@ prepare_energy_timeseries <- function(sim) {
     autosuff_opti = dplyr::if_else(conso_tot_opti > 0,
       pmax(0, pv_kwh - sim_intake) / conso_tot_opti * 100, 0)
   )
-  list(data = d, label = agg$label)
+  list(data = d, label = agg$label, level = agg$level)
 }
 
 #' Compute Sankey energy flow data

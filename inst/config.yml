@@ -1,0 +1,40 @@
+default:
+  ui:
+    # Optimizers available in the sidebar radio buttons
+    # Options: optimiseur (MILP), optimiseur_lp (LP), optimiseur_qp (QP)
+    optimizers:
+      - optimiseur
+      - optimiseur_lp
+      - optimiseur_qp
+
+    # PV data sources available
+    # Options: synthetic, real_elia, real_delaunoy
+    pv_sources:
+      - synthetic
+      - real_elia
+      - real_delaunoy
+
+    # Show battery section in sidebar
+    show_battery: true
+
+    # Optimization strategies shown
+    strategies:
+      tou: true
+      curtailment: true
+
+profondeville:
+  ui:
+    optimizers:
+      - optimiseur_lp
+      - optimiseur_qp
+
+
+    pv_sources:
+      - real_elia
+      - synthetic
+
+    show_battery: false
+
+    strategies:
+      tou: true
+      curtailment: false

@@ -27,6 +27,9 @@ cl <- list(
   pv         = .theme$series$pv,
   pac        = .theme$series$pac,
   prix       = .theme$series$prix,
+  external1  = .theme$series$external1,
+  external2  = .theme$series$external2,
+  external3  = .theme$series$external3,
   # Scenario styles
   scenarios  = .theme$scenarios
 )
@@ -38,14 +41,43 @@ cl <- list(
 #' @param title Optional chart title
 #' @param xlab Optional x-axis label
 #' @param ylab Optional y-axis label
+#' @param agg_level Optional aggregation level from [auto_aggregate()]:
+#'   \code{"15 min"}, \code{"hour"}, \code{"day"}, \code{"week"}.
+#'   When provided, adapts x-axis tick format and spacing.
 #' @return A plotly object with themed layout
 #' @noRd
-pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL) {
+pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL,
+                      agg_level = NULL, n_points = NULL) {
+  # X-axis: no grid (Tufte: erase non-data-ink), adaptive ticks
+  xaxis <- list(title = xlab, gridcolor = "rgba(0,0,0,0)",
+    zerolinecolor = cl$grid, tickfont = list(size = 10))
+
+  if (!is.null(agg_level)) {
+    # Tick format depends on granularity
+    xaxis$tickformat <- switch(agg_level,
+      "15 min" = "%H:%M\n%d %b",
+      "hour"   = "%H:%M\n%d %b",
+      "day"    = "%d %b",
+      "week"   = "Sem %V\n%d %b",
+      NULL)
+    # Adaptive dtick: aim for ~8-12 ticks based on number of data points
+    n <- if (!is.null(n_points)) n_points else 50
+    step_ms <- switch(agg_level,
+      "15 min" = 900000,
+      "hour"   = 3600000,
+      "day"    = 86400000,
+      "week"   = 604800000,
+      86400000)
+    target_ticks <- 10
+    tick_every <- max(1, ceiling(n / target_ticks))
+    xaxis$dtick <- step_ms * tick_every
+  }
+
   p %>% plotly::layout(
     title = list(text = title, font = list(color = cl$text, size = 14, family = "Raleway, sans-serif")),
     paper_bgcolor = "rgba(0,0,0,0)", plot_bgcolor = "rgba(0,0,0,0)",
     font = list(color = cl$text_muted, family = "Raleway, sans-serif", size = 11),
-    xaxis = list(title = xlab, gridcolor = cl$grid, zerolinecolor = cl$grid, tickfont = list(size = 10)),
+    xaxis = xaxis,
     yaxis = list(title = ylab, gridcolor = cl$grid, zerolinecolor = cl$grid, tickfont = list(size = 10)),
     legend = list(orientation = "h", y = -0.3, yanchor = "top", x = 0.5, xanchor = "center",
       font = list(size = 10)),
@@ -54,61 +86,45 @@ pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL) {
   )
 }
 
-#' Overlay Bar Chart (baseline vs optimised)
+#' Grouped Bar Chart (baseline vs optimised)
 #'
-#' Stacked bar chart: bottom = common part (solid), top = delta (hatched).
-#' Delta color indicates whether the difference is favorable or not.
+#' Side-by-side bar chart comparing baseline and optimised values.
+#' Baseline is shown at reduced opacity, optimised at full opacity,
+#' following dataviz best practices (Tufte, Few, Knaflic): grouped bars
+#' with a shared zero baseline enable the most accurate visual comparison.
+#' See \code{vignette("conventions-dataviz")} for rationale.
 #'
 #' @param data Dataframe with \code{timestamp} and the two series columns
 #' @param baseline_col Column name for baseline series
 #' @param opti_col Column name for optimised series
 #' @param ylab Y-axis label
-#' @param gain_when \code{"lower"} (default) if lower opti is better (soutirage,
-#'   CO2), \code{"higher"} if higher opti is better (autoconso, autosuffisance)
+#' @param agg_level Optional aggregation level for x-axis formatting
 #' @return A plotly object
 #' @export
 plot_overlay_bar <- function(data, baseline_col, opti_col, ylab,
-                             gain_when = c("lower", "higher")) {
-  gain_when <- match.arg(gain_when)
+                             agg_level = NULL) {
   bl <- data[[baseline_col]]
   op <- data[[opti_col]]
 
-  bottom <- pmin(bl, op)
-  top    <- pmax(bl, op) - bottom
+  bl_rgba <- paste0("rgba(",
+    paste(grDevices::col2rgb(cl$reel), collapse = ","), ",",
+    cl$scenarios$baseline$bar_opacity, ")")
+  op_rgba <- paste0("rgba(",
+    paste(grDevices::col2rgb(cl$opti), collapse = ","), ",",
+    cl$scenarios$optimise$bar_opacity, ")")
 
-  bl_bigger <- bl > op
-  # Determine if the delta is favorable
-  delta_is_gain <- if (gain_when == "lower") bl_bigger else !bl_bigger
-
-  delta_color <- ifelse(delta_is_gain, cl$success, cl$danger)
-  bar_pattern <- cl$scenarios$baseline$bar_pattern
-
-  hover_text <- sprintf("Baseline: %.1f<br>Optimis\u00e9: %.1f", bl, op)
-
-  # Bottom = common part (solid, series color = optimise when gain, baseline otherwise)
-  bottom_color <- ifelse(delta_is_gain, cl$opti, cl$reel)
+  hover_bl <- sprintf("Baseline: %.1f", bl)
+  hover_op <- sprintf("Optimis\u00e9: %.1f", op)
 
   plotly::plot_ly(data, x = ~timestamp) %>%
-    plotly::add_bars(y = bottom, name = "Commun",
-      marker = list(color = bottom_color), showlegend = FALSE,
-      text = hover_text, hoverinfo = "text+x", textposition = "none") %>%
-    plotly::add_bars(y = top, name = "Delta",
-      marker = list(
-        color = delta_color,
-        pattern = list(shape = bar_pattern, solidity = 0.6)
-      ), showlegend = FALSE,
-      text = hover_text, hoverinfo = "text+x", textposition = "none") %>%
-    # Legend entries
-    plotly::add_bars(y = 0, name = "Baseline",
-      marker = list(color = cl$reel), showlegend = TRUE, hoverinfo = "skip") %>%
-    plotly::add_bars(y = 0, name = "Optimise",
-      marker = list(color = cl$opti), showlegend = TRUE, hoverinfo = "skip") %>%
-    plotly::add_bars(y = 0, name = "Gain",
-      marker = list(color = cl$success,
-        pattern = list(shape = bar_pattern, solidity = 0.6)),
-      showlegend = TRUE, hoverinfo = "skip") %>%
-    plotly::layout(barmode = "stack", bargap = 0.1) %>%
-    pl_layout(ylab = ylab)
+    plotly::add_bars(y = bl, name = "Baseline",
+      marker = list(color = bl_rgba),
+      text = hover_bl, hoverinfo = "text+x", textposition = "none") %>%
+    plotly::add_bars(y = op, name = "Optimise",
+      marker = list(color = op_rgba),
+      text = hover_op, hoverinfo = "text+x", textposition = "none") %>%
+    plotly::layout(barmode = "group", bargap = 0.1) %>%
+    pl_layout(ylab = ylab, agg_level = agg_level, n_points = nrow(data))
 }
 
 #' Cumulative comparison chart (baseline vs optimised)

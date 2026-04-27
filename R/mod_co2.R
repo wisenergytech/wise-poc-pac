@@ -98,7 +98,7 @@ mod_co2_server <- function(id, sidebar) {
       )
       agg <- auto_aggregate(d)
       plot_overlay_bar(agg$data, "co2_baseline", "co2_opti",
-        paste0("gCO2 (", agg$label, ")"))
+        paste0("gCO2 (", agg$label, ")"), agg_level = agg$level)
     })
 
     # ---- Cumulative (baseline vs opti, same pattern as facture cumulee) ----

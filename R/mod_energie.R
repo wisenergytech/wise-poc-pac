@@ -103,25 +103,25 @@ mod_energie_server <- function(id, sidebar) {
     output$plot_soutirage <- plotly::renderPlotly({
       shiny::req(conso_data()); cd <- conso_data()
       plot_overlay_bar(cd$data, "soutirage_baseline", "soutirage_opti",
-        paste0("kWh (", cd$label, ")"))
+        paste0("kWh (", cd$label, ")"), agg_level = cd$level)
     })
 
     output$plot_injection <- plotly::renderPlotly({
       shiny::req(conso_data()); cd <- conso_data()
       plot_overlay_bar(cd$data, "injection_baseline", "injection_opti",
-        paste0("kWh (", cd$label, ")"))
+        paste0("kWh (", cd$label, ")"), agg_level = cd$level)
     })
 
     output$plot_autoconso <- plotly::renderPlotly({
       shiny::req(conso_data()); cd <- conso_data()
       plot_overlay_bar(cd$data, "autoconso_baseline", "autoconso_opti",
-        paste0("kWh (", cd$label, ")"), gain_when = "higher")
+        paste0("kWh (", cd$label, ")"), agg_level = cd$level)
     })
 
     output$plot_autosuffisance <- plotly::renderPlotly({
       shiny::req(conso_data()); cd <- conso_data()
       plot_overlay_bar(cd$data, "autosuff_baseline", "autosuff_opti",
-        paste0("% (", cd$label, ")"), gain_when = "higher")
+        paste0("% (", cd$label, ")"), agg_level = cd$level)
     })
 
     # ---- Sankey ----

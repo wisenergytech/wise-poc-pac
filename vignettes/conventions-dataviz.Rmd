@@ -1,0 +1,110 @@
+---
+title: "Conventions de data-visualisation"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Conventions de data-visualisation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Ce document explique les choix de visualisation du dashboard et les
+principes qui les sous-tendent. Il sert de reference pour toute evolution
+future des graphiques.
+
+## Principe general
+
+> La couleur encode **ce qu'on mesure** (la serie).
+> Le style visuel encode **le scenario** (baseline vs optimise).
+
+Cela signifie qu'on ne change jamais de couleur entre baseline et optimise
+pour une meme metrique. La difference entre les deux scenarios est portee
+par l'opacite (barres) ou le trait (lignes).
+
+## Barres groupees (side-by-side)
+
+Pour comparer baseline vs optimise sur des metriques comme le soutirage,
+l'injection, l'autoconsommation ou les emissions CO2, on utilise des
+**barres groupees cote a cote** :
+
+- **Baseline** : couleur de serie a **opacite reduite** (~40%)
+- **Optimise** : couleur de serie a **opacite pleine** (100%)
+- `barmode = "group"` (pas `"stack"`)
+
+### Pourquoi pas des barres empilees (overlay) ?
+
+L'approche precedente empilait une partie commune et un delta. Problemes :
+
+1. **Comparaison difficile** : seule la base commune est alignee sur zero.
+   Le delta flotte, ce qui rend la comparaison perceptive moins precise
+   (Cleveland & McGill, 1984 ; Few, 2012).
+2. **Sens ambigu du delta** : pour certaines metriques une reduction est un
+   gain (soutirage), pour d'autres c'est une augmentation (autoconsommation).
+   Cela force un parametre `gain_when` et une logique de couleur conditionnelle
+   qui compliquent le code et le rendu.
+
+### Pourquoi pas des hachures ?
+
+Les motifs de remplissage (hachures, pointilles dans les barres) ont ete
+envisages pour distinguer baseline vs optimise sans couleur. Arguments contre :
+
+1. **Chartjunk** (Tufte, 1983) : les hachures n'encodent aucune donnee
+   supplementaire, elles ajoutent du bruit visuel et reduisent le data-ink
+   ratio.
+2. **Accessibilite** : les motifs croises ou diagonaux augmentent la charge
+   cognitive et peuvent creer des effets de moire genants, notamment pour les
+   personnes avec des troubles cognitifs ou visuels (WCAG, Highcharts
+   Accessibility Guidelines).
+3. **Usage reserve** : les guides d'accessibilite modernes reservent les
+   motifs aux cas semantiques specifiques (donnees manquantes, incertaines
+   ou projetees), pas a la differenciation de series.
+
+### References
+
+- **Edward Tufte** (1983). *The Visual Display of Quantitative Information*.
+  Graphics Press. — Principe du data-ink ratio, critique du chartjunk.
+- **Stephen Few** (2012). *Show Me the Numbers*. Analytics Press. —
+  Comparaison cote a cote comme standard pour les bar charts.
+- **Cole Nussbaumer Knaflic** (2015). *Storytelling with Data*. Wiley. —
+  Simplicite, zero baseline, laisser le titre porter le contexte.
+- **William Cleveland & Robert McGill** (1984). "Graphical Perception".
+  *Journal of the American Statistical Association*. — Etude fondatrice
+  sur la precision perceptive des encodages visuels (position > longueur >
+  angle > surface > couleur).
+- **Highcharts** (2023). *10 Guidelines for DataViz Accessibility*. —
+  Eviter les motifs de remplissage sauf pour les donnees incertaines.
+- **Pearson** (2024). *Data Visualization Style Guide*. — Utiliser des
+  couleurs pleines, eviter les motifs.
+
+## Courbes cumulees
+
+Pour les graphiques cumulatifs (facture, emissions CO2), on utilise deux
+courbes superposees :
+
+- **Baseline** : ligne **tiretee** (`dash`)
+- **Optimise** : ligne **pleine** (`solid`)
+- Remplissage leger sous chaque courbe (opacite ~8%)
+- L'ecart visuel entre les deux courbes = le gain cumule
+
+Le tirete pour la baseline suit la convention de Few : le trait plein
+attire l'oeil naturellement, ce qui met en avant le scenario optimise
+(celui qui interesse l'utilisateur).
+
+## Configuration
+
+Toutes les couleurs et styles sont definis dans `inst/theme.yml` :
+
+```yaml
+scenarios:
+  baseline:
+    line_dash: "dash"
+    bar_opacity: 0.4
+    fill_opacity: 0.08
+  optimise:
+    line_dash: "solid"
+    bar_opacity: 1.0
+    fill_opacity: 0.08
+```
+
+Pour modifier l'apparence des graphiques, editer ce fichier YAML.
+Les fonctions `plot_overlay_bar()` et `plot_cumulative()` dans
+`R/fct_ui_theme.R` lisent ces valeurs automatiquement.
