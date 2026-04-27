@@ -24,7 +24,7 @@ mod_comparaison_ui <- function(id) {
               choices = NULL, selected = NULL),
             shiny::dateRangeInput(ns("compare_range"), "Zoom periode",
               start = Sys.Date() - 60, end = Sys.Date() - 5, language = "fr")),
-          shiny::uiOutput(ns("plot_compare_container"))))))
+          plotly::plotlyOutput(ns("plot_compare"), height = "480px")))))
 }
 
 #' Comparaison Tab Module Server
@@ -324,28 +324,20 @@ mod_comparaison_server <- function(id, sidebar) {
     })
 
     # ---- Plot ----
-    # Wrap in renderUI to force widget destruction/recreation when traces change
-    # (Plotly.react keeps ghost traces when count decreases)
-    output$plot_compare_container <- shiny::renderUI({
-      shiny::req(input$compare_var1, input$compare_var2)
-      v3_key <- if (is.null(input$compare_var3) || input$compare_var3 == "") "none" else input$compare_var3
-      plotly::plotlyOutput(session$ns(paste0("plot_compare_", v3_key)), height = "480px")
-    })
-
-    output_plot <- shiny::reactive({
+    # Valid v3: must be non-empty AND present in current choices (avoids stale
+    # values when v1/v2 change triggers an async updateSelectInput on v3)
+    valid_v3 <- shiny::reactive({
       v3 <- input$compare_var3
-      if (is.null(v3) || v3 == "") "none" else v3
+      if (is.null(v3) || v3 == "") return(NA_character_)
+      c3 <- build_choices3(build_choices(), input$compare_var1, input$compare_var2)
+      if (v3 %in% unlist(c3)) v3 else NA_character_
     })
 
-    shiny::observe({
-      v3_key <- output_plot()
-      output_id <- paste0("plot_compare_", v3_key)
-      output[[output_id]] <- plotly::renderPlotly({
-        shiny::req(compare_data(), input$compare_var1, input$compare_var2)
-        v1 <- input$compare_var1; v2 <- input$compare_var2
-        v3 <- input$compare_var3
+    output$plot_compare <- plotly::renderPlotly({
+      shiny::req(compare_data(), input$compare_var1, input$compare_var2)
+      v1 <- input$compare_var1; v2 <- input$compare_var2
+      v3 <- valid_v3()
       if (v1 == "" || v2 == "") return(plotly::plot_ly())
-      if (is.null(v3) || v3 == "") v3 <- NA_character_
       vars <- c(v1, v2, if (!is.na(v3)) v3 else NULL)
 
       df <- compare_data()
@@ -422,7 +414,6 @@ mod_comparaison_server <- function(id, sidebar) {
           hovermode = "x unified",
           barmode = barmode
         )
-      })
     })
   })
 }
