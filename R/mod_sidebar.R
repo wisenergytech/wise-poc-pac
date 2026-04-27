@@ -10,6 +10,11 @@ mod_sidebar_ui <- function(id) {
   ns <- shiny::NS(id)
   ui_cfg <- get_ui_config()
 
+  # Default date range from .rda coverage (avoid API calls at startup)
+  rda_range <- get_rda_date_range()
+  default_end <- if (!is.null(rda_range)) rda_range$max else Sys.Date() - 5
+  default_start <- default_end - 60
+
   shiny::tagList(
     shiny::tags$div(style = "padding:8px 0 16px 0;text-align:center;",
       shiny::tags$img(src = "www/logo-wise.svg", style = "width:120px;margin-bottom:8px;"),
@@ -200,7 +205,7 @@ mod_sidebar_ui <- function(id) {
     # ---- Periode ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Periode", tip("Selectionnez la periode a simuler. En mode PV reel, la periode est contrainte a 2024.")),
-      shiny::dateRangeInput(ns("date_range"), NULL, start = Sys.Date() - 60, end = Sys.Date() - 5, language = "fr",
+      shiny::dateRangeInput(ns("date_range"), NULL, start = default_start, end = default_end, language = "fr",
         min = as.Date("2020-01-01"), max = Sys.Date()),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
         shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux + API si besoin."))),
@@ -302,6 +307,10 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- Update date range when PV data source changes ----
+    rda_range <- get_rda_date_range()
+    rda_end <- if (!is.null(rda_range)) rda_range$max else Sys.Date() - 5
+    rda_start <- rda_end - 60
+
     shiny::observeEvent(input$pv_data_source, {
       if (input$pv_data_source == "real_delaunoy") {
         shiny::updateDateRangeInput(session, "date_range",
@@ -310,11 +319,11 @@ mod_sidebar_server <- function(id, sim_state) {
       } else if (input$pv_data_source == "real_elia") {
         shiny::updateDateRangeInput(session, "date_range",
           min = as.Date("2020-04-01"), max = Sys.Date(),
-          start = Sys.Date() - 60, end = Sys.Date() - 5)
+          start = rda_start, end = rda_end)
       } else {
         shiny::updateDateRangeInput(session, "date_range",
           min = as.Date("2020-01-01"), max = Sys.Date(),
-          start = Sys.Date() - 60, end = Sys.Date() - 5)
+          start = rda_start, end = rda_end)
       }
     }, ignoreInit = TRUE)
 
@@ -417,6 +426,7 @@ mod_sidebar_server <- function(id, sim_state) {
       p_pac <- input$p_pac_kw
       vol <- volume_ballon_eff()
       cop <- input$cop_nominal
+      shiny::req(p_pac, cop)
 
       if (p_pac <= 10) {
         pertes <- round(0.004 * (input$t_consigne - 20) * 24, 1)
@@ -435,6 +445,8 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- params_r ----
     params_r <- shiny::reactive({
+      shiny::req(input$t_consigne, input$t_tolerance, input$p_pac_kw,
+                 input$cop_nominal, input$type_contrat)
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
       list(t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
@@ -576,6 +588,26 @@ mod_sidebar_server <- function(id, sim_state) {
           duration = 20)
       } else {
         shiny::req(input$date_range)
+
+        # Warn user if date range exceeds .rda coverage (API calls will be needed)
+        needs_api <- FALSE
+        rda_r <- get_rda_date_range()
+        if (!is.null(rda_r) && (as.Date(input$date_range[1]) < rda_r$min || as.Date(input$date_range[2]) > rda_r$max)) {
+          needs_api <- TRUE
+          shiny::showNotification(
+            shiny::tagList(
+              shiny::tags$div(style = "display:flex;align-items:center;gap:8px;",
+                shiny::tags$div(class = "spinner-border spinner-border-sm", role = "status",
+                  shiny::tags$span(class = "visually-hidden", "Loading...")),
+                shiny::tags$span("R\u00e9cup\u00e9ration des donn\u00e9es manquantes via API...")
+              )
+            ),
+            type = "message", duration = NULL, id = "api-fetch-notif")
+        }
+        on.exit({
+          if (needs_api) shiny::removeNotification("api-fetch-notif")
+        }, add = TRUE)
+
         gen <- DataGenerator$new()
         pv_src <- input$pv_data_source
         delaunoy_path <- "../delaunoy/data/inverters_data_delaunoy.xlsx"

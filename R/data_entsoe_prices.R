@@ -19,11 +19,15 @@ ENTSOE_DOMAIN_BE <- "10YBE----------2"
 load_local_belpex <- function(data_dir = "data") {
   # Priorite 1 : objet package (lazy-loaded, instantane)
   if (exists("entsoe_prices", where = asNamespace("wisepocpac"), inherits = FALSE)) {
-    return(get("entsoe_prices", envir = asNamespace("wisepocpac")))
+    obj <- get("entsoe_prices", envir = asNamespace("wisepocpac"))
+    attr(obj, "source_type") <- "rda"
+    return(obj)
   }
   # Aussi essayer l'environnement global (quand source() hors package)
   if (exists("entsoe_prices", envir = .GlobalEnv)) {
-    return(get("entsoe_prices", envir = .GlobalEnv))
+    obj <- get("entsoe_prices", envir = .GlobalEnv)
+    attr(obj, "source_type") <- "rda"
+    return(obj)
   }
 
   # Priorite 2 : CSV locaux
@@ -186,8 +190,9 @@ load_belpex_prices <- function(start_date, end_date, api_key = NULL, data_dir = 
   if (!is.null(local)) {
     local_filtered <- local %>% filter(datetime >= start_date, datetime <= end_date)
     if (nrow(local_filtered) > 0) {
+      src_type <- if (!is.null(attr(local, "source_type"))) attr(local, "source_type") else "csv"
       source_used <- "local"
-      message(sprintf("[Belpex] %d points charges depuis les CSV locaux", nrow(local_filtered)))
+      message(sprintf("[Belpex] %d points charges depuis %s", nrow(local_filtered), if (src_type == "rda") ".rda" else "CSV locaux"))
 
       # Verifier si on couvre toute la periode
       coverage <- as.numeric(difftime(max(local_filtered$datetime), min(local_filtered$datetime), units = "days"))

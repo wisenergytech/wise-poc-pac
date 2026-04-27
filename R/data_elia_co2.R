@@ -55,10 +55,14 @@ ELIA_TIMEOUT <- 12
 load_local_co2 <- function(data_dir = "data") {
   # Priorite 1 : objet package (lazy-loaded, instantane)
   if (exists("elia_co2", where = asNamespace("wisepocpac"), inherits = FALSE)) {
-    return(get("elia_co2", envir = asNamespace("wisepocpac")))
+    obj <- get("elia_co2", envir = asNamespace("wisepocpac"))
+    attr(obj, "source_type") <- "rda"
+    return(obj)
   }
   if (exists("elia_co2", envir = .GlobalEnv)) {
-    return(get("elia_co2", envir = .GlobalEnv))
+    obj <- get("elia_co2", envir = .GlobalEnv)
+    attr(obj, "source_type") <- "rda"
+    return(obj)
   }
 
   # Priorite 2 : CSV locaux
@@ -115,7 +119,8 @@ fetch_co2_intensity <- function(start_date, end_date) {
         min(local_filtered$datetime), units = "days"))
       requested <- as.numeric(difftime(end_date, start_date, units = "days"))
       if (coverage >= requested * 0.9) {
-        message(sprintf("[CO2] CSV local : %d points", nrow(local_filtered)))
+        src_type <- if (!is.null(attr(local, "source_type"))) attr(local, "source_type") else "csv"
+        message(sprintf("[CO2] %s : %d points", if (src_type == "rda") ".rda" else "CSV local", nrow(local_filtered)))
         return(list(df = local_filtered, source = "local"))
       }
     }

@@ -12,7 +12,7 @@ app_ui <- function(request) {
     shiny::tagList(
       golem_add_external_resources(),
       mod_auth_ui("auth"),
-      shiny::uiOutput("main_app_ui")
+      shiny::uiOutput("main_app_ui", style = "flex:1;display:flex;flex-direction:column;min-height:0;")
     )
   } else {
     # No auth: render app directly

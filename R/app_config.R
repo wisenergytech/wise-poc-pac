@@ -37,3 +37,51 @@ get_ui_config <- function() {
   cfg <- config::get(config = active, file = cfg_file)
   cfg$ui
 }
+
+#' Get the date range covered by all .rda package data
+#'
+#' Inspects the lazy-loaded package data objects (entsoe_prices, elia_co2,
+#' openmeteo_temperature, elia_solar) and returns the intersection of their
+#' date ranges — i.e. the period covered by ALL datasets.
+#'
+#' @return A list with \code{min} and \code{max} (Date), or NULL if no data found
+#' @noRd
+get_rda_date_range <- function() {
+  mins <- c()
+  maxs <- c()
+
+  # Helper: try package namespace first, then global env
+  try_load <- function(name, date_col) {
+    obj <- NULL
+    if (exists(name, where = asNamespace("wisepocpac"), inherits = FALSE)) {
+      obj <- get(name, envir = asNamespace("wisepocpac"))
+    } else if (exists(name, envir = .GlobalEnv)) {
+      obj <- get(name, envir = .GlobalEnv)
+    }
+    if (!is.null(obj) && date_col %in% names(obj)) {
+      list(min = min(obj[[date_col]], na.rm = TRUE),
+           max = max(obj[[date_col]], na.rm = TRUE))
+    } else {
+      NULL
+    }
+  }
+
+  datasets <- list(
+    list(name = "entsoe_prices", col = "datetime"),
+    list(name = "elia_co2", col = "datetime"),
+    list(name = "openmeteo_temperature", col = "timestamp"),
+    list(name = "elia_solar", col = "datetime")
+  )
+
+  for (ds in datasets) {
+    r <- try_load(ds$name, ds$col)
+    if (!is.null(r)) {
+      mins <- c(mins, as.Date(r$min))
+      maxs <- c(maxs, as.Date(r$max))
+    }
+  }
+
+  if (length(mins) == 0) return(NULL)
+
+  list(min = max(mins), max = min(maxs))
+}

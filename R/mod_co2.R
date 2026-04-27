@@ -40,10 +40,16 @@ mod_co2_server <- function(id, sidebar) {
     co2_data <- shiny::reactive({
       shiny::req(sim_filtered())
       sim <- sim_filtered()
-      fetch_co2_intensity(
+      result <- fetch_co2_intensity(
         min(sim$timestamp, na.rm = TRUE),
         max(sim$timestamp, na.rm = TRUE)
       )
+      if (result$source != "local" && result$source != "fallback") {
+        shiny::showNotification(
+          sprintf("Donn\u00e9es CO2 r\u00e9cup\u00e9r\u00e9es via API (%s)", result$source),
+          type = "message", duration = 5)
+      }
+      result
     })
 
     co2_15min_r <- shiny::reactive({
