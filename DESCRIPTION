@@ -31,7 +31,8 @@ Imports:
     promises,
     rlang,
     tibble,
-    pkgload
+    pkgload,
+    yaml
 URL: https://wise-energy.github.io/wise-poc-pac,
     https://github.com/wise-energy/wise-poc-pac
 BugReports: https://github.com/wise-energy/wise-poc-pac/issues

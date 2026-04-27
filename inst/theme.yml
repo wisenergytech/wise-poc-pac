@@ -1,0 +1,46 @@
+# =============================================================================
+# Wise POC PAC — Theme Configuration
+# =============================================================================
+# Single source of truth for all colors and visual styles.
+# Loaded at startup by fct_ui_theme.R into the `cl` list.
+# =============================================================================
+
+# ---- UI chrome (backgrounds, text, borders) ----
+ui:
+  bg_dark: "#F6F7F8"
+  bg_card: "#FFFFFF"
+  bg_input: "#EDF0F4"
+  text: "#171616"
+  text_muted: "#475569"
+  text_light: "#FFFFFF"
+  grid: "#E2E8F0"
+
+# ---- Brand accents ----
+accent:
+  primary: "#1D4345"
+  secondary: "#E9A345"
+  tertiary: "#0D9488"
+
+# ---- Status / feedback ----
+status:
+  success: "#059669"
+  danger: "#DC2626"
+
+# ---- Series identity (what is being measured) ----
+series:
+  baseline: "#D97706"
+  optimise: "#1D4345"
+  pv: "#F59E0B"
+  pac: "#059669"
+  prix: "#0D9488"
+
+# ---- Scenario visual style (baseline vs optimise, beyond color) ----
+scenarios:
+  baseline:
+    line_dash: "dash"
+    bar_pattern: "/"
+    fill_opacity: 0.08
+  optimise:
+    line_dash: "solid"
+    bar_pattern: ""
+    fill_opacity: 0.08

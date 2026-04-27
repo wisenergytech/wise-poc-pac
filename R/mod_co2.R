@@ -1,6 +1,6 @@
 #' CO2 Impact Tab Module UI
 #'
-#' Contains CO2 KPIs, hourly impact chart, cumulative CO2, and heatmap.
+#' Contains CO2 KPIs, emissions overlay bar chart, cumulative CO2, and heatmap.
 #'
 #' @param id module id
 #' @noRd
@@ -9,13 +9,13 @@ mod_co2_ui <- function(id) {
   shiny::tagList(
     shiny::uiOutput(ns("co2_kpi_row")),
     bslib::card(full_screen = TRUE,
-      card_header_tip("Emissions CO2 horaires -- baseline vs optimise",
-        "Emissions CO2 liees au soutirage reseau par heure. La partie commune montre les emissions optimisees ; l'excedent montre les emissions evitees par l'optimisation. Courbe pointillee : intensite carbone du reseau belge (gCO2eq/kWh)."),
-      bslib::card_body(plotly::plotlyOutput(ns("plot_co2_hourly"), height = "350px"))),
+      card_header_tip("Emissions CO2",
+        "Emissions CO2 liees au soutirage reseau par periode. La partie commune (cyan) montre les emissions optimisees ; l'excedent (orange) montre les emissions evitees par l'optimisation."),
+      bslib::card_body(plotly::plotlyOutput(ns("plot_co2_emissions"), height = "350px"))),
     bslib::layout_columns(col_widths = c(6, 6),
       bslib::card(full_screen = TRUE,
-        card_header_tip("CO2 evite cumule",
-          "Cumul des emissions CO2 evitees depuis le debut de la periode. Correspond a la somme des barres vertes moins les rouges du graphique horaire."),
+        card_header_tip("Emissions CO2 cumulees -- baseline vs optimise",
+          "Evolution des emissions CO2 cumulees (liees au soutirage reseau) au fil du temps. L'ecart entre les deux courbes represente le CO2 evite a chaque instant."),
         bslib::card_body(plotly::plotlyOutput(ns("plot_co2_cumul"), height = "300px"))),
       bslib::card(full_screen = TRUE,
         card_header_tip("Heatmap intensite CO2 du reseau",
@@ -61,7 +61,6 @@ mod_co2_server <- function(id, sidebar) {
       shiny::req(co2_impact_r(), co2_15min_r(), sidebar$kpis_r())
       sim <- sim_filtered(); p <- sidebar$params_r()
 
-      # Extend shared KPIs with CO2-specific ones
       k <- KPICalculator$new()$compute(sim, sim, p, co2_15min = co2_15min_r())
 
       kpis <- list(
@@ -88,54 +87,39 @@ mod_co2_server <- function(id, sidebar) {
       ))
     })
 
-    # ---- Hourly chart (overlay baseline vs optimise) ----
-    output$plot_co2_hourly <- plotly::renderPlotly({
+    # ---- Emissions overlay bar chart (auto-aggregated, same as energy tab) ----
+    output$plot_co2_emissions <- plotly::renderPlotly({
       shiny::req(sim_filtered(), co2_impact_r())
-      d <- prepare_co2_hourly(sim_filtered(), co2_impact_r())
-
-      bl <- d$co2_baseline_g
-      op <- d$co2_opti_g
-      bottom <- pmin(bl, op)
-      top    <- pmax(bl, op) - bottom
-      bl_bigger <- bl > op
-      bottom_col <- ifelse(bl_bigger, cl$opti, cl$reel)
-      top_col    <- ifelse(bl_bigger, cl$reel, cl$opti)
-      hover <- sprintf("Baseline: %.0f g<br>Optimis\u00e9: %.0f g", bl, op)
-
-      plotly::plot_ly(d, x = ~timestamp) %>%
-        plotly::add_bars(y = bottom, name = "Commun", showlegend = FALSE,
-          marker = list(color = bottom_col), text = hover, hoverinfo = "text+x") %>%
-        plotly::add_bars(y = top, name = "Delta", showlegend = FALSE,
-          marker = list(color = top_col), text = hover, hoverinfo = "text+x") %>%
-        plotly::add_bars(y = 0, name = "Baseline", marker = list(color = cl$reel),
-          showlegend = TRUE, hoverinfo = "skip") %>%
-        plotly::add_bars(y = 0, name = "Optimise", marker = list(color = cl$opti),
-          showlegend = TRUE, hoverinfo = "skip") %>%
-        plotly::add_trace(y = ~co2_intensity, type = "scatter", mode = "lines",
-          name = "Intensite reseau (gCO2/kWh)", yaxis = "y2",
-          line = list(color = cl$accent3, width = 1.5, dash = "dot")) %>%
-        pl_layout(ylab = "Emissions CO2 (g)") %>%
-        plotly::layout(
-          barmode = "stack", bargap = 0.1,
-          yaxis2 = list(title = "gCO2eq/kWh", overlaying = "y", side = "right",
-            gridcolor = "transparent", tickfont = list(size = 10, color = cl$accent3),
-            titlefont = list(color = cl$accent3, size = 11))
-        )
+      impact <- co2_impact_r()
+      d <- data.frame(
+        timestamp      = sim_filtered()$timestamp,
+        co2_baseline   = impact$co2_baseline_g,
+        co2_opti       = impact$co2_opti_g
+      )
+      agg <- auto_aggregate(d)
+      plot_overlay_bar(agg$data, "co2_baseline", "co2_opti",
+        paste0("gCO2 (", agg$label, ")"))
     })
 
-    # ---- Cumulative ----
+    # ---- Cumulative (baseline vs opti, same pattern as facture cumulee) ----
     output$plot_co2_cumul <- plotly::renderPlotly({
       shiny::req(sim_filtered(), co2_impact_r())
       impact <- co2_impact_r()
       d <- data.frame(
-        timestamp = sim_filtered()$timestamp,
-        co2_cumul_kg = impact$co2_saved_cumul_kg
+        timestamp    = sim_filtered()$timestamp,
+        cum_baseline = cumsum(ifelse(is.na(impact$co2_baseline_g), 0, impact$co2_baseline_g)) / 1000,
+        cum_opti     = cumsum(ifelse(is.na(impact$co2_opti_g), 0, impact$co2_opti_g)) / 1000
       )
-      plotly::plot_ly(d, x = ~timestamp, y = ~co2_cumul_kg, type = "scatter", mode = "lines",
-        name = "CO2 evite cumule",
-        fill = "tozeroy", fillcolor = "rgba(5,150,105,0.15)",
-        line = list(color = cl$success, width = 2)) %>%
-        pl_layout(ylab = "kg CO2eq evite")
+      # Downsample to hourly
+      d <- d %>%
+        dplyr::mutate(.h = lubridate::floor_date(timestamp, "hour")) %>%
+        dplyr::group_by(.h) %>%
+        dplyr::slice_tail(n = 1) %>%
+        dplyr::ungroup() %>%
+        dplyr::select(timestamp, cum_baseline, cum_opti)
+      plot_cumulative(d, ylab = "Emissions CO2 cumulees (kg)", unit = "kg",
+        baseline_label = "CO2 baseline", opti_label = "CO2 optimise",
+        delta_label = "CO2 evite")
     })
 
     # ---- Heatmap ----
@@ -180,7 +164,7 @@ mod_co2_server <- function(id, sidebar) {
 
     # Force outputs to render even when tab is hidden (bslib lazy tabs)
     shiny::outputOptions(output, "co2_kpi_row", suspendWhenHidden = FALSE)
-    shiny::outputOptions(output, "plot_co2_hourly", suspendWhenHidden = FALSE)
+    shiny::outputOptions(output, "plot_co2_emissions", suspendWhenHidden = FALSE)
     shiny::outputOptions(output, "plot_co2_cumul", suspendWhenHidden = FALSE)
     shiny::outputOptions(output, "plot_co2_heatmap", suspendWhenHidden = FALSE)
     shiny::outputOptions(output, "co2_data_source", suspendWhenHidden = FALSE)

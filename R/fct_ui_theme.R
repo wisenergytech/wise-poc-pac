@@ -1,27 +1,34 @@
-#' Wise Color Palette
-#'
-#' Named list of all color constants used in the dashboard theme.
-#' Based on the Wise brand identity (wise-standards).
-#' @noRd
-cl <- list(
-  bg_dark    = "#F6F7F8",    # app background
-  bg_card    = "#FFFFFF",    # card/surface
-  bg_input   = "#EDF0F4",   # input backgrounds
-  accent     = "#1D4345",    # primary (deep green)
+# =============================================================================
+# Theme: load colors from YAML + chart helpers
+# =============================================================================
 
-  accent2    = "#E9A345",    # secondary (gold)
-  accent3    = "#0D9488",    # tertiary (teal)
-  success    = "#059669",    # success green
-  danger     = "#DC2626",    # danger red
-  text       = "#171616",    # primary text
-  text_muted = "#475569",    # muted text
-  text_light = "#FFFFFF",    # text on dark backgrounds
-  grid       = "#E2E8F0",    # borders/grid lines
-  reel       = "#D97706",    # baseline/real (amber)
-  opti       = "#1D4345",    # optimized (deep green)
-  pv         = "#F59E0B",    # solar PV (bright amber)
-  pac        = "#059669",    # heat pump (emerald)
-  prix       = "#0D9488"     # price (teal)
+# Load theme YAML and build flat `cl` list for backward compatibility
+.theme <- yaml::read_yaml(system.file("theme.yml", package = "wisepocpac"))
+
+cl <- list(
+  # UI
+  bg_dark    = .theme$ui$bg_dark,
+  bg_card    = .theme$ui$bg_card,
+  bg_input   = .theme$ui$bg_input,
+  text       = .theme$ui$text,
+  text_muted = .theme$ui$text_muted,
+  text_light = .theme$ui$text_light,
+  grid       = .theme$ui$grid,
+  # Accents
+  accent     = .theme$accent$primary,
+  accent2    = .theme$accent$secondary,
+  accent3    = .theme$accent$tertiary,
+  # Status
+  success    = .theme$status$success,
+  danger     = .theme$status$danger,
+  # Series
+  reel       = .theme$series$baseline,
+  opti       = .theme$series$optimise,
+  pv         = .theme$series$pv,
+  pac        = .theme$series$pac,
+  prix       = .theme$series$prix,
+  # Scenario styles
+  scenarios  = .theme$scenarios
 )
 
 #' Standard Plotly Layout
@@ -49,29 +56,20 @@ pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL) {
 
 #' Overlay Bar Chart (baseline vs optimised)
 #'
-#' Creates a stacked bar chart where for each period the bar height equals
-#' \code{max(baseline, opti)}. The bottom portion (0 to min) is coloured as the
-#' smaller series and the top portion (min to max) as the larger one.
-#' This visually shows that one value is contained within the other.
+#' Stacked bar chart: bottom = common part (solid), top = delta (hatched).
+#' Delta color indicates whether the difference is favorable or not.
 #'
-#' No Shiny dependency -- can be used standalone for reporting.
-#'
-#' @param data A dataframe with a \code{timestamp} column and the two series
-#'   to compare
-#' @param baseline_col Character. Column name for the baseline series
-#' @param opti_col Character. Column name for the optimised series
-#' @param ylab Character. Y-axis label (e.g. \code{"kWh (horaire)"})
-#' @return A \pkg{plotly} object
-#'
-#' @examples
-#' df <- data.frame(
-#'   timestamp = seq(as.POSIXct("2025-01-01"), by = "hour", length.out = 24),
-#'   soutirage_baseline = runif(24, 1, 5),
-#'   soutirage_opti = runif(24, 0.5, 4)
-#' )
-#' plot_overlay_bar(df, "soutirage_baseline", "soutirage_opti", "kWh")
+#' @param data Dataframe with \code{timestamp} and the two series columns
+#' @param baseline_col Column name for baseline series
+#' @param opti_col Column name for optimised series
+#' @param ylab Y-axis label
+#' @param gain_when \code{"lower"} (default) if lower opti is better (soutirage,
+#'   CO2), \code{"higher"} if higher opti is better (autoconso, autosuffisance)
+#' @return A plotly object
 #' @export
-plot_overlay_bar <- function(data, baseline_col, opti_col, ylab) {
+plot_overlay_bar <- function(data, baseline_col, opti_col, ylab,
+                             gain_when = c("lower", "higher")) {
+  gain_when <- match.arg(gain_when)
   bl <- data[[baseline_col]]
   op <- data[[opti_col]]
 
@@ -79,23 +77,88 @@ plot_overlay_bar <- function(data, baseline_col, opti_col, ylab) {
   top    <- pmax(bl, op) - bottom
 
   bl_bigger <- bl > op
-  bottom_color <- ifelse(bl_bigger, cl$opti, cl$reel)
-  top_color    <- ifelse(bl_bigger, cl$reel, cl$opti)
+  # Determine if the delta is favorable
+  delta_is_gain <- if (gain_when == "lower") bl_bigger else !bl_bigger
+
+  delta_color <- ifelse(delta_is_gain, cl$success, cl$danger)
+  bar_pattern <- cl$scenarios$baseline$bar_pattern
 
   hover_text <- sprintf("Baseline: %.1f<br>Optimis\u00e9: %.1f", bl, op)
+
+  # Bottom = common part (solid, series color = optimise when gain, baseline otherwise)
+  bottom_color <- ifelse(delta_is_gain, cl$opti, cl$reel)
 
   plotly::plot_ly(data, x = ~timestamp) %>%
     plotly::add_bars(y = bottom, name = "Commun",
       marker = list(color = bottom_color), showlegend = FALSE,
-      text = hover_text, hoverinfo = "text+x") %>%
+      text = hover_text, hoverinfo = "text+x", textposition = "none") %>%
     plotly::add_bars(y = top, name = "Delta",
-      marker = list(color = top_color), showlegend = FALSE,
-      text = hover_text, hoverinfo = "text+x") %>%
-    plotly::add_bars(y = 0, name = "Baseline", marker = list(color = cl$reel),
-      showlegend = TRUE, hoverinfo = "skip") %>%
-    plotly::add_bars(y = 0, name = "Optimise", marker = list(color = cl$opti),
+      marker = list(
+        color = delta_color,
+        pattern = list(shape = bar_pattern, solidity = 0.6)
+      ), showlegend = FALSE,
+      text = hover_text, hoverinfo = "text+x", textposition = "none") %>%
+    # Legend entries
+    plotly::add_bars(y = 0, name = "Baseline",
+      marker = list(color = cl$reel), showlegend = TRUE, hoverinfo = "skip") %>%
+    plotly::add_bars(y = 0, name = "Optimise",
+      marker = list(color = cl$opti), showlegend = TRUE, hoverinfo = "skip") %>%
+    plotly::add_bars(y = 0, name = "Gain",
+      marker = list(color = cl$success,
+        pattern = list(shape = bar_pattern, solidity = 0.6)),
       showlegend = TRUE, hoverinfo = "skip") %>%
     plotly::layout(barmode = "stack", bargap = 0.1) %>%
+    pl_layout(ylab = ylab)
+}
+
+#' Cumulative comparison chart (baseline vs optimised)
+#'
+#' Two-line chart with dashed baseline and solid optimised, showing
+#' the cumulative gap. Used for both finances and CO2.
+#'
+#' @param data Dataframe with \code{timestamp}, \code{cum_baseline}, \code{cum_opti}
+#' @param ylab Y-axis label
+#' @param unit Unit string for hover (e.g. "EUR", "kg")
+#' @param baseline_label Legend label for baseline
+#' @param opti_label Legend label for optimised
+#' @param delta_label Hover label for the gap (e.g. "Economie cumulee", "CO2 evite")
+#' @return A plotly object
+#' @noRd
+plot_cumulative <- function(data, ylab, unit = "",
+                            baseline_label = "Baseline",
+                            opti_label = "Optimise",
+                            delta_label = "Delta") {
+  d <- data
+  d$eco <- d$cum_baseline - d$cum_opti
+
+  bl_fill <- paste0("rgba(",
+    paste(grDevices::col2rgb(cl$reel), collapse = ","), ",",
+    cl$scenarios$baseline$fill_opacity, ")")
+  op_fill <- paste0("rgba(",
+    paste(grDevices::col2rgb(cl$opti), collapse = ","), ",",
+    cl$scenarios$optimise$fill_opacity, ")")
+
+  plotly::plot_ly(d, x = ~timestamp) %>%
+    plotly::add_trace(y = ~cum_baseline, type = "scatter", mode = "lines",
+      name = baseline_label,
+      line = list(color = cl$reel, width = 2,
+        dash = cl$scenarios$baseline$line_dash),
+      fill = "tozeroy", fillcolor = bl_fill,
+      customdata = ~eco,
+      hovertemplate = paste0(
+        "<b>", baseline_label, "</b>: %{y:.1f} ", unit, "<br>",
+        delta_label, ": %{customdata:.1f} ", unit,
+        "<extra>", baseline_label, "</extra>")) %>%
+    plotly::add_trace(y = ~cum_opti, type = "scatter", mode = "lines",
+      name = opti_label,
+      line = list(color = cl$opti, width = 2,
+        dash = cl$scenarios$optimise$line_dash),
+      fill = "tozeroy", fillcolor = op_fill,
+      customdata = ~eco,
+      hovertemplate = paste0(
+        "<b>", opti_label, "</b>: %{y:.1f} ", unit, "<br>",
+        delta_label, ": %{customdata:.1f} ", unit,
+        "<extra>", opti_label, "</extra>")) %>%
     pl_layout(ylab = ylab)
 }
 

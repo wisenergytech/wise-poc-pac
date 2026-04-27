@@ -406,34 +406,6 @@ compute_co2_impact <- function(sim, co2_15min) {
   )
 }
 
-#' Prepare hourly CO2 impact data for plotting
-#'
-#' Aggregates per-timestep CO2 impact to hourly resolution, computing
-#' total CO2 saved and mean grid intensity per hour.
-#'
-#' @param sim Simulation dataframe with a \code{timestamp} column
-#' @param impact Result from [compute_co2_impact()]
-#' @return A dataframe with columns: \code{timestamp} (hourly),
-#'   \code{co2_saved_g}, \code{co2_intensity}
-#' @export
-prepare_co2_hourly <- function(sim, impact) {
-  sim %>%
-    dplyr::mutate(
-      co2_baseline_g = impact$co2_baseline_g,
-      co2_opti_g = impact$co2_opti_g,
-      co2_intensity = impact$co2_intensity,
-      .h = lubridate::floor_date(timestamp, "hour")
-    ) %>%
-    dplyr::group_by(.h) %>%
-    dplyr::summarise(
-      co2_baseline_g = sum(co2_baseline_g, na.rm = TRUE),
-      co2_opti_g = sum(co2_opti_g, na.rm = TRUE),
-      co2_intensity = mean(co2_intensity, na.rm = TRUE),
-      .groups = "drop"
-    ) %>%
-    dplyr::rename(timestamp = .h)
-}
-
 #' Prepare CO2 intensity heatmap matrix
 #'
 #' Pivots per-timestep CO2 intensity into a day x hour matrix suitable

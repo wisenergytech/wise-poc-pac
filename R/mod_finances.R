@@ -68,23 +68,9 @@ mod_finances_server <- function(id, sidebar) {
     output$plot_cout_cumule <- plotly::renderPlotly({
       shiny::req(sim_filtered())
       d <- compute_cumulative_bill(sim_filtered())
-      d <- d %>% dplyr::mutate(eco = cum_baseline - cum_opti)
-      plotly::plot_ly(d, x = ~timestamp) %>%
-        plotly::add_trace(y = ~cum_baseline, type = "scatter", mode = "lines", name = "Facture baseline",
-          line = list(color = cl$reel, width = 2), fill = "tozeroy", fillcolor = "rgba(217,119,6,0.08)",
-          customdata = ~eco,
-          hovertemplate = paste0(
-            "<b>Baseline</b>: %{y:.1f} EUR<br>",
-            "Economie cumulee: %{customdata:.1f} EUR",
-            "<extra>Baseline</extra>")) %>%
-        plotly::add_trace(y = ~cum_opti, type = "scatter", mode = "lines", name = "Facture optimisee",
-          line = list(color = cl$opti, width = 2), fill = "tozeroy", fillcolor = "rgba(29,67,69,0.08)",
-          customdata = ~eco,
-          hovertemplate = paste0(
-            "<b>Optimise</b>: %{y:.1f} EUR<br>",
-            "Economie cumulee: %{customdata:.1f} EUR",
-            "<extra>Optimise</extra>")) %>%
-        pl_layout(ylab = "Facture nette cumulee (EUR)")
+      plot_cumulative(d, ylab = "Facture nette cumulee (EUR)", unit = "EUR",
+        baseline_label = "Facture baseline", opti_label = "Facture optimisee",
+        delta_label = "Economie cumulee")
     })
 
     # ---- Waterfall ----
