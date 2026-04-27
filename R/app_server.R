@@ -26,27 +26,15 @@ app_server <- function(input, output, session) {
 
   if (auth_enabled()) {
     # ---- Auth gate ----
+    # UI is always rendered (page_fillable at root level).
+    # Login overlay covers it. On auth success, remove overlay and init modules.
     authenticated <- mod_auth_server("auth")
-    app_initialized <- shiny::reactiveVal(FALSE)
 
-    output$main_app_ui <- shiny::renderUI({
+    shiny::observeEvent(authenticated(), {
       shiny::req(authenticated())
-      # Hide login form, show main app
-      # Signal server once the UI is in the DOM
-      shiny::tagList(
-        shiny::tags$script(shiny::HTML(
-          "document.getElementById('auth-login-page').style.display = 'none';
-           Shiny.setInputValue('app_ui_ready', true, {priority: 'event'});"
-        )),
-        main_app_ui_content()
-      )
-    })
-
-    shiny::observeEvent(input$app_ui_ready, {
-      if (!app_initialized()) {
-        app_initialized(TRUE)
-        init_app_modules(input, output, session)
-      }
+      # Remove login overlay
+      shiny::removeUI(selector = "#auth-login-page", immediate = TRUE)
+      init_app_modules(input, output, session)
     })
   } else {
     # ---- No auth: init directly ----
