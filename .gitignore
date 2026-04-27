@@ -12,6 +12,13 @@ renv/staging/
 
 # Environment secrets
 .env
+.env.yaml
+
+# Logs
+fetch.log
+
+# Large data files
+data/fusionsolar_5min_2026.csv
 
 # OS
 .DS_Store

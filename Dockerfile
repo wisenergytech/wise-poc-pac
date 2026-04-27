@@ -27,6 +27,8 @@ RUN R -e "renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt
 
 # Copy the rest of the project
 COPY . .
+# Remove .Rprofile (renv/activate.R not needed — packages installed in system lib)
+RUN rm -f .Rprofile
 
 EXPOSE 3838
 
