@@ -14,11 +14,13 @@ app_ui <- function(request) {
     if (auth_enabled()) mod_auth_ui("auth"),
 
     # Loading overlay — visible until server signals params_r() is ready
+    # Hidden initially when auth is enabled (shown after successful login)
     shiny::tags$div(id = "app-loading-overlay",
       style = paste0(
         "position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;",
         "background:rgba(246,247,248,0.92);display:flex;flex-direction:column;",
-        "align-items:center;justify-content:center;"),
+        "align-items:center;justify-content:center;",
+        if (auth_enabled()) "display:none;" else ""),
       shiny::tags$div(style = paste0(
         "width:44px;height:44px;border:3px solid #E2E8F0;",
         "border-top-color:#1D4345;border-radius:50%;",
@@ -77,6 +79,12 @@ golem_add_external_resources <- function() {
           overlay.style.opacity = '0';
           setTimeout(function() { overlay.remove(); }, 400);
         }
+      });
+      Shiny.addCustomMessageHandler('auth-to-loading', function(msg) {
+        var login = document.getElementById('auth-login-page');
+        if (login) login.remove();
+        var loading = document.getElementById('app-loading-overlay');
+        if (loading) loading.style.display = 'flex';
       });
     "))
   )

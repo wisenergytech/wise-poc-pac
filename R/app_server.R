@@ -32,8 +32,8 @@ app_server <- function(input, output, session) {
 
     shiny::observeEvent(authenticated(), {
       shiny::req(authenticated())
-      # Remove login overlay
-      shiny::removeUI(selector = "#auth-login-page", immediate = TRUE)
+      # Remove login overlay, show loading overlay while data loads
+      session$sendCustomMessage("auth-to-loading", list())
       init_app_modules(input, output, session)
     })
   } else {
