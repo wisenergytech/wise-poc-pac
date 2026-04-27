@@ -25,6 +25,7 @@ Imports:
     readxl,
     ROI.plugin.glpk,
     golem,
+    jsonlite,
     R6,
     config,
     future,

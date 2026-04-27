@@ -24,9 +24,38 @@ app_server <- function(input, output, session) {
     }
   }
 
-  # ---- Sidebar module: handles params, data loading, simulation ----
-  # Returns a list of reactives consumed by all other modules
+  if (auth_enabled()) {
+    # ---- Auth gate ----
+    authenticated <- mod_auth_server("auth")
+    app_initialized <- shiny::reactiveVal(FALSE)
 
+    output$main_app_ui <- shiny::renderUI({
+      shiny::req(authenticated())
+      # Hide login form, show main app
+      shiny::tagList(
+        shiny::tags$script(shiny::HTML(
+          "document.getElementById('auth-login-page').style.display = 'none';"
+        )),
+        main_app_ui_content()
+      )
+    })
+
+    shiny::observe({
+      shiny::req(authenticated())
+      if (!app_initialized()) {
+        app_initialized(TRUE)
+        init_app_modules(input, output, session)
+      }
+    })
+  } else {
+    # ---- No auth: init directly ----
+    init_app_modules(input, output, session)
+  }
+}
+
+#' Initialize all app modules
+#' @noRd
+init_app_modules <- function(input, output, session) {
   sidebar <- mod_sidebar_server("sidebar")
 
   # ---- Hide loading overlay once params are ready ----

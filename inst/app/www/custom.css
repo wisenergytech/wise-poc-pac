@@ -526,3 +526,63 @@ table.dataTable.compact tbody td {
 .vignette-content .MathJax {
   font-size: 1em !important;
 }
+
+/* ---- Auth / Login page ---- */
+.auth-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #F6F7F8;
+  font-family: 'Raleway', sans-serif;
+}
+
+.auth-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 12px;
+  padding: 40px 36px;
+  width: 100%;
+  max-width: 380px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  text-align: center;
+}
+
+.auth-logo {
+  height: 40px;
+  margin-bottom: 24px;
+}
+
+.auth-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: .15em;
+  color: #1D4345;
+  margin-bottom: 24px;
+}
+
+.auth-field {
+  text-align: left;
+  margin-bottom: 16px;
+}
+
+.auth-field label {
+  display: block;
+  font-size: .78rem;
+  color: #475569;
+  margin-bottom: 4px;
+}
+
+.auth-btn {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+}
+
+.auth-error {
+  color: #DC2626;
+  font-size: .78rem;
+  min-height: 1.2em;
+  margin-top: 8px;
+}
