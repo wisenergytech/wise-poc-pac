@@ -1,0 +1,74 @@
+---
+title: "Ameliorations futures"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Ameliorations futures}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+Ce document recense les ameliorations envisagees pour les versions futures
+du simulateur. Chaque section decrit le besoin, l'ecart avec le POC actuel,
+et les prerequis techniques.
+
+---
+
+## 1. Consignes separees ambiance / ECS
+
+### Besoin
+
+Dans une installation reelle (notamment en collectif), la PAC dessert deux
+besoins thermiques distincts :
+
+- **Chauffage d'ambiance** : maintenir la temperature interieure du batiment
+  autour de ~20 C avec une tolerance de +/- 2 C.
+- **Eau chaude sanitaire (ECS)** : maintenir le ballon autour de ~50 C avec
+  une tolerance de +/- 5 C, et des contraintes sanitaires (legionellose :
+  montee periodique > 55-60 C).
+
+Ces deux besoins n'ont ni les memes plages de temperature, ni les memes
+inerties, ni les memes flexibilites pour l'optimiseur :
+
+| | Ambiance | ECS |
+|---|---|---|
+| Consigne typique | 20 C | 50 C |
+| Tolerance | +/- 2 C | +/- 5 C |
+| Inertie | Elevee (masse du batiment) | Moyenne (volume du ballon) |
+| Flexibilite pour l'optimiseur | Forte (prechauffage possible) | Moderee (contrainte legionellose) |
+
+Permettre a l'utilisateur de borner separement ces deux temperatures
+donnerait a l'optimiseur plus de levier : par exemple, prechauffer le
+batiment quand l'electricite est bon marche tout en maintenant l'ECS juste
+au minimum necessaire.
+
+### Etat actuel du POC
+
+Le POC utilise un modele a **un seul etat thermique** : la temperature du
+ballon (`t_consigne` + `t_tolerance`). La demande de chauffage est integree
+comme un soutirage supplementaire calcule par le data generator
+(`g_batiment_kw_par_k * (t_seuil - t_ext)`), mais la temperature interieure
+du batiment n'est pas une variable d'etat que l'optimiseur peut piloter.
+
+Ajouter des sliders ambiance/ECS sans modele thermique sous-jacent serait
+purement cosmetique — l'optimiseur ne saurait pas quoi en faire.
+
+### Prerequis techniques
+
+1. **Modele thermique du batiment** : ajouter un second etat
+   (temperature interieure `T_int`) avec sa propre dynamique :
+   `T_int(t+1) = f(T_int(t), T_ext(t), Q_chauffage(t), deperditions)`.
+2. **Separation des flux** : distinguer dans le modele le circuit
+   PAC -> ballon ECS et le circuit PAC -> chauffage (ou ballon tampon
+   chauffage).
+3. **Variables d'optimisation supplementaires** : l'optimiseur (MILP/QP)
+   doit piloter deux etats (`T_ballon_ecs`, `T_int`) avec leurs propres
+   contraintes de bornes.
+4. **UX** : 4 parametres (2 consignes + 2 tolerances) au lieu de 2 ;
+   necessite une UI claire pour ne pas surcharger l'utilisateur.
+
+### Complexite estimee
+
+C'est un saut architectural significatif. Le nombre de variables et
+contraintes de l'optimiseur double approximativement. Il est recommande
+de traiter cela comme un jalon v2 distinct plutot qu'une evolution
+incrementale du POC.
