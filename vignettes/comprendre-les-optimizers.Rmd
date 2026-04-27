@@ -358,6 +358,36 @@ flowchart TD
 - **Curtailment** : limite d'injection sur le réseau (imposée par certains contrats
   ou gestionnaires de réseau).
 
+### Zoom : la pénalité de slack, à quoi ça sert ?
+
+Parfois, les contraintes que l'on impose à l'optimiseur sont contradictoires. Par
+exemple : "maintenir le ballon à 55 °C minimum" alors qu'il n'y a pas de soleil et
+que l'électricité est très chère. Si les contraintes sont trop strictes, l'optimiseur
+peut ne trouver **aucune solution** du tout.
+
+Pour éviter ce blocage, on introduit une variable de **slack** (littéralement :
+"marge de manœuvre"). Concrètement, on autorise l'optimiseur à descendre légèrement
+en dessous de T~min~ — mais chaque degré de violation lui coûte une **amende
+virtuelle** (la pénalité de slack, par défaut 2,5 EUR/°C).
+
+**L'analogie** : c'est comme le stationnement en double file. Vous *pouvez* le
+faire, mais ça vous coûte une amende. Vous ne le ferez que si vous n'avez vraiment
+aucune autre option.
+
+**L'effet en pratique** :
+
+- L'optimiseur respecte T~min~ dans l'immense majorité des cas, parce que
+  "tricher" lui coûte cher.
+- S'il est physiquement impossible de maintenir T~min~ (par ex. un soutirage
+  massif d'eau chaude combiné à un prix spot très élevé), il préfère payer la
+  pénalité plutôt que de ne retourner aucun résultat.
+- Plus la pénalité est élevée, plus le confort est garanti (mais la facture peut
+  augmenter légèrement dans les cas limites).
+
+Cette mécanique s'applique aux trois optimiseurs mathématiques (LP, MILP et QP).
+Dans chaque cas, le terme $\lambda \sum s_t$ apparaît dans la fonction objectif
+et joue le même rôle de garde-fou.
+
 ---
 
 ## En résumé

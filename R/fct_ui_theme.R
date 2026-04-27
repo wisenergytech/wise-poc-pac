@@ -117,10 +117,10 @@ resolve_trace_config <- function(vars, agg_level, summable, unit_fn,
     v <- vars[i]
     is_sum <- v %in% summable
     u <- unit_fn(v)
-    # Axis: match unit to y1 or y2
+    # Axis: match unit to y1 or y2; unmatched units go to y2
     ax <- if (!is.na(u) && !is.na(unit1) && u == unit1) "y"
           else if (!is.na(u) && !is.na(unit2) && u == unit2) "y2"
-          else "y"
+          else "y2"
 
     # Trace type: bars only for summable + coarse agg + y1
     if (is_sum && use_bars && ax == "y") {

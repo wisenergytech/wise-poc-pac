@@ -223,15 +223,18 @@ mod_comparaison_server <- function(id, sidebar) {
       )
     }
 
-    # Filter choices for serie 3: only variables whose unit matches v1 or v2
+    # Filter choices for serie 3: max 2 distinct units across all 3 series
     build_choices3 <- function(choices, v1, v2) {
       u1 <- get_unit(v1); u2 <- get_unit(v2)
-      compatible_units <- unique(stats::na.omit(c(u1, u2)))
+      existing_units <- unique(stats::na.omit(c(u1, u2)))
+      same_unit <- length(existing_units) <= 1
       filtered <- lapply(choices, function(group) {
         group[sapply(unname(group), function(v) {
           if (v == "" || v == v1 || v == v2) return(FALSE)
           u <- get_unit(v)
-          !is.na(u) && u %in% compatible_units
+          if (is.na(u)) return(FALSE)
+          if (same_unit) TRUE  # v1/v2 share a unit, v3 can bring a 2nd one
+          else u %in% existing_units  # already 2 units, v3 must match one
         })]
       })
       filtered <- filtered[lengths(filtered) > 0]
@@ -382,9 +385,11 @@ mod_comparaison_server <- function(id, sidebar) {
         }
       }
 
-      u1 <- get_unit(v1); u2 <- get_unit(v2)
-      ytitle1 <- if (!is.na(u1)) u1 else names(all_vars)[all_vars == v1]
-      ytitle2 <- if (!is.na(u2)) u2 else names(all_vars)[all_vars == v2]
+      # Axis titles: collect actual units placed on each axis
+      y1_units <- unique(na.omit(sapply(vars[sapply(vars, function(v) configs[[v]]$axis == "y")], get_unit)))
+      y2_units <- unique(na.omit(sapply(vars[sapply(vars, function(v) configs[[v]]$axis == "y2")], get_unit)))
+      ytitle1 <- if (length(y1_units) > 0) paste(y1_units, collapse = " / ") else names(all_vars)[all_vars == v1]
+      ytitle2 <- if (length(y2_units) > 0) paste(y2_units, collapse = " / ") else names(all_vars)[all_vars == v2]
 
       barmode <- if (n_bars >= 2) "group" else if (n_bars == 1) "overlay" else "group"
 

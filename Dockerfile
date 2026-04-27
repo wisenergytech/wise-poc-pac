@@ -19,16 +19,11 @@ WORKDIR /app
 # Copy renv lockfile first (layer caching — deps rebuild only when lock changes)
 COPY renv.lock renv.lock
 
-# Restore all packages from lockfile (with retry for transient download failures)
-RUN R -e "\
-  options(renv.download.retries = 5); \
-  tryCatch( \
-    renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE), \
-    error = function(e) { \
-      message('First attempt had failures, retrying...'); \
-      renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE) \
-    } \
-  )"
+# Pre-install packages that fail to download via renv on Cloud Build
+RUN R -e "install.packages(c('Rcpp', 'S7'), repos = 'https://packagemanager.posit.co/cran/__linux__/noble/latest')"
+
+# Restore all packages from lockfile (exclude Rcpp/S7 already installed above)
+RUN R -e "renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE, exclude = c('Rcpp', 'S7'))"
 
 # Copy the rest of the project
 COPY . .

@@ -135,10 +135,22 @@ fait le calcul : stocker dans le ballon vs revendre au reseau.
 #### Conso PAC (kWh)
 
 L'electricite consommee par la PAC. Ce chiffre peut **augmenter** avec
-l'optimisation ! C'est normal : l'optimiseur peut faire tourner la PAC
-*plus* longtemps (pour stocker de la chaleur pendant les heures bon marche)
-tout en reduisant la facture globale. Plus de kWh consommes, mais a un
-prix moyen plus bas = facture plus basse.
+l'optimisation (typiquement +2 a +5%). C'est normal et attendu — voici
+pourquoi :
+
+1. **Sur-chauffe strategique** : l'optimiseur chauffe le ballon au-dela de
+   la consigne (vers T_max) quand l'electricite est bon marche ou gratuite
+   (surplus PV), pour eviter d'acheter quand le prix est eleve.
+2. **Pertes thermiques accrues** : un ballon maintenu plus chaud perd plus
+   de chaleur vers l'ambiant (loi de Newton : pertes proportionnelles a
+   l'ecart de temperature). Ces pertes supplementaires doivent etre
+   compensees par la PAC → plus de kWh consommes au total.
+3. **Bilan economique positif** : le surcout en kWh des pertes thermiques
+   est largement compense par le fait que ces kWh sont achetes au bon moment
+   (prix spot bas ou autoconsommation PV).
+
+**Exemple concret** : +3% de kWh mais -13% sur la facture. C'est le cout
+de l'arbitrage tarifaire, et il est rentable.
 
 ### Les graphiques en barres
 

@@ -7,9 +7,26 @@ app_ui <- function(request) {
   # Colors (cl) and helpers (tip, kpi_card, explainer, pl_layout)
   # are loaded from R/fct_ui_theme.R by Golem's R/ sourcing.
 
-  shiny::tagList(
-    golem_add_external_resources(),
+  if (auth_enabled()) {
+    # Auth mode: login form + placeholder for main app (rendered server-side)
+    shiny::tagList(
+      golem_add_external_resources(),
+      mod_auth_ui("auth"),
+      shiny::uiOutput("main_app_ui")
+    )
+  } else {
+    # No auth: render app directly
+    shiny::tagList(
+      golem_add_external_resources(),
+      main_app_ui_content()
+    )
+  }
+}
 
+#' Main app UI content (extracted for reuse)
+#' @noRd
+main_app_ui_content <- function() {
+  shiny::tagList(
     # Loading overlay — visible until server signals params_r() is ready
     shiny::tags$div(id = "app-loading-overlay",
       style = paste0(
@@ -51,7 +68,7 @@ app_ui <- function(request) {
         )
       ) # fin layout_sidebar
     ) # fin page_fillable
-  ) # fin tagList
+  )
 }
 
 #' Add external Resources to the Application

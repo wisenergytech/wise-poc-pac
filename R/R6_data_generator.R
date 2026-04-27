@@ -341,17 +341,31 @@ DataGenerator <- R6::R6Class("DataGenerator",
             (abs(delta_t_mesure) - abs(pm)) * params$capacite_kwh_par_degre,
           TRUE ~ 0))
       } else {
-        # No ECS data available (pac_kwh CSV or fallback path): use configured ECS
+        # No ECS data available (pac_kwh CSV or fallback path): use typical daily profile
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
         ecs_kwh_jour <- if (!is.null(params$ecs_kwh_jour) && !is.na(params$ecs_kwh_jour)) {
           params$ecs_kwh_jour
         } else {
           params$p_pac_kw * 3  # rough daily ECS estimate
         }
-        # Distribute ECS uniformly (the optimizer will handle timing)
-        ecs_par_qt <- ecs_kwh_jour / (24 / params$dt_h)
-        df <- df %>% dplyr::mutate(soutirage_estime_kwh = ecs_par_qt)
-        message(sprintf("[prepare_df] ECS estimee: %.1f kWh_th/jour (uniforme, %.3f kWh/qt)", ecs_kwh_jour, ecs_par_qt))
+        # Build a typical ECS draw profile (same shape as generate_demo)
+        h <- lubridate::hour(df$timestamp) + lubridate::minute(df$timestamp) / 60
+        # Relative weight per quarter-hour: morning peak, lunch, evening peak, background
+        poids <- dplyr::case_when(
+          h > 6.5 & h < 8.5  ~ 3.0,   # morning (showers)
+          h > 12  & h < 13.5 ~ 1.0,   # lunch
+          h > 18.5 & h < 21  ~ 3.5,   # evening (showers, dishes)
+          h > 8   & h < 22   ~ 0.2,   # daytime background
+          TRUE                ~ 0.05   # night (near zero)
+        )
+        # Normalize per day so that sum = ecs_kwh_jour for each full day
+        jour <- as.Date(df$timestamp, tz = "Europe/Brussels")
+        df_poids <- dplyr::tibble(jour = jour, poids = poids) %>%
+          dplyr::group_by(jour) %>%
+          dplyr::mutate(ecs = poids / sum(poids) * ecs_kwh_jour) %>%
+          dplyr::ungroup()
+        df <- df %>% dplyr::mutate(soutirage_estime_kwh = df_poids$ecs)
+        message(sprintf("[prepare_df] ECS estimee: %.1f kWh_th/jour (profil type matin/soir)", ecs_kwh_jour))
       }
 
       list(df = df, params = params)

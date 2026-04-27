@@ -212,12 +212,27 @@ normal : la perte d'injection est compensee par la reduction de soutirage.
 
 #### "La conso PAC est plus elevee en optimise qu'en baseline !"
 
-Normal. L'optimiseur peut faire tourner la PAC **plus** longtemps — mais a
-des moments ou l'electricite est gratuite (surplus PV) ou bon marche. Plus
-de kWh consommes a un prix moyen plus bas = facture plus basse.
+Normal — c'est le resultat attendu de l'arbitrage tarifaire. L'augmentation
+(typiquement +2 a +5%) s'explique par deux mecanismes :
 
-C'est comme faire un detour de 10 km pour une station-service 30% moins
-chere : vous consommez plus de carburant, mais vous payez moins au total.
+1. **Decalage temporel** : l'optimiseur fait tourner la PAC **plus** quand
+   l'electricite est gratuite (surplus PV) ou bon marche (creux spot), et
+   **moins** quand elle est chere. Pour cela, il sur-chauffe le ballon
+   (vers T_max) en avance, constituant une reserve thermique.
+
+2. **Pertes thermiques supplementaires** : un ballon maintenu plus chaud
+   perd plus de chaleur vers l'ambiant (loi de Newton). Ces pertes doivent
+   etre compensees → la PAC consomme plus de kWh au total.
+
+Le bilan reste largement positif : le surcout energetique des pertes est
+inferieur a l'economie realisee grace au prix moyen du kWh plus bas.
+
+**Exemple** : +3% de kWh consommes, -13% sur la facture = gain net de
+~1 180 EUR sur 56 jours.
+
+**Analogie** : c'est comme faire le plein d'essence quand le prix est bas,
+meme si le reservoir plus lourd augmente legerement la consommation. Le
+surcout en carburant est inferieur a l'economie realisee sur le prix.
 
 ### Questions sur les reglages
 

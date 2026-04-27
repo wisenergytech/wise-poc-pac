@@ -486,14 +486,43 @@ mod_sidebar_server <- function(id, sim_state) {
           shiny::req(FALSE)
         }
 
+        # --- CSV Import Report ---
+        report <- character(0)
+        warn_lines <- character(0)
+        inj_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else "intake_kwh"
+        n_pts <- nrow(df)
+        n_jours <- round(as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")), 1)
+
+        # Header
+        report <- c(report, sprintf("<b>%d points charg\u00e9s</b> (%.1f jours, %s &rarr; %s)",
+          n_pts, n_jours,
+          format(min(df$timestamp), "%d/%m/%Y"),
+          format(max(df$timestamp), "%d/%m/%Y")))
+
+        # Required columns (already validated above)
+        report <- c(report, "",
+          sprintf("&#9989; <code>pv_kwh</code> &mdash; production PV"),
+          sprintf("&#9989; <code>offtake_kwh</code> &mdash; soutirage r\u00e9seau"),
+          sprintf("&#9989; <code>%s</code> &mdash; injection r\u00e9seau", inj_col))
+
+        # Optional: pac_kwh
         if ("pac_kwh" %in% names(df)) {
-          shiny::showNotification("Colonne pac_kwh d\u00e9tect\u00e9e : conso hors PAC sera calcul\u00e9e exactement", type = "message", duration = 5)
+          report <- c(report, sprintf("&#9989; <code>pac_kwh</code> &mdash; conso PAC mesur\u00e9e &rarr; <b>conso hors PAC exacte</b>"))
         } else {
-          shiny::showNotification("Pas de colonne pac_kwh : la r\u00e9partition PAC/autre sera estim\u00e9e (moins pr\u00e9cis)", type = "warning", duration = 8)
+          report <- c(report, sprintf("&#10060; <code>pac_kwh</code> absent &rarr; r\u00e9partition PAC/autre <b>estim\u00e9e par heuristique</b> (soutirage > 50%% P_pac)"))
         }
 
-        # Fetch external temperature if not in CSV
-        if (!"t_ext" %in% names(df)) {
+        # Optional: t_ballon
+        if ("t_ballon" %in% names(df)) {
+          report <- c(report, sprintf("&#9989; <code>t_ballon</code> &mdash; temp\u00e9rature ballon &rarr; <b>soutirages ECS d\u00e9duits des chutes de T</b>"))
+        } else {
+          report <- c(report, sprintf("&#10060; <code>t_ballon</code> absent &rarr; soutirages ECS <b>distribu\u00e9s selon profil type</b> (pics matin/soir)"))
+        }
+
+        # Optional: t_ext
+        if ("t_ext" %in% names(df)) {
+          report <- c(report, sprintf("&#9989; <code>t_ext</code> &mdash; temp\u00e9rature ext\u00e9rieure"))
+        } else {
           dp <- DataProvider$new()
           t_ext_meteo <- tryCatch({
             df_temp <- dp$get_temperature(min(as.Date(df$timestamp)), max(as.Date(df$timestamp)))
@@ -503,12 +532,48 @@ mod_sidebar_server <- function(id, sim_state) {
           }, error = function(e) NULL)
           if (!is.null(t_ext_meteo)) {
             df$t_ext <- t_ext_meteo
-            message("[CSV] Temperatures Open-Meteo injectees")
+            report <- c(report, sprintf("&#9881; <code>t_ext</code> absent &rarr; <b>r\u00e9cup\u00e9r\u00e9 via Open-Meteo</b> (Profondeville)"))
           } else {
             df$t_ext <- 10
-            shiny::showNotification("Temp\u00e9ratures ext\u00e9rieures indisponibles, valeur par d\u00e9faut (10\u00b0C)", type = "warning", duration = 5)
+            report <- c(report, sprintf("&#9888; <code>t_ext</code> absent, Open-Meteo indisponible &rarr; <b>valeur fixe 10\u00b0C</b>"))
           }
         }
+
+        # Energy balance validation
+        energy_cols <- c("pv_kwh", "offtake_kwh", inj_col)
+        if ("pac_kwh" %in% names(df)) energy_cols <- c(energy_cols, "pac_kwh")
+
+        for (col in energy_cols) {
+          n_neg <- sum(df[[col]] < 0, na.rm = TRUE)
+          if (n_neg > 0) {
+            warn_lines <- c(warn_lines, sprintf("<code>%s</code> : %d valeurs n\u00e9gatives", col, n_neg))
+          }
+        }
+
+        conso_est <- df[["offtake_kwh"]] + df[["pv_kwh"]] - df[[inj_col]]
+        n_neg_conso <- sum(conso_est < -0.01, na.rm = TRUE)
+        if (n_neg_conso > n_pts * 0.05) {
+          warn_lines <- c(warn_lines, sprintf("Bilan : offtake + pv &lt; injection sur %d pas de temps (%.0f%%)",
+            n_neg_conso, 100 * n_neg_conso / n_pts))
+        }
+
+        if ("pac_kwh" %in% names(df)) {
+          available <- df[["offtake_kwh"]] + df[["pv_kwh"]]
+          n_pac_excess <- sum(df[["pac_kwh"]] > available + 0.01, na.rm = TRUE)
+          if (n_pac_excess > n_pts * 0.02) {
+            warn_lines <- c(warn_lines, sprintf("pac_kwh &gt; offtake + pv sur %d pas de temps", n_pac_excess))
+          }
+        }
+
+        if (length(warn_lines) > 0) {
+          report <- c(report, "", "&#9888; <b>Avertissements :</b>", warn_lines)
+        }
+
+        # Show the full report as a single notification
+        shiny::showNotification(
+          shiny::HTML(paste(report, collapse = "<br>")),
+          type = if (length(warn_lines) > 0) "warning" else "message",
+          duration = 20)
       } else {
         shiny::req(input$date_range)
         gen <- DataGenerator$new()
