@@ -12,8 +12,8 @@ mod_sidebar_ui <- function(id) {
 
   # Default date range from .rda coverage (avoid API calls at startup)
   rda_range <- get_rda_date_range()
-  default_end <- if (!is.null(rda_range)) rda_range$max else Sys.Date() - 5
-  default_start <- default_end - 60
+  default_start <- as.Date("2026-03-20")
+  default_end <- as.Date("2026-04-20")
 
   shiny::tagList(
     shiny::tags$div(style = "padding:8px 0 16px 0;text-align:center;",
@@ -307,9 +307,8 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- Update date range when PV data source changes ----
-    rda_range <- get_rda_date_range()
-    rda_end <- if (!is.null(rda_range)) rda_range$max else Sys.Date() - 5
-    rda_start <- rda_end - 60
+    rda_start <- as.Date("2026-03-20")
+    rda_end <- as.Date("2026-04-20")
 
     shiny::observeEvent(input$pv_data_source, {
       if (input$pv_data_source == "real_delaunoy") {
