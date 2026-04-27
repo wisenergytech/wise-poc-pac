@@ -9,8 +9,8 @@ mod_co2_ui <- function(id) {
   shiny::tagList(
     shiny::uiOutput(ns("co2_kpi_row")),
     bslib::card(full_screen = TRUE,
-      card_header_tip("Impact CO2 horaire -- baseline vs optimise",
-        "Barres : CO2 evite (vert) ou supplementaire (rouge) par heure grace a l'optimisation. Courbe pointillee : intensite carbone du reseau belge (gCO2eq/kWh)."),
+      card_header_tip("Emissions CO2 horaires -- baseline vs optimise",
+        "Emissions CO2 liees au soutirage reseau par heure. La partie commune montre les emissions optimisees ; l'excedent montre les emissions evitees par l'optimisation. Courbe pointillee : intensite carbone du reseau belge (gCO2eq/kWh)."),
       bslib::card_body(plotly::plotlyOutput(ns("plot_co2_hourly"), height = "350px"))),
     bslib::layout_columns(col_widths = c(6, 6),
       bslib::card(full_screen = TRUE,
@@ -88,27 +88,38 @@ mod_co2_server <- function(id, sidebar) {
       ))
     })
 
-    # ---- Hourly chart ----
+    # ---- Hourly chart (overlay baseline vs optimise) ----
     output$plot_co2_hourly <- plotly::renderPlotly({
       shiny::req(sim_filtered(), co2_impact_r())
       d <- prepare_co2_hourly(sim_filtered(), co2_impact_r())
-      d_pos <- d; d_pos$co2_saved_g[d_pos$co2_saved_g < 0] <- NA
-      d_neg <- d; d_neg$co2_saved_g[d_neg$co2_saved_g >= 0] <- NA
+
+      bl <- d$co2_baseline_g
+      op <- d$co2_opti_g
+      bottom <- pmin(bl, op)
+      top    <- pmax(bl, op) - bottom
+      bl_bigger <- bl > op
+      bottom_col <- ifelse(bl_bigger, cl$opti, cl$reel)
+      top_col    <- ifelse(bl_bigger, cl$reel, cl$opti)
+      hover <- sprintf("Baseline: %.0f g<br>Optimis\u00e9: %.0f g", bl, op)
 
       plotly::plot_ly(d, x = ~timestamp) %>%
-        plotly::add_bars(data = d_pos, y = ~co2_saved_g, name = "CO2 evite (g)",
-          marker = list(color = cl$success)) %>%
-        plotly::add_bars(data = d_neg, y = ~co2_saved_g, name = "CO2 supplementaire (g)",
-          marker = list(color = cl$danger)) %>%
+        plotly::add_bars(y = bottom, name = "Commun", showlegend = FALSE,
+          marker = list(color = bottom_col), text = hover, hoverinfo = "text+x") %>%
+        plotly::add_bars(y = top, name = "Delta", showlegend = FALSE,
+          marker = list(color = top_col), text = hover, hoverinfo = "text+x") %>%
+        plotly::add_bars(y = 0, name = "Baseline", marker = list(color = cl$reel),
+          showlegend = TRUE, hoverinfo = "skip") %>%
+        plotly::add_bars(y = 0, name = "Optimise", marker = list(color = cl$opti),
+          showlegend = TRUE, hoverinfo = "skip") %>%
         plotly::add_trace(y = ~co2_intensity, type = "scatter", mode = "lines",
           name = "Intensite reseau (gCO2/kWh)", yaxis = "y2",
           line = list(color = cl$accent3, width = 1.5, dash = "dot")) %>%
-        pl_layout(ylab = "CO2 evite (g)") %>%
+        pl_layout(ylab = "Emissions CO2 (g)") %>%
         plotly::layout(
+          barmode = "stack", bargap = 0.1,
           yaxis2 = list(title = "gCO2eq/kWh", overlaying = "y", side = "right",
             gridcolor = "transparent", tickfont = list(size = 10, color = cl$accent3),
-            titlefont = list(color = cl$accent3, size = 11)),
-          barmode = "relative"
+            titlefont = list(color = cl$accent3, size = 11))
         )
     })
 

@@ -419,13 +419,15 @@ compute_co2_impact <- function(sim, co2_15min) {
 prepare_co2_hourly <- function(sim, impact) {
   sim %>%
     dplyr::mutate(
-      co2_saved_g = impact$co2_saved_g,
+      co2_baseline_g = impact$co2_baseline_g,
+      co2_opti_g = impact$co2_opti_g,
       co2_intensity = impact$co2_intensity,
       .h = lubridate::floor_date(timestamp, "hour")
     ) %>%
     dplyr::group_by(.h) %>%
     dplyr::summarise(
-      co2_saved_g = sum(co2_saved_g, na.rm = TRUE),
+      co2_baseline_g = sum(co2_baseline_g, na.rm = TRUE),
+      co2_opti_g = sum(co2_opti_g, na.rm = TRUE),
       co2_intensity = mean(co2_intensity, na.rm = TRUE),
       .groups = "drop"
     ) %>%

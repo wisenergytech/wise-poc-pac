@@ -10,6 +10,21 @@ app_ui <- function(request) {
   shiny::tagList(
     golem_add_external_resources(),
 
+    # Loading overlay — visible until server signals params_r() is ready
+    shiny::tags$div(id = "app-loading-overlay",
+      style = paste0(
+        "position:fixed;top:0;left:0;width:100%;height:100%;z-index:9999;",
+        "background:rgba(246,247,248,0.92);display:flex;flex-direction:column;",
+        "align-items:center;justify-content:center;"),
+      shiny::tags$div(style = paste0(
+        "width:44px;height:44px;border:3px solid #E2E8F0;",
+        "border-top-color:#1D4345;border-radius:50%;",
+        "animation:spin .8s linear infinite;")),
+      shiny::tags$div(style = paste0(
+        "margin-top:16px;font-family:'JetBrains Mono',monospace;",
+        "font-size:.82rem;color:#475569;letter-spacing:.1em;"),
+        "CHARGEMENT DES DONN\u00c9ES...")),
+
     bslib::page_fillable(
       theme = wise_theme(),
 
@@ -50,6 +65,16 @@ golem_add_external_resources <- function() {
 
   shiny::tags$head(
     golem::favicon(),
-    shiny::tags$link(rel = "stylesheet", type = "text/css", href = "www/custom.css")
+    shiny::tags$link(rel = "stylesheet", type = "text/css", href = "www/custom.css"),
+    shiny::tags$script(shiny::HTML("
+      Shiny.addCustomMessageHandler('hide-loading-overlay', function(msg) {
+        var overlay = document.getElementById('app-loading-overlay');
+        if (overlay) {
+          overlay.style.transition = 'opacity 0.4s ease';
+          overlay.style.opacity = '0';
+          setTimeout(function() { overlay.remove(); }, 400);
+        }
+      });
+    "))
   )
 }

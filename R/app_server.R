@@ -29,6 +29,13 @@ app_server <- function(input, output, session) {
 
   sidebar <- mod_sidebar_server("sidebar")
 
+  # ---- Hide loading overlay once params are ready ----
+  shiny::observe({
+    p <- tryCatch(sidebar$params_r(), error = function(e) NULL)
+    shiny::req(p)
+    session$sendCustomMessage("hide-loading-overlay", list())
+  }) |> shiny::bindEvent(sidebar$params_r())
+
   # ---- Status bar ----
   mod_status_bar_server("status_bar", sidebar)
 

@@ -338,33 +338,79 @@ mod_comparaison_server <- function(id, sidebar) {
         sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
       }
 
-      add_smart_trace <- function(p, y_vals, var_name, label, color, yaxis, dash = NULL) {
-        if (var_name %in% summable) {
-          p %>% plotly::add_bars(y = y_vals, name = label,
-            marker = list(color = rgba(color, 0.7)), yaxis = yaxis)
-        } else {
-          p %>% plotly::add_trace(y = y_vals, type = "scatter", mode = "lines",
-            fill = "tozeroy", fillcolor = rgba(color, 0.15),
-            name = label, line = list(color = color, width = 2, dash = dash), yaxis = yaxis)
-        }
+      add_line_trace <- function(p, y_vals, label, color, yaxis, dash = NULL) {
+        p %>% plotly::add_trace(y = y_vals, type = "scatter", mode = "lines",
+          fill = "tozeroy", fillcolor = rgba(color, 0.15),
+          name = label, line = list(color = color, width = 2, dash = dash), yaxis = yaxis)
       }
 
-      p <- plotly::plot_ly(df_agg, x = ~timestamp) %>%
-        add_smart_trace(df_agg[[v1]], v1, label1, col1, "y") %>%
-        add_smart_trace(df_agg[[v2]], v2, label2, col2, "y2")
+      # Overlay bars: both start from 0, smaller drawn first, delta on top
+      add_overlay_bars <- function(p, vals_a, vals_b, label_a, label_b, col_a, col_b, yaxis) {
+        bottom <- pmin(vals_a, vals_b, na.rm = TRUE)
+        top    <- pmax(vals_a, vals_b, na.rm = TRUE) - bottom
+        a_bigger <- vals_a > vals_b
+        bottom_col <- ifelse(a_bigger, col_b, col_a)
+        top_col    <- ifelse(a_bigger, col_a, col_b)
+        hover <- sprintf("%s: %.1f<br>%s: %.1f", label_a, vals_a, label_b, vals_b)
+        p %>%
+          plotly::add_bars(y = bottom, name = "Commun", showlegend = FALSE,
+            marker = list(color = bottom_col), text = hover, hoverinfo = "text+x", yaxis = yaxis) %>%
+          plotly::add_bars(y = top, name = "Delta", showlegend = FALSE,
+            marker = list(color = top_col), text = hover, hoverinfo = "text+x", yaxis = yaxis) %>%
+          plotly::add_bars(y = 0, name = label_a, marker = list(color = col_a),
+            showlegend = TRUE, hoverinfo = "skip", yaxis = yaxis) %>%
+          plotly::add_bars(y = 0, name = label_b, marker = list(color = col_b),
+            showlegend = TRUE, hoverinfo = "skip", yaxis = yaxis)
+      }
 
-      if (!is.na(v3)) {
-        label3 <- names(all_vars)[all_vars == v3]
-        col3 <- colors[3]
-        unit1 <- get_unit(v1); unit2 <- get_unit(v2); unit3 <- get_unit(v3)
-        if (!is.na(unit3) && !is.na(unit1) && unit3 == unit1) {
-          axe3 <- "y"
-        } else if (!is.na(unit3) && !is.na(unit2) && unit3 == unit2) {
-          axe3 <- "y2"
-        } else {
-          axe3 <- "y"
-        }
-        p <- p %>% add_smart_trace(df_agg[[v3]], v3, label3, col3, axe3, dash = "dot")
+      # Identify bar variables per axis
+      unit1 <- get_unit(v1); unit2 <- get_unit(v2)
+      bar_y  <- vars[vars %in% summable & sapply(vars, function(v) {
+        u <- get_unit(v); !is.na(u) && !is.na(unit1) && u == unit1
+      })]
+      bar_y2 <- vars[vars %in% summable & sapply(vars, function(v) {
+        u <- get_unit(v); !is.na(u) && !is.na(unit2) && u == unit2
+      }) & !(vars %in% bar_y)]
+
+      p <- plotly::plot_ly(df_agg, x = ~timestamp)
+
+      # Bars on y-axis: overlay if 2+, simple if 1
+      if (length(bar_y) >= 2) {
+        idx_a <- which(all_sel == bar_y[1]); idx_b <- which(all_sel == bar_y[2])
+        p <- add_overlay_bars(p, df_agg[[bar_y[1]]], df_agg[[bar_y[2]]],
+          names(all_vars)[all_vars == bar_y[1]], names(all_vars)[all_vars == bar_y[2]],
+          colors[idx_a], colors[idx_b], "y")
+      } else if (length(bar_y) == 1) {
+        idx <- which(all_sel == bar_y[1])
+        p <- p %>% plotly::add_bars(y = df_agg[[bar_y[1]]],
+          name = names(all_vars)[all_vars == bar_y[1]],
+          marker = list(color = rgba(colors[idx], 0.7)), yaxis = "y")
+      }
+
+      # Bars on y2-axis: overlay if 2+, simple if 1
+      if (length(bar_y2) >= 2) {
+        idx_a <- which(all_sel == bar_y2[1]); idx_b <- which(all_sel == bar_y2[2])
+        p <- add_overlay_bars(p, df_agg[[bar_y2[1]]], df_agg[[bar_y2[2]]],
+          names(all_vars)[all_vars == bar_y2[1]], names(all_vars)[all_vars == bar_y2[2]],
+          colors[idx_a], colors[idx_b], "y2")
+      } else if (length(bar_y2) == 1) {
+        idx <- which(all_sel == bar_y2[1])
+        p <- p %>% plotly::add_bars(y = df_agg[[bar_y2[1]]],
+          name = names(all_vars)[all_vars == bar_y2[1]],
+          marker = list(color = rgba(colors[idx], 0.7)), yaxis = "y2")
+      }
+
+      # Line traces for non-bar variables
+      line_vars <- setdiff(vars, c(bar_y, bar_y2))
+      for (lv in line_vars) {
+        idx <- which(all_sel == lv)
+        lbl <- names(all_vars)[all_vars == lv]
+        u <- get_unit(lv)
+        ax <- if (!is.na(u) && !is.na(unit1) && u == unit1) "y"
+              else if (!is.na(u) && !is.na(unit2) && u == unit2) "y2"
+              else "y"
+        dash <- if (idx >= 3) "dot" else NULL
+        p <- add_line_trace(p, df_agg[[lv]], lbl, colors[idx], ax, dash)
       }
 
       p %>% plotly::layout(
