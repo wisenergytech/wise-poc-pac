@@ -281,6 +281,12 @@ DataGenerator <- R6::R6Class("DataGenerator",
         cop_reel = calc_cop(t_ext, params$cop_nominal, params$t_ref_cop)
       )
 
+      # Compute delta_t_mesure from t_ballon whenever available (used for ECS estimation later)
+      if (has_t_ballon) {
+        df <- df %>% dplyr::mutate(delta_t_mesure = t_ballon - dplyr::lag(t_ballon))
+      }
+
+      # Determine conso_hors_pac (non-PAC consumption)
       if (has_conso_base) {
         # Synthetic demo data: conso_base_kwh provided directly
         df <- df %>% dplyr::mutate(conso_hors_pac = conso_base_kwh)
@@ -295,7 +301,6 @@ DataGenerator <- R6::R6Class("DataGenerator",
       } else if (has_t_ballon) {
         # Legacy: reverse-engineer from tank temperature changes
         df <- df %>% dplyr::mutate(
-          delta_t_mesure = t_ballon - dplyr::lag(t_ballon),
           pac_on_reel = as.integer(offtake_kwh > pq * 0.5),
           conso_hors_pac = pmax(0, offtake_kwh - pac_on_reel * pq)
         )

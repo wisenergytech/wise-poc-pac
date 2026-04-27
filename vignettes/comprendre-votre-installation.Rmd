@@ -842,11 +842,112 @@ Ce que cela change concretement :
 La consommation residuelle et les tirages ECS restent synthetiques dans les
 deux cas — seule la courbe PV change de source.
 
-### Mode CSV
+### Mode CSV — vos propres mesures
 
-Importez vos propres donnees au format CSV avec les colonnes attendues. L'app
-injectera automatiquement les prix Belpex reels pour la periode correspondante.
-Vous pouvez exporter les resultats pour une analyse approfondie.
+Importez vos propres donnees au format CSV pour simuler sur des mesures reelles.
+L'app injectera automatiquement les prix Belpex et les temperatures pour la
+periode correspondante. Un **template CSV** est telechargeable depuis la sidebar.
+
+#### Colonnes requises
+
+| Colonne | Source typique | Description |
+|---------|---------------|-------------|
+| `timestamp` | — | Horodatage ISO 8601, pas de 15 min (ex. `2025-03-01 10:15:00`) |
+| `pv_kwh` | Onduleur (FusionSolar, SolarEdge, Fronius...) | Production PV mesuree sur le quart d'heure (kWh) |
+| `offtake_kwh` | Compteur reseau (smart meter) | Energie soutiree du reseau sur le quart d'heure (kWh) |
+| `feedin_kwh` | Compteur reseau (smart meter) | Energie injectee sur le reseau sur le quart d'heure (kWh) |
+
+#### Colonnes optionnelles (mais fortement recommandees)
+
+| Colonne | Source typique | Description | Impact si absente |
+|---------|---------------|-------------|-------------------|
+| `pac_kwh` | Sous-compteur dedie PAC | Consommation electrique de la PAC sur le quart d'heure (kWh) | La repartition PAC / reste est **estimee** (moins precis) |
+| `t_ballon` | Sonde de temperature du ballon | Temperature de l'eau dans le ballon (C) | Les soutirages ECS sont distribues uniformement (perd les pics matin/soir) |
+| `t_ext` | Station meteo locale | Temperature exterieure (C) | Recuperee automatiquement via Open-Meteo |
+
+#### Ce que chaque colonne apporte a la simulation
+
+L'app a besoin de deux informations cles pour optimiser correctement :
+
+1. **La consommation hors PAC** (`conso_hors_pac`) — tout ce que le batiment
+   consomme en dehors de la pompe a chaleur (eclairage, electromenager, VMC...).
+   C'est un "bruit de fond" que l'optimiseur ne controle pas.
+
+2. **Les soutirages ECS** (`soutirage_estime_kwh`) — les moments et quantites de
+   tirage d'eau chaude. C'est la demande thermique que la PAC doit satisfaire.
+   L'optimiseur decide **quand** produire cette chaleur, pas **combien**.
+
+Selon les colonnes fournies, la qualite de ces deux informations varie :
+
+```
+                        conso_hors_pac          soutirages ECS
+                        ──────────────          ──────────────
+pac_kwh + t_ballon  →   Exact                   Exact
+pac_kwh seul        →   Exact                   Uniforme (fallback)
+t_ballon seul       →   Approximatif            Exact
+aucun des deux      →   Tres approximatif       Uniforme (fallback)
+```
+
+**Scenario ideal : `pac_kwh` + `t_ballon`**
+
+Avec un sous-compteur PAC et une sonde de temperature du ballon, tout se calcule
+sans approximation :
+
+- `conso_hors_pac = offtake + pv - feedin - pac_kwh` — c'est la consommation
+  totale du compteur, moins ce que la PAC a consomme. Exact.
+- Les soutirages ECS sont deduits des chutes de temperature du ballon aux
+  moments ou la PAC ne tourne pas. Quand le ballon refroidit alors que la PAC
+  est eteinte, c'est qu'il y a eu un tirage d'eau chaude (ou des pertes
+  thermiques). L'app distingue les deux grace a un seuil statistique.
+
+**Scenario bon : `pac_kwh` seul**
+
+La repartition PAC / reste est exacte (grace au sous-compteur), mais les
+soutirages ECS sont repartis uniformement sur la journee car il n'y a pas
+de mesure de temperature du ballon pour detecter les vrais moments de tirage.
+
+Consequence : l'optimiseur planifie correctement la consommation electrique,
+mais ne peut pas anticiper les pics de tirage ECS (matin, soir). En pratique,
+l'impact est modere car le ballon a suffisamment d'inertie.
+
+**Scenario degrade : `t_ballon` seul (pas de `pac_kwh`)**
+
+Sans sous-compteur PAC, l'app utilise une heuristique pour deviner quand la
+PAC tournait : "si le soutirage reseau depasse 50% de la puissance PAC, la
+PAC est probablement allumee". Le probleme : un four electrique, un
+seche-linge ou un chauffe-eau d'appoint peut declencher le meme seuil.
+
+Les soutirages ECS, en revanche, sont bien estimes grace a `t_ballon`.
+
+**Scenario minimal : aucun des deux**
+
+La conso hors PAC est assimilee a la consommation totale (pas de separation
+PAC / reste), et l'ECS est une estimation uniforme. L'optimisation fonctionne,
+mais les resultats sont moins fiables et les gains affiches par rapport a la
+baseline sont a prendre avec precaution.
+
+#### Donnees auto-completees
+
+Certaines donnees manquantes sont recuperees automatiquement :
+
+| Donnee absente | Source de remplacement | Precision |
+|---------------|----------------------|-----------|
+| `t_ext` | Open-Meteo (Profondeville, archive) | Bonne (interpolation horaire → 15 min) |
+| Prix electricite | Belpex via CSV locaux ou API ENTSO-E | Exacte (prix spot reels) |
+| `feedin_kwh` vs `intake_kwh` | Renommage automatique | Identique (alias) |
+
+#### Conseils pratiques
+
+- **Pas de temps** : l'app attend des donnees au quart d'heure. Si vos donnees
+  sont au pas de 5 minutes, aggregez-les avant import (somme pour les kWh,
+  moyenne pour les temperatures).
+- **Fuseau horaire** : utilisez Europe/Brussels (heure locale belge). Les
+  timestamps doivent etre au format `YYYY-MM-DD HH:MM:SS`.
+- **Valeurs manquantes** : quelques NA sont toleres, mais des trous de plusieurs
+  heures faussent la simulation. Verifiez la continuite de vos series.
+- **kWc de reference** : si votre PV fait 30 kWc et que vous voulez simuler
+  avec 60 kWc, indiquez 30 dans "kWc reference" et 60 dans le slider PV.
+  La production sera doublee proportionnellement.
 
 ---
 
