@@ -2,6 +2,8 @@ FROM rocker/shiny:4.5.0
 
 # System dependencies for R packages (httr, xml2, openssl, glpk, CVXR)
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    cmake \
     libcurl4-openssl-dev \
     libssl-dev \
     libxml2-dev \
@@ -17,8 +19,16 @@ WORKDIR /app
 # Copy renv lockfile first (layer caching — deps rebuild only when lock changes)
 COPY renv.lock renv.lock
 
-# Restore all packages from lockfile
-RUN R -e "renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE)"
+# Restore all packages from lockfile (with retry for transient download failures)
+RUN R -e "\
+  options(renv.download.retries = 5); \
+  tryCatch( \
+    renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE), \
+    error = function(e) { \
+      message('First attempt had failures, retrying...'); \
+      renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE) \
+    } \
+  )"
 
 # Copy the rest of the project
 COPY . .

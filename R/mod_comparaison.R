@@ -53,6 +53,7 @@ mod_comparaison_server <- function(id, sidebar) {
       "Autoconsommation baseline (kWh)"  = "autoconso_baseline",
       "Facture baseline (EUR)"           = "facture_baseline",
       "Conso hors PAC (kWh)"             = "conso_hors_pac",
+      "Conso PAC mesur\u00e9e (kWh)"     = "pac_kwh",
       "Soutirage ECS (kWh)"              = "soutirage_estime_kwh",
       "Temp\u00e9rature ballon baseline (\u00b0C)" = "t_ballon",
       "Temp\u00e9rature ext\u00e9rieure sim (\u00b0C)" = "t_ext",
@@ -303,15 +304,16 @@ mod_comparaison_server <- function(id, sidebar) {
             facture_baseline = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
             facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection
           )
-        # Join sim columns to external grid
+        # Join sim columns to external grid (robust: floor to 15 min both sides)
         sim_to_join <- sim_cols %>%
           dplyr::select(timestamp, dplyr::any_of(c(
             names(vars_baseline), names(vars_optimised),
             unname(vars_baseline), unname(vars_optimised)
           )))
-        # Keep only value columns (not labels)
         sim_val_cols <- intersect(names(sim_to_join), c(unname(vars_baseline), unname(vars_optimised)))
         sim_to_join <- sim_to_join[, c("timestamp", sim_val_cols)]
+        sim_to_join$timestamp <- lubridate::floor_date(sim_to_join$timestamp, "15 min")
+        df$timestamp <- lubridate::floor_date(df$timestamp, "15 min")
         df <- dplyr::left_join(df, sim_to_join, by = "timestamp")
       }
 
@@ -323,7 +325,6 @@ mod_comparaison_server <- function(id, sidebar) {
       shiny::req(compare_data(), input$compare_var1, input$compare_var2)
       v1 <- input$compare_var1; v2 <- input$compare_var2
       v3 <- input$compare_var3
-      # Ignore placeholder selections
       if (v1 == "" || v2 == "") return(plotly::plot_ly())
       if (is.null(v3) || v3 == "") v3 <- NA_character_
       vars <- c(v1, v2, if (!is.na(v3)) v3 else NULL)
@@ -331,28 +332,18 @@ mod_comparaison_server <- function(id, sidebar) {
       df <- compare_data()
       if (!all(vars %in% names(df))) return(plotly::plot_ly())
 
-      nr <- nrow(df)
-      agg_level <- if (nr <= 14 * 96) "15 min" else if (nr <= 60 * 96) "hour" else if (nr <= 180 * 96) "day" else "week"
-      level <- c("15 min" = "qt", hour = "hour", day = "day", week = "week")[agg_level]
-      label <- c(qt = "15 min", hour = "Horaire", day = "Journalier", week = "Hebdomadaire")[level]
+      # Aggregate with proper sum/mean distinction
+      df_sel <- df[, c("timestamp", vars)]
+      sum_cols_sel <- intersect(vars, summable)
+      agg <- auto_aggregate(df_sel, sum_cols = sum_cols_sel)
+      df_agg <- agg$data
+      agg_level <- agg$level
 
-      df_work <- df %>% dplyr::mutate(.w = dplyr::case_when(
-        level == "qt" ~ timestamp,
-        level == "hour" ~ lubridate::floor_date(timestamp, "hour"),
-        level == "day" ~ lubridate::floor_date(timestamp, "day"),
-        level == "week" ~ lubridate::floor_date(timestamp, "week")
-      ))
-      agg_exprs <- lapply(vars, function(v) {
-        if (v %in% summable) rlang::expr(sum(.data[[!!v]], na.rm = TRUE))
-        else rlang::expr(mean(.data[[!!v]], na.rm = TRUE))
-      })
-      names(agg_exprs) <- vars
-      df_agg <- df_work %>% dplyr::group_by(.w) %>%
-        dplyr::summarise(!!!agg_exprs, .groups = "drop") %>%
-        dplyr::rename(timestamp = .w)
-
-      label1 <- names(all_vars)[all_vars == v1]
-      label2 <- names(all_vars)[all_vars == v2]
+      # Resolve trace config for each variable
+      unit1 <- get_unit(v1); unit2 <- get_unit(v2)
+      configs <- resolve_trace_config(vars, agg_level, summable, get_unit,
+                                       unit1, unit2)
+      n_bars <- attr(configs, "n_bars_y1")
 
       all_sel <- c(v1, v2, if (!is.na(v3)) v3)
       colors <- pick_colors(all_sel)
@@ -365,79 +356,37 @@ mod_comparaison_server <- function(id, sidebar) {
         sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
       }
 
-      add_line_trace <- function(p, y_vals, label, color, yaxis, dash = NULL) {
-        p %>% plotly::add_trace(y = y_vals, type = "scatter", mode = "lines",
-          fill = "tozeroy", fillcolor = rgba(color, 0.15),
-          name = label, line = list(color = color, width = 2, dash = dash), yaxis = yaxis)
-      }
-
-      # Grouped bars: side-by-side comparison
-      add_grouped_bars <- function(p, vals_a, vals_b, label_a, label_b, col_a, col_b, yaxis) {
-        col_a_rgba <- rgba(col_a, cl$scenarios$baseline$bar_opacity)
-        col_b_rgba <- rgba(col_b, cl$scenarios$optimise$bar_opacity)
-        p %>%
-          plotly::add_bars(y = vals_a, name = label_a,
-            marker = list(color = col_a_rgba), yaxis = yaxis,
-            textposition = "none") %>%
-          plotly::add_bars(y = vals_b, name = label_b,
-            marker = list(color = col_b_rgba), yaxis = yaxis,
-            textposition = "none")
-      }
-
-      # Identify bar variables per axis
-      unit1 <- get_unit(v1); unit2 <- get_unit(v2)
-      bar_y  <- vars[vars %in% summable & sapply(vars, function(v) {
-        u <- get_unit(v); !is.na(u) && !is.na(unit1) && u == unit1
-      })]
-      bar_y2 <- vars[vars %in% summable & sapply(vars, function(v) {
-        u <- get_unit(v); !is.na(u) && !is.na(unit2) && u == unit2
-      }) & !(vars %in% bar_y)]
-
       p <- plotly::plot_ly(df_agg, x = ~timestamp)
 
-      # Bars on y-axis: overlay if 2+, simple if 1
-      if (length(bar_y) >= 2) {
-        idx_a <- which(all_sel == bar_y[1]); idx_b <- which(all_sel == bar_y[2])
-        p <- add_grouped_bars(p, df_agg[[bar_y[1]]], df_agg[[bar_y[2]]],
-          names(all_vars)[all_vars == bar_y[1]], names(all_vars)[all_vars == bar_y[2]],
-          colors[idx_a], colors[idx_b], "y")
-      } else if (length(bar_y) == 1) {
-        idx <- which(all_sel == bar_y[1])
-        p <- p %>% plotly::add_bars(y = df_agg[[bar_y[1]]],
-          name = names(all_vars)[all_vars == bar_y[1]],
-          marker = list(color = rgba(colors[idx], 0.7)), yaxis = "y")
+      # Add traces based on resolved config
+      for (i in seq_along(vars)) {
+        v <- vars[i]
+        cfg <- configs[[v]]
+        col <- colors[i]
+        lbl <- names(all_vars)[all_vars == v]
+
+        if (cfg$type == "bar") {
+          opacity <- if (n_bars >= 2 && i > 1) cl$scenarios$optimise$bar_opacity
+                     else if (n_bars >= 2) cl$scenarios$baseline$bar_opacity
+                     else 0.7
+          p <- p %>% plotly::add_bars(y = df_agg[[v]], name = lbl,
+            marker = list(color = rgba(col, opacity)),
+            yaxis = cfg$axis, textposition = "none")
+        } else {
+          fill_arg <- if (cfg$fill) "tozeroy" else "none"
+          fill_col <- if (cfg$fill) rgba(col, 0.15) else "rgba(0,0,0,0)"
+          p <- p %>% plotly::add_trace(y = df_agg[[v]], type = "scatter",
+            mode = "lines", name = lbl,
+            line = list(color = col, width = 2, dash = cfg$dash),
+            fill = fill_arg, fillcolor = fill_col, yaxis = cfg$axis)
+        }
       }
 
-      # Bars on y2-axis: overlay if 2+, simple if 1
-      if (length(bar_y2) >= 2) {
-        idx_a <- which(all_sel == bar_y2[1]); idx_b <- which(all_sel == bar_y2[2])
-        p <- add_grouped_bars(p, df_agg[[bar_y2[1]]], df_agg[[bar_y2[2]]],
-          names(all_vars)[all_vars == bar_y2[1]], names(all_vars)[all_vars == bar_y2[2]],
-          colors[idx_a], colors[idx_b], "y2")
-      } else if (length(bar_y2) == 1) {
-        idx <- which(all_sel == bar_y2[1])
-        p <- p %>% plotly::add_bars(y = df_agg[[bar_y2[1]]],
-          name = names(all_vars)[all_vars == bar_y2[1]],
-          marker = list(color = rgba(colors[idx], 0.7)), yaxis = "y2")
-      }
-
-      # Line traces for non-bar variables
-      line_vars <- setdiff(vars, c(bar_y, bar_y2))
-      for (lv in line_vars) {
-        idx <- which(all_sel == lv)
-        lbl <- names(all_vars)[all_vars == lv]
-        u <- get_unit(lv)
-        ax <- if (!is.na(u) && !is.na(unit1) && u == unit1) "y"
-              else if (!is.na(u) && !is.na(unit2) && u == unit2) "y2"
-              else "y"
-        dash <- if (idx >= 3) "dot" else NULL
-        p <- add_line_trace(p, df_agg[[lv]], lbl, colors[idx], ax, dash)
-      }
-
-      # Extract units for concise axis labels
       u1 <- get_unit(v1); u2 <- get_unit(v2)
-      ytitle1 <- if (!is.na(u1)) u1 else label1
-      ytitle2 <- if (!is.na(u2)) u2 else label2
+      ytitle1 <- if (!is.na(u1)) u1 else names(all_vars)[all_vars == v1]
+      ytitle2 <- if (!is.na(u2)) u2 else names(all_vars)[all_vars == v2]
+
+      barmode <- if (n_bars >= 2) "group" else if (n_bars == 1) "overlay" else "group"
 
       p %>%
         pl_layout(agg_level = agg_level, n_points = nrow(df_agg)) %>%
@@ -450,7 +399,7 @@ mod_comparaison_server <- function(id, sidebar) {
             tickfont = list(size = 10, color = col2),
             titlefont = list(color = col2)),
           hovermode = "x unified",
-          barmode = "group"
+          barmode = barmode
         )
     })
   })

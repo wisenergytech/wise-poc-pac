@@ -86,6 +86,63 @@ pl_layout <- function(p, title = NULL, xlab = NULL, ylab = NULL,
   )
 }
 
+#' Resolve trace configuration for comparison chart
+#'
+#' For each variable, determines the trace type (bar or line), Y axis,
+#' fill behaviour, and line dash based on the aggregation level and
+#' variable nature. Rules:
+#' - Bars only for summable variables at day/week aggregation
+#' - Bars only on y1 axis; y2 is always lines
+#' - No fill for mean variables (temperature, price, COP)
+#' - Third variable gets dashed line
+#'
+#' @param vars Character vector of variable names (length 2 or 3)
+#' @param agg_level Aggregation level: "15 min", "hour", "day", "week"
+#' @param summable Character vector of summable variable names
+#' @param unit_fn Function(var) returning the unit string
+#' @param unit1 Unit of the first variable (left axis)
+#' @param unit2 Unit of the second variable (right axis)
+#' @return A named list of lists, one per variable, each with:
+#'   \code{type} ("bar"|"line"), \code{axis} ("y"|"y2"),
+#'   \code{fill} (logical), \code{dash} (NULL|"dot")
+#' @noRd
+resolve_trace_config <- function(vars, agg_level, summable, unit_fn,
+                                  unit1, unit2) {
+  use_bars <- agg_level %in% c("day", "week")
+  configs <- list()
+  n_bars_y1 <- 0L
+
+
+  for (i in seq_along(vars)) {
+    v <- vars[i]
+    is_sum <- v %in% summable
+    u <- unit_fn(v)
+    # Axis: match unit to y1 or y2
+    ax <- if (!is.na(u) && !is.na(unit1) && u == unit1) "y"
+          else if (!is.na(u) && !is.na(unit2) && u == unit2) "y2"
+          else "y"
+
+    # Trace type: bars only for summable + coarse agg + y1
+    if (is_sum && use_bars && ax == "y") {
+      type <- "bar"
+      n_bars_y1 <- n_bars_y1 + 1L
+    } else {
+      type <- "line"
+    }
+
+    # Fill: only for summable lines at fine resolution (area = energy proxy)
+    do_fill <- is_sum && type == "line" && agg_level %in% c("15 min", "hour")
+
+    # Dash: third variable gets dotted line
+    dash <- if (i >= 3 && type == "line") "dot" else NULL
+
+    configs[[v]] <- list(type = type, axis = ax, fill = do_fill, dash = dash)
+  }
+
+  attr(configs, "n_bars_y1") <- n_bars_y1
+  configs
+}
+
 #' Grouped Bar Chart (baseline vs optimised)
 #'
 #' Side-by-side bar chart comparing baseline and optimised values.

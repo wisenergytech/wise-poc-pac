@@ -101,11 +101,16 @@ KPICalculator <- R6::R6Class("KPICalculator",
       # --- PAC consumption ---
       pac_qt <- params$p_pac_kw * params$dt_h
       conso_pac_opti <- sum(sim_data$sim_pac_on * pac_qt, na.rm = TRUE)
-      conso_pac_baseline <- max(0, sum(
-        baseline_data$offtake_kwh + baseline_data$pv_kwh -
-        baseline_data$intake_kwh - baseline_data$conso_hors_pac,
-        na.rm = TRUE
-      ))
+      # Use measured pac_kwh if available (sub-metered), otherwise derive from energy balance
+      conso_pac_baseline <- if ("pac_kwh" %in% names(baseline_data)) {
+        sum(baseline_data$pac_kwh, na.rm = TRUE)
+      } else {
+        max(0, sum(
+          baseline_data$offtake_kwh + baseline_data$pv_kwh -
+          baseline_data$intake_kwh - baseline_data$conso_hors_pac,
+          na.rm = TRUE
+        ))
+      }
 
       # --- Financial ---
       facture_baseline <- self$get_facture(baseline_data, params, type = "baseline")

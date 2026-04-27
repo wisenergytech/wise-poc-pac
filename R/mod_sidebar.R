@@ -16,11 +16,26 @@ mod_sidebar_ui <- function(id) {
       shiny::tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:%s;letter-spacing:.1em", cl$accent), shiny::HTML("&#9889; PAC OPTIMIZER")),
       shiny::tags$div(style = sprintf("font-size:.65rem;color:%s;margin-top:2px;letter-spacing:.15em;text-transform:uppercase", cl$text_muted), "Pilotage predictif")),
 
-    # ---- Data source (hidden baseline_type + CSV) ----
-    shiny::tags$div(style = "display:none;",
+    # ---- Data source ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "Source de donn\u00e9es", tip("Mode Demo : donnees synthetiques generees automatiquement. Mode CSV : importez vos propres mesures (compteur + PAC + PV).")),
       shiny::radioButtons(ns("data_source"), NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::fileInput(ns("csv_file"), NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv")),
+        shiny::fileInput(ns("csv_file"), NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv"),
+        shiny::downloadButton(ns("download_template"), "T\u00e9l\u00e9charger le template CSV", class = "btn-outline-secondary btn-sm w-100 mb-2"),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.4;", cl$text_muted),
+          shiny::HTML(paste0(
+            "<b>Colonnes requises :</b><br>",
+            "<code>timestamp</code> &mdash; horodatage ISO 8601 (pas de 15 min)<br>",
+            "<code>pv_kwh</code> &mdash; production PV mesur\u00e9e (onduleur)<br>",
+            "<code>pac_kwh</code> &mdash; conso \u00e9lectrique PAC (sous-compteur)<br>",
+            "<code>offtake_kwh</code> &mdash; soutirage r\u00e9seau (compteur)<br>",
+            "<code>feedin_kwh</code> &mdash; injection r\u00e9seau (compteur)<br>",
+            "<br><b>Optionnelles :</b> <code>t_ext</code> (\u00b0C ext\u00e9rieure)<br>",
+            "<br>La colonne <code>pac_kwh</code> permet de d\u00e9duire exactement la consommation hors PAC ",
+            "(<code>conso_hors_pac = offtake + pv - injection - pac</code>). ",
+            "Sans elle, l'app <b>estime</b> la r\u00e9partition (moins pr\u00e9cis).")))),
+    shiny::tags$div(style = "display:none;",
       shiny::selectInput(ns("baseline_type"), NULL,
         choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
         selected = "parametric")),
@@ -456,6 +471,42 @@ mod_sidebar_server <- function(id, sim_state) {
       if (input$data_source == "csv") {
         shiny::req(input$csv_file)
         df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE) %>% dplyr::mutate(timestamp = lubridate::ymd_hms(timestamp))
+
+        # Validate required columns
+        required <- c("timestamp", "pv_kwh", "offtake_kwh")
+        feedin_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else "intake_kwh"
+        required <- c(required, feedin_col)
+        missing <- setdiff(required, names(df))
+        if (length(missing) > 0) {
+          shiny::showNotification(
+            sprintf("Colonnes manquantes dans le CSV : %s", paste(missing, collapse = ", ")),
+            type = "error", duration = 10)
+          shiny::req(FALSE)
+        }
+
+        if ("pac_kwh" %in% names(df)) {
+          shiny::showNotification("Colonne pac_kwh d\u00e9tect\u00e9e : conso hors PAC sera calcul\u00e9e exactement", type = "message", duration = 5)
+        } else {
+          shiny::showNotification("Pas de colonne pac_kwh : la r\u00e9partition PAC/autre sera estim\u00e9e (moins pr\u00e9cis)", type = "warning", duration = 8)
+        }
+
+        # Fetch external temperature if not in CSV
+        if (!"t_ext" %in% names(df)) {
+          dp <- DataProvider$new()
+          t_ext_meteo <- tryCatch({
+            df_temp <- dp$get_temperature(min(as.Date(df$timestamp)), max(as.Date(df$timestamp)))
+            if (!is.null(df_temp) && nrow(df_temp) > 0) {
+              dp$interpolate_temperature(df_temp, df$timestamp)
+            } else NULL
+          }, error = function(e) NULL)
+          if (!is.null(t_ext_meteo)) {
+            df$t_ext <- t_ext_meteo
+            message("[CSV] Temperatures Open-Meteo injectees")
+          } else {
+            df$t_ext <- 10
+            shiny::showNotification("Temp\u00e9ratures ext\u00e9rieures indisponibles, valeur par d\u00e9faut (10\u00b0C)", type = "warning", duration = 5)
+          }
+        }
       } else {
         shiny::req(input$date_range)
         gen <- DataGenerator$new()
@@ -654,6 +705,18 @@ mod_sidebar_server <- function(id, sim_state) {
     output$has_sim_result <- shiny::reactive({ !is.null(tryCatch(sim_result(), error = function(e) NULL)) })
     shiny::outputOptions(output, "has_sim_result", suspendWhenHidden = FALSE)
 
+    # ---- CSV Template Download ----
+    output$download_template <- shiny::downloadHandler(
+      filename = function() "pac_optimizer_template.csv",
+      content = function(file) {
+        template_path <- system.file("csv_template.csv", package = "wisepocpac")
+        if (template_path == "") {
+          template_path <- file.path("inst", "csv_template.csv")
+        }
+        file.copy(template_path, file)
+      }
+    )
+
     # ---- CSV Export ----
     output$download_csv <- shiny::downloadHandler(
       filename = function() {
@@ -662,9 +725,11 @@ mod_sidebar_server <- function(id, sim_state) {
       content = function(file) {
         shiny::req(sim_filtered())
         sim <- sim_filtered()
+        export_cols <- c("timestamp", "t_ext", "pv_kwh", "prix_offtake", "prix_injection",
+          "conso_hors_pac", "soutirage_estime_kwh")
+        if ("pac_kwh" %in% names(sim)) export_cols <- c(export_cols, "pac_kwh")
         export <- sim %>% dplyr::select(
-          timestamp, t_ext, pv_kwh, prix_offtake, prix_injection,
-          conso_hors_pac, soutirage_estime_kwh,
+          dplyr::all_of(export_cols),
           t_ballon_baseline = t_ballon, offtake_baseline = offtake_kwh, injection_baseline = intake_kwh,
           t_ballon_opti = sim_t_ballon, offtake_opti = sim_offtake, injection_opti = sim_intake,
           pac_on_opti = sim_pac_on, cop_opti = sim_cop, decision = decision_raison

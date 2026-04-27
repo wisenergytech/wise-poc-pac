@@ -28,39 +28,56 @@ calc_cop <- function(t_ext, cop_nominal = 3.5, t_ref = 7, t_ballon = NULL, t_bal
 #' <= 1 day: 15 min (no aggregation) | <= 3 days: hourly |
 #' <= 7 days: daily | > 7 days: weekly
 #'
+#' When \code{sum_cols} is provided, those columns are aggregated with
+#' \code{sum()} and all other numeric columns with \code{mean()}.
+#' When \code{sum_cols} is NULL (default), all numeric columns are summed
+#' (backward-compatible behaviour).
+#'
 #' @param df Data frame with a timestamp column
 #' @param timestamp_col Name of the timestamp column (default "timestamp")
+#' @param sum_cols Optional character vector of column names to aggregate
+#'   with \code{sum()}. Other numeric columns use \code{mean()}.
 #' @return A list with \code{data} (aggregated data frame), \code{level}
 #'   (aggregation level string), and \code{label} (display label)
 #' @export
-auto_aggregate <- function(df, timestamp_col = "timestamp") {
+auto_aggregate <- function(df, timestamp_col = "timestamp", sum_cols = NULL) {
   period_days <- as.numeric(difftime(
     max(df[[timestamp_col]], na.rm = TRUE),
     min(df[[timestamp_col]], na.rm = TRUE),
     units = "days"
   ))
-  if (period_days <= 1) {
-    list(data = df, level = "15 min", label = "15 min")
-  } else if (period_days <= 3) {
-    agg <- df %>%
-      dplyr::mutate(.h = lubridate::floor_date(!!rlang::sym(timestamp_col), "hour")) %>%
-      dplyr::group_by(.h) %>%
-      dplyr::summarise(dplyr::across(dplyr::where(is.numeric), ~sum(.x, na.rm = TRUE)), .groups = "drop") %>%
-      dplyr::rename(!!timestamp_col := .h)
-    list(data = agg, level = "hour", label = "Horaire")
-  } else if (period_days <= 7) {
-    agg <- df %>%
-      dplyr::mutate(.d = lubridate::floor_date(!!rlang::sym(timestamp_col), "day")) %>%
-      dplyr::group_by(.d) %>%
-      dplyr::summarise(dplyr::across(dplyr::where(is.numeric), ~sum(.x, na.rm = TRUE)), .groups = "drop") %>%
-      dplyr::rename(!!timestamp_col := .d)
-    list(data = agg, level = "day", label = "Journalier")
-  } else {
-    agg <- df %>%
-      dplyr::mutate(.w = lubridate::floor_date(!!rlang::sym(timestamp_col), "week")) %>%
-      dplyr::group_by(.w) %>%
-      dplyr::summarise(dplyr::across(dplyr::where(is.numeric), ~sum(.x, na.rm = TRUE)), .groups = "drop") %>%
-      dplyr::rename(!!timestamp_col := .w)
-    list(data = agg, level = "week", label = "Hebdomadaire")
+
+  levels <- list(
+    list(max_days = 1,   unit = NULL,   level = "15 min", label = "15 min"),
+    list(max_days = 3,   unit = "hour", level = "hour",   label = "Horaire"),
+    list(max_days = 7,   unit = "day",  level = "day",    label = "Journalier"),
+    list(max_days = Inf, unit = "week", level = "week",   label = "Hebdomadaire")
+  )
+  chosen <- Find(function(l) period_days <= l$max_days, levels)
+
+  if (is.null(chosen$unit)) {
+    return(list(data = df, level = chosen$level, label = chosen$label))
   }
+
+  df$.agg_key <- lubridate::floor_date(df[[timestamp_col]], chosen$unit)
+
+  if (is.null(sum_cols)) {
+    # Backward-compatible: sum everything
+    agg <- df %>%
+      dplyr::group_by(.agg_key) %>%
+      dplyr::summarise(dplyr::across(dplyr::where(is.numeric), ~sum(.x, na.rm = TRUE)), .groups = "drop") %>%
+      dplyr::rename(!!timestamp_col := .agg_key)
+  } else {
+    sum_cols_present <- intersect(sum_cols, names(df))
+    mean_cols <- setdiff(names(df)[sapply(df, is.numeric)], c(sum_cols_present, ".agg_key"))
+    agg <- df %>%
+      dplyr::group_by(.agg_key) %>%
+      dplyr::summarise(
+        dplyr::across(dplyr::any_of(sum_cols_present), ~sum(.x, na.rm = TRUE)),
+        dplyr::across(dplyr::any_of(mean_cols), ~mean(.x, na.rm = TRUE)),
+        .groups = "drop") %>%
+      dplyr::rename(!!timestamp_col := .agg_key)
+  }
+
+  list(data = agg, level = chosen$level, label = chosen$label)
 }
