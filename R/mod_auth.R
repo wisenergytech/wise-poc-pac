@@ -83,15 +83,15 @@ mod_auth_server <- function(id) {
       token <- input$access_token
       if (is.null(token) || nchar(token) == 0) return()
 
-      # Verify token server-side with Supabase
+      # Verify token server-side with Supabase using service role key
       supabase_url <- Sys.getenv("SUPABASE_URL", "")
-      supabase_key <- Sys.getenv("SUPABASE_KEY", "")
+      service_role_key <- Sys.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
 
       resp <- httr::GET(
         paste0(supabase_url, "/auth/v1/user"),
         httr::add_headers(
           Authorization = paste("Bearer", token),
-          apikey = supabase_key
+          apikey = service_role_key
         )
       )
 

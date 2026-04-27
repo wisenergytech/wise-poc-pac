@@ -32,16 +32,17 @@ app_server <- function(input, output, session) {
     output$main_app_ui <- shiny::renderUI({
       shiny::req(authenticated())
       # Hide login form, show main app
+      # Signal server once the UI is in the DOM
       shiny::tagList(
         shiny::tags$script(shiny::HTML(
-          "document.getElementById('auth-login-page').style.display = 'none';"
+          "document.getElementById('auth-login-page').style.display = 'none';
+           Shiny.setInputValue('app_ui_ready', true, {priority: 'event'});"
         )),
         main_app_ui_content()
       )
     })
 
-    shiny::observe({
-      shiny::req(authenticated())
+    shiny::observeEvent(input$app_ui_ready, {
       if (!app_initialized()) {
         app_initialized(TRUE)
         init_app_modules(input, output, session)
