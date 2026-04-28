@@ -693,6 +693,16 @@ mod_sidebar_server <- function(id, sim_state) {
             est_vol, length(heating)))
         }
       }
+
+      # Update date range to match CSV coverage
+      ts <- df$timestamp[!is.na(df$timestamp)]
+      if (length(ts) > 0) {
+        csv_min <- as.Date(min(ts))
+        csv_max <- as.Date(max(ts))
+        shiny::updateDateRangeInput(session, "date_range",
+          min = csv_min, max = csv_max,
+          start = csv_min, end = csv_max)
+      }
     })
 
     # Trigger raw_data computation at boot (once inputs are initialized)
