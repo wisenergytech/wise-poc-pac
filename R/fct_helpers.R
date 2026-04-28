@@ -81,3 +81,43 @@ auto_aggregate <- function(df, timestamp_col = "timestamp", sum_cols = NULL) {
 
   list(data = agg, level = chosen$level, label = chosen$label)
 }
+
+#' Estimate PV kWc from CSV data using energy balance
+#'
+#' Uses the energy balance inconsistency rate to distinguish between
+#' direct PV measurements (high peak capacity factor ~0.85) and
+#' regional/scaled data like Elia profiles (lower effective capacity
+#' factor ~0.70 due to geographic averaging).
+#'
+#' @param df Data frame with at least \code{pv_kwh}. Optionally
+#'   \code{offtake_kwh} and \code{feedin_kwh} (or \code{intake_kwh})
+#'   for balance-based refinement.
+#' @return Estimated kWc (numeric), rounded to nearest 0.5
+#' @export
+estimate_pv_kwc <- function(df) {
+  if (!"pv_kwh" %in% names(df) || all(is.na(df$pv_kwh))) return(6)
+
+  p_peak <- max(df$pv_kwh, na.rm = TRUE) / 0.25
+
+  # Resolve feedin column name
+  feedin_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else
+    if ("intake_kwh" %in% names(df)) "intake_kwh" else NULL
+
+  has_balance <- "offtake_kwh" %in% names(df) && !is.null(feedin_col)
+
+  if (has_balance) {
+    # Balance: feedin > offtake + pv means PV is underrepresented
+    daylight <- df$pv_kwh > 0.01
+    deficit <- df[[feedin_col]] - df$offtake_kwh
+    bad_rate <- mean(daylight & deficit > df$pv_kwh, na.rm = TRUE)
+
+    # >0.5% inconsistencies = regional/scaled data (Elia-type, lower peak factor)
+    # <0.5% = direct measurement (FusionSolar-type, higher peak factor)
+    cf <- if (bad_rate > 0.005) 0.70 else 0.85
+  } else {
+    cf <- 0.85
+  }
+
+  est_kwc <- p_peak / cf
+  max(1, min(200, round(est_kwc * 2) / 2))
+}

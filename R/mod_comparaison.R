@@ -41,7 +41,7 @@ mod_comparaison_server <- function(id, sidebar) {
 
     # ---- Variable definitions by category ----
     vars_external <- c(
-      "[ENTSO-E] Prix spot (EUR/kWh)"          = "ext_prix",
+      "[ENTSO-E] Prix spot (EUR/MWh)"          = "ext_prix",
       "[Open-Meteo] Temp\u00e9rature ext. (\u00b0C)" = "ext_temperature",
       "[Elia] Intensit\u00e9 CO2 (gCO2/kWh)"   = "ext_co2",
       "[Elia] Production PV Namur (kWh)"        = "ext_pv"
@@ -58,8 +58,8 @@ mod_comparaison_server <- function(id, sidebar) {
       "Soutirage ECS (kWh)"              = "soutirage_estime_kwh",
       "Temp\u00e9rature ballon baseline (\u00b0C)" = "t_ballon",
       "Temp\u00e9rature ext\u00e9rieure sim (\u00b0C)" = "t_ext",
-      "Prix soutirage (EUR/kWh)"         = "prix_offtake",
-      "Prix injection (EUR/kWh)"         = "prix_injection"
+      "Prix soutirage (EUR/MWh)"         = "prix_offtake",
+      "Prix injection (EUR/MWh)"         = "prix_injection"
     )
 
     vars_optimised <- c(
@@ -98,7 +98,7 @@ mod_comparaison_server <- function(id, sidebar) {
     }
 
     summable <- c("ext_pv", "pv_kwh", "offtake_kwh", "sim_offtake",
-      "intake_kwh", "sim_intake", "conso_hors_pac", "soutirage_estime_kwh",
+      "intake_kwh", "sim_intake", "conso_hors_pac", "pac_kwh", "soutirage_estime_kwh",
       "sim_pac_on", "autoconso_baseline", "autoconso_opti",
       "facture_baseline", "facture_opti")
 
@@ -130,7 +130,7 @@ mod_comparaison_server <- function(id, sidebar) {
         if (!is.null(b$data) && nrow(b$data) > 0) {
           df <- b$data
           df$timestamp <- lubridate::with_tz(df$datetime, "Europe/Brussels")
-          df$ext_prix <- df$price_eur_mwh / 1000
+          df$ext_prix <- df$price_eur_mwh
           df[, c("timestamp", "ext_prix")]
         }
       }, error = function(e) NULL)

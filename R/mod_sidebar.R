@@ -75,6 +75,7 @@ mod_sidebar_ui <- function(id) {
       shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
       shiny::uiOutput(ns("ecs_field")),
+      shiny::uiOutput(ns("ecs_csv_banner")),
       if (isTRUE(ui_cfg$simple_mode)) {
         shiny::tags$div(style = "display:none;",
           shiny::selectInput(ns("building_type"), NULL,
@@ -125,10 +126,10 @@ mod_sidebar_ui <- function(id) {
           shiny::uiOutput(ns("pv_auto_display"))),
         shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_auto")),
           shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5))),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv' && !output['%s']", ns("data_source"), ns("csv_measured")),
-        shiny::numericInput(ns("pv_kwc_ref"), "kWc reference (donnees CSV)", 6, min = 1, max = 200, step = 0.5),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
-          shiny::HTML("Pr\u00e9-rempli depuis le pic PV observ\u00e9 : max(pv_kwh) / 0.25h / 0.90. <b>V\u00e9rifiez cette valeur.</b>"))),
+      shiny::tags$div(style = "display:none;",
+        shiny::numericInput(ns("pv_kwc_ref"), NULL, 6, min = 1, max = 200, step = 0.5)),
+      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
+        shiny::uiOutput(ns("pv_kwc_ref_banner"))),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_whatif_toggle")))),
 
@@ -681,10 +682,9 @@ mod_sidebar_server <- function(id, sim_state) {
       csv_measured_eligible(has_pac && has_meter && pac_na_rate < 0.10)
       csv_has_t_ballon(has_tbal)
 
-      # Pre-fill pv_kwc_ref heuristic
+      # Pre-fill pv_kwc_ref from energy balance heuristic
       if ("pv_kwh" %in% names(df)) {
-        est_kwc <- round(max(df$pv_kwh, na.rm = TRUE) / 0.25 / 0.90 * 2) / 2
-        est_kwc <- max(1, min(200, est_kwc))
+        est_kwc <- estimate_pv_kwc(df)
         shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
       }
 
@@ -746,6 +746,34 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::HTML("Estim\u00e9 depuis le CSV : m\u00e9diane de pac&times;COP / (&Delta;T&times;0.001163) sur les cr\u00e9neaux de chauffe. <b>V\u00e9rifiez.</b>"))
     })
 
+    # ---- PV kWc + AC banner (CSV mode) ----
+    output$pv_kwc_ref_banner <- shiny::renderUI({
+      shiny::req(input$data_source == "csv", input$pv_kwc_ref)
+      kwc <- input$pv_kwc_ref
+
+      # Compute measured AC if possible
+      df <- tryCatch(raw_data(), error = function(e) NULL)
+      ac_line <- ""
+      if (!is.null(df) && "pv_kwh" %in% names(df)) {
+        pv_tot <- sum(df$pv_kwh, na.rm = TRUE)
+        feedin_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else
+          if ("intake_kwh" %in% names(df)) "intake_kwh" else NULL
+        if (!is.null(feedin_col) && pv_tot > 0) {
+          inj_tot <- sum(df[[feedin_col]], na.rm = TRUE)
+          ac_pct <- round((1 - inj_tot / pv_tot) * 100, 1)
+          ac_line <- sprintf("<br>AC mesur\u00e9e : <b>%.1f%%</b>", ac_pct)
+        }
+      }
+
+      shiny::tags$div(
+        style = sprintf(
+          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0 4px 0;font-size:.75rem;line-height:1.4;",
+          cl$bg_card, cl$accent),
+        shiny::HTML(sprintf(
+          "PV estim\u00e9 : <b style='color:%s;'>%s kWc</b>%s<br><span style='font-size:.65rem;color:%s;'>D\u00e9duit du bilan \u00e9nerg\u00e9tique du CSV</span>",
+          cl$accent, kwc, ac_line, cl$text_muted)))
+    })
+
     # ---- What-if PV toggle (visible only when CSV eligible) ----
     output$pv_whatif_toggle <- shiny::renderUI({
       if (!csv_measured_eligible() || isTRUE(get_ui_config()$simple_mode)) return(NULL)
@@ -768,6 +796,24 @@ mod_sidebar_server <- function(id, sim_state) {
       }
     })
 
+    # ---- ECS source banner (CSV mode, in Ballon section) ----
+    output$ecs_csv_banner <- shiny::renderUI({
+      if (!csv_measured_eligible()) return(NULL)
+      ecs_msg <- if (csv_has_t_ballon()) {
+        "ECS d\u00e9duit des mesures t_ballon"
+      } else {
+        "ECS estim\u00e9 par profil synth\u00e9tique (pas de t_ballon)"
+      }
+      border_col <- if (csv_has_t_ballon()) cl$success else cl$text_muted
+      shiny::tags$div(
+        style = sprintf(
+          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0 4px 0;font-size:.75rem;line-height:1.4;",
+          cl$bg_card, border_col),
+        shiny::HTML(sprintf(
+          "<span style='font-size:.65rem;color:%s;'>%s</span>",
+          cl$text_muted, ecs_msg)))
+    })
+
     # ---- ECS field (hidden when CSV has t_ballon + measured baseline) ----
     output$ecs_field <- shiny::renderUI({
       ns <- session$ns
@@ -777,38 +823,16 @@ mod_sidebar_server <- function(id, sim_state) {
         NULL, min = 1, max = 5000, step = 1)
     })
 
-    # ---- Measured baseline banner ----
+    # ---- What-if PV warning banner ----
     output$measured_baseline_banner <- shiny::renderUI({
-      if (!csv_measured_eligible()) return(NULL)
-
-      # What-if mode: show warning instead of measured banner
-      if (isTRUE(input$pv_whatif)) {
-        kwc <- if (!is.null(input$pv_kwc_manual)) input$pv_kwc_manual else input$pv_kwc_ref
-        return(shiny::tags$div(
-          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.75rem;line-height:1.4;",
-            cl$card_bg, "#f59e0b"),
-          shiny::HTML(sprintf(
-            "<b style='color:%s;'>PV rescal\u00e9 (%s kWc)</b><br><span style='font-size:.65rem;color:%s;'>Baseline simul\u00e9e (les mesures ne sont plus valides pour cette taille PV)</span>",
-            "#f59e0b", kwc, cl$text_muted))))
-      }
-      ns <- session$ns
-      df <- raw_data()
-      pv_tot <- sum(df$pv_kwh, na.rm = TRUE)
-      inj_tot <- if ("intake_kwh" %in% names(df)) sum(df[["intake_kwh"]], na.rm = TRUE) else 0
-      ac_pct <- if (pv_tot > 0) round((1 - inj_tot / pv_tot) * 100, 1) else 0
-
-      ecs_msg <- if (csv_has_t_ballon()) {
-        "ECS d\u00e9duit des mesures t_ballon"
-      } else {
-        "ECS estim\u00e9 par profil synth\u00e9tique (pas de t_ballon)"
-      }
-
+      if (!csv_measured_eligible() || !isTRUE(input$pv_whatif)) return(NULL)
+      kwc <- if (!is.null(input$pv_kwc_manual)) input$pv_kwc_manual else input$pv_kwc_ref
       shiny::tags$div(
         style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.75rem;line-height:1.4;",
-          cl$card_bg, cl$success),
+          cl$bg_card, "#f59e0b"),
         shiny::HTML(sprintf(
-          "<b style='color:%s;'>Baseline = donn\u00e9es mesur\u00e9es</b><br>AC mesur\u00e9e : <b>%.1f%%</b><br><span style='font-size:.65rem;color:%s;'>%s</span>",
-          cl$success, ac_pct, cl$text_muted, ecs_msg)))
+          "<b style='color:%s;'>PV rescal\u00e9 (%s kWc)</b><br><span style='font-size:.65rem;color:%s;'>Baseline simul\u00e9e (les mesures ne sont plus valides pour cette taille PV)</span>",
+          "#f59e0b", kwc, cl$text_muted)))
     })
 
     # ---- Baseline controls (conditional: hidden when measured baseline active) ----

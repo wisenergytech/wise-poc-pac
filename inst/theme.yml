@@ -28,8 +28,8 @@ status:
 
 # ---- Series identity (what is being measured) ----
 series:
-  baseline: "#D97706"
-  optimise: "#1D4345"
+  baseline: "#1D4345"
+  optimise: "#D97706"
   pv: "#F59E0B"
   pac: "#059669"
   prix: "#0D9488"
