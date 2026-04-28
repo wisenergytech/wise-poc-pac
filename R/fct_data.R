@@ -42,6 +42,8 @@ inject_belpex_prices <- function(df, api_key = "", data_dir = "data") {
     dplyr::distinct(heure_join, .keep_all = TRUE) %>%
     dplyr::select(heure_join, prix_belpex)
 
+  if (!"prix_eur_kwh" %in% names(df)) df$prix_eur_kwh <- NA_real_
+
   df %>%
     dplyr::mutate(heure_join = lubridate::floor_date(timestamp, unit = "hour")) %>%
     dplyr::left_join(belpex_h, by = "heure_join") %>%
