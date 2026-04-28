@@ -291,10 +291,11 @@ KPICalculator <- R6::R6Class("KPICalculator",
     #' @return Conformity percentage (0-100): share of time-steps where
     #'   temperature stays within [t_min, t_max]
     get_conformite = function(sim_t_ballon, t_min, t_max) {
+      if (is.null(sim_t_ballon) || all(is.na(sim_t_ballon))) return(NA_real_)
       n_low <- sum(sim_t_ballon < t_min, na.rm = TRUE)
       n_high <- sum(sim_t_ballon > t_max, na.rm = TRUE)
       n_tot <- sum(!is.na(sim_t_ballon))
-      if (n_tot == 0) return(100)
+      if (n_tot == 0) return(NA_real_)
       round((1 - (n_low + n_high) / n_tot) * 100, 1)
     }
   ),

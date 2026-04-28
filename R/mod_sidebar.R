@@ -71,8 +71,7 @@ mod_sidebar_ui <- function(id) {
       shiny::numericInput(ns("t_consigne"), "Consigne (C)", 50, min = 35, max = 65, step = 1),
       shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
-      shiny::numericInput(ns("ecs_kwh_jour"), shiny::tags$span("ECS (kWh_th/jour)", tip("Demande en eau chaude sanitaire par jour en kWh thermiques. Reference : 6 kWh/jour pour un menage, 50-200 kWh/jour pour un immeuble ou une industrie. Si vide, estime automatiquement a partir de la puissance PAC.")),
-        NULL, min = 1, max = 5000, step = 1),
+      shiny::uiOutput(ns("ecs_field")),
       shiny::conditionalPanel(sprintf("input['%s'] > 10", ns("p_pac_kw")),
         shiny::selectInput(ns("building_type"), shiny::tags$span("Type de batiment", tip("Influence le coefficient de deperdition thermique (G) pour le chauffage d'ambiance. Passif = tres bien isole, Standard = construction recente, Ancien = peu isole.")),
           choices = c("Passif (G faible)" = "passif", "Standard (RT2012)" = "standard", "Ancien (peu isole)" = "ancien"),
@@ -121,18 +120,10 @@ mod_sidebar_ui <- function(id) {
           "Taille du PV dans vos donnees CSV. Le ratio kWc/ref rescale la production."))),
 
     # ---- Baseline ----
+    shiny::uiOutput(ns("measured_baseline_banner")),
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Baseline", tip("Scenario de reference sans EMS. Par defaut : thermostat pur (aquastat ON/OFF). Activez le suivi PV si l'installation a deja un pilotage basique du surplus.")),
-      shiny::checkboxInput(ns("pv_tracking"), "Suivi PV existant (avance)", value = FALSE),
-      shiny::conditionalPanel(sprintf("input['%s']", ns("pv_tracking")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:8px;", cl$text_muted),
-          shiny::HTML("Simule deux baselines (alpha=0 et alpha=1) sur les donn\u00e9es r\u00e9elles pour d\u00e9terminer la plage d'autoconsommation atteignable. Cliquez ci-dessous apr\u00e8s avoir configur\u00e9 vos param\u00e8tres.")),
-        shiny::actionButton(ns("calibrate_ac"), "Calibrer les bornes", class = "btn-outline-secondary btn-sm w-100",
-          icon = shiny::icon("crosshairs")),
-        shiny::uiOutput(ns("autoconso_panel_calibrated"))),
-      shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_tracking")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
-          shiny::HTML("Thermostat pur : la PAC s'allume quand T<sub>ballon</sub> &lt; T<sub>min</sub> et s'arrete a T<sub>consigne</sub>. Aucune conscience du PV ni des prix.")))),
+      shiny::uiOutput(ns("baseline_controls"))),
 
     # ---- Batterie (conditionnel via config) ----
     if (isTRUE(ui_cfg$show_battery)) shiny::tags$div(class = "sidebar-section",
@@ -642,6 +633,33 @@ mod_sidebar_server <- function(id, sim_state) {
 
     raw_data <- shiny::reactive({ compute_raw_data() })
 
+    # ---- CSV measured baseline eligibility ----
+    csv_measured_eligible <- shiny::reactiveVal(FALSE)
+    csv_has_t_ballon <- shiny::reactiveVal(FALSE)
+
+    shiny::observe({
+      if (input$data_source != "csv" || is.null(input$csv_file)) {
+        csv_measured_eligible(FALSE)
+        csv_has_t_ballon(FALSE)
+        return()
+      }
+      df <- raw_data()
+      has_pac <- "pac_kwh" %in% names(df)
+      has_meter <- "offtake_kwh" %in% names(df) &&
+        any(c("feedin_kwh", "intake_kwh") %in% names(df))
+      has_tbal <- "t_ballon" %in% names(df)
+      pac_na_rate <- if (has_pac) sum(is.na(df$pac_kwh)) / nrow(df) else 1
+      csv_measured_eligible(has_pac && has_meter && pac_na_rate < 0.10)
+      csv_has_t_ballon(has_tbal)
+
+      # Pre-fill pv_kwc_ref heuristic
+      if ("pv_kwh" %in% names(df)) {
+        est_kwc <- round(max(df$pv_kwh, na.rm = TRUE) / 0.25 / 0.90 * 2) / 2
+        est_kwc <- max(1, min(200, est_kwc))
+        shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
+      }
+    })
+
     # Trigger raw_data computation at boot (once inputs are initialized)
     boot_done <- shiny::reactiveVal(FALSE)
     shiny::observe({
@@ -650,6 +668,56 @@ mod_sidebar_server <- function(id, sim_state) {
       raw_data()
       boot_done(TRUE)
       message("[Boot] raw_data ready.")
+    })
+
+    # ---- ECS field (hidden when CSV has t_ballon + measured baseline) ----
+    output$ecs_field <- shiny::renderUI({
+      ns <- session$ns
+      if (csv_measured_eligible() && csv_has_t_ballon()) return(NULL)
+      shiny::numericInput(ns("ecs_kwh_jour"),
+        shiny::tags$span("ECS (kWh_th/jour)", tip("Demande en eau chaude sanitaire par jour en kWh thermiques. Reference : 6 kWh/jour pour un menage, 50-200 kWh/jour pour un immeuble ou une industrie. Si vide, estime automatiquement a partir de la puissance PAC.")),
+        NULL, min = 1, max = 5000, step = 1)
+    })
+
+    # ---- Measured baseline banner ----
+    output$measured_baseline_banner <- shiny::renderUI({
+      if (!csv_measured_eligible() || isTRUE(input$pv_whatif)) return(NULL)
+      ns <- session$ns
+      df <- raw_data()
+      pv_tot <- sum(df$pv_kwh, na.rm = TRUE)
+      inj_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else "intake_kwh"
+      inj_tot <- if (inj_col %in% names(df)) sum(df[[inj_col]], na.rm = TRUE) else 0
+      ac_pct <- if (pv_tot > 0) round((1 - inj_tot / pv_tot) * 100, 1) else 0
+
+      ecs_msg <- if (csv_has_t_ballon()) {
+        "ECS d\u00e9duit des mesures t_ballon"
+      } else {
+        "ECS estim\u00e9 par profil synth\u00e9tique (pas de t_ballon)"
+      }
+
+      shiny::tags$div(
+        style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.75rem;line-height:1.4;",
+          cl$card_bg, cl$success),
+        shiny::HTML(sprintf(
+          "<b style='color:%s;'>Baseline = donn\u00e9es mesur\u00e9es</b><br>AC mesur\u00e9e : <b>%.1f%%</b><br><span style='font-size:.65rem;color:%s;'>%s</span>",
+          cl$success, ac_pct, cl$text_muted, ecs_msg)))
+    })
+
+    # ---- Baseline controls (conditional: hidden when measured baseline active) ----
+    output$baseline_controls <- shiny::renderUI({
+      ns <- session$ns
+      if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) return(NULL)
+      shiny::tagList(
+        shiny::checkboxInput(ns("pv_tracking"), "Suivi PV existant (avance)", value = FALSE),
+        shiny::conditionalPanel(sprintf("input['%s']", ns("pv_tracking")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:8px;", cl$text_muted),
+            shiny::HTML("Simule deux baselines (alpha=0 et alpha=1) sur les donn\u00e9es r\u00e9elles pour d\u00e9terminer la plage d'autoconsommation atteignable. Cliquez ci-dessous apr\u00e8s avoir configur\u00e9 vos param\u00e8tres.")),
+          shiny::actionButton(ns("calibrate_ac"), "Calibrer les bornes", class = "btn-outline-secondary btn-sm w-100",
+            icon = shiny::icon("crosshairs")),
+          shiny::uiOutput(ns("autoconso_panel_calibrated"))),
+        shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_tracking")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
+            shiny::HTML("Thermostat pur : la PAC s'allume quand T<sub>ballon</sub> &lt; T<sub>min</sub> et s'arrete a T<sub>consigne</sub>. Aucune conscience du PV ni des prix."))))
     })
 
     # ---- Simulation ----
@@ -662,8 +730,10 @@ mod_sidebar_server <- function(id, sim_state) {
       p$tou_active <- isTRUE(input$tou_active)
       approche <- input$approche
 
-      # Baseline mode: thermostat (default) or pv_tracking (advanced)
-      baseline_mode_r <- if (isTRUE(input$pv_tracking)) {
+      # Baseline mode: measured (CSV eligible), pv_tracking, or thermostat
+      baseline_mode_r <- if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
+        "measured"
+      } else if (isTRUE(input$pv_tracking)) {
         p$baseline_alpha <- baseline_alpha()
         "pv_tracking"
       } else {
@@ -689,7 +759,9 @@ mod_sidebar_server <- function(id, sim_state) {
       }
 
       shiny::withProgress(message = "Preparation...", value = 0.1, {
-        bl_detail <- if (baseline_mode_r == "pv_tracking") {
+        bl_detail <- if (baseline_mode_r == "measured") {
+          "Baseline mesuree (donnees CSV)..."
+        } else if (baseline_mode_r == "pv_tracking") {
           sprintf("Baseline PV tracking (AC %d%%)...", input$autoconso_cible %||% 35)
         } else {
           "Baseline thermostat..."
@@ -716,7 +788,9 @@ mod_sidebar_server <- function(id, sim_state) {
       cr <- k$facture_baseline
       co <- k$facture_opti
       jours <- round(k$n_days, 1)
-      thermostat <- if (isTRUE(input$pv_tracking)) {
+      thermostat <- if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
+        "measured"
+      } else if (isTRUE(input$pv_tracking)) {
         sprintf("pv_tracking(AC=%d%%)", input$autoconso_cible %||% 35)
       } else {
         "thermostat"
@@ -855,6 +929,8 @@ mod_sidebar_server <- function(id, sim_state) {
       pv_tracking = shiny::reactive(input$pv_tracking),
       baseline_alpha = baseline_alpha,
       ac_bounds = ac_bounds,
+      csv_measured_eligible = csv_measured_eligible,
+      pv_whatif = shiny::reactive(input$pv_whatif),
       # Expose individual inputs needed by other modules/status bar
       date_range = shiny::reactive(input$date_range),
       data_source = shiny::reactive(input$data_source),

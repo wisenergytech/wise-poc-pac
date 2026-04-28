@@ -37,7 +37,9 @@ mod_status_bar_server <- function(id, sidebar) {
       }
       if (is.na(mode_label) || is.null(mode_label)) mode_label <- "?"
 
-      thermostat <- if (isTRUE(sidebar$pv_tracking())) {
+      thermostat <- if (isTRUE(sidebar$csv_measured_eligible()) && !isTRUE(sidebar$pv_whatif())) {
+        "Mesur\u00e9e"
+      } else if (isTRUE(sidebar$pv_tracking())) {
         sprintf("AC %d%%", sidebar$autoconso_cible() %||% 35)
       } else {
         "thermostat"
