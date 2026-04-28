@@ -146,6 +146,43 @@ test_that("Baseline get_result returns the last run", {
   expect_identical(bl$get_result(), result)
 })
 
+test_that("Measured mode returns dataframe as-is (pass-through)", {
+  df <- make_test_df()
+  params <- make_test_params()
+  tm <- ThermalModel$new(params)
+
+  # Add columns that a real CSV would have
+  df$offtake_kwh <- runif(nrow(df), 0, 1)
+  df$intake_kwh <- runif(nrow(df), 0, 0.5)
+  df$t_ballon <- runif(nrow(df), 45, 55)
+
+  bl <- Baseline$new(tm)
+  result <- bl$run(df, params, mode = "measured")
+
+  expect_equal(nrow(result), nrow(df))
+  expect_equal(result$offtake_kwh, df$offtake_kwh)
+  expect_equal(result$intake_kwh, df$intake_kwh)
+  expect_equal(result$t_ballon, df$t_ballon)
+})
+
+test_that("Measured mode handles missing t_ballon", {
+  df <- make_test_df()
+  params <- make_test_params()
+  tm <- ThermalModel$new(params)
+
+  # CSV without t_ballon
+  df$offtake_kwh <- runif(nrow(df), 0, 1)
+  df$intake_kwh <- runif(nrow(df), 0, 0.5)
+
+  bl <- Baseline$new(tm)
+  result <- bl$run(df, params, mode = "measured")
+
+  expect_true("t_ballon" %in% names(result))
+  expect_true(all(is.na(result$t_ballon)))
+  expect_equal(result$offtake_kwh, df$offtake_kwh)
+  expect_equal(result$intake_kwh, df$intake_kwh)
+})
+
 test_that("Thermostat hysteresis works correctly", {
   # Create data where PAC needs to cycle
   df <- make_test_df(n = 20)

@@ -95,8 +95,9 @@ Simulation <- R6::R6Class("Simulation",
     },
 
     #' @description Run the baseline simulation.
-    #' @param mode Baseline mode: \code{"thermostat"} (default) or
-    #'   \code{"pv_tracking"}. Legacy names are mapped automatically.
+    #' @param mode Baseline mode: \code{"thermostat"} (default),
+    #'   \code{"pv_tracking"}, or \code{"measured"} (pass-through for CSV
+    #'   with real measured data). Legacy names are mapped automatically.
     #' @return self (for chaining)
     run_baseline = function(mode = NULL) {
       if (is.null(private$prepared_data)) stop("Call load_data() first")

@@ -2,9 +2,10 @@
 # R6 Class: Baseline
 # =============================================================================
 # Encapsulates the baseline (reference) simulation representing the "before
-# optimization" scenario. Two modes:
+# optimization" scenario. Three modes:
 #   - "thermostat" (default): pure ON/OFF hysteresis, no PV awareness
 #   - "pv_tracking": parametric PV surplus following via alpha coefficient
+#   - "measured": pass-through using real CSV data as baseline (no simulation)
 # =============================================================================
 
 #' @title Baseline Simulation
@@ -25,6 +26,10 @@
 #'     1 = maximum PV tracking). This models installations with basic
 #'     domotics or surplus-following inverters (e.g. SolarEdge, Fronius).
 #'     Requires \code{params$baseline_alpha}.}
+#'   \item{measured}{Pass-through mode for CSV uploads with real measured data
+#'     (pac_kwh, offtake_kwh, feedin_kwh). No thermal simulation is performed;
+#'     the prepared dataframe is returned as-is. If \code{t_ballon} is absent,
+#'     the column is set to NA.}
 #' }
 #'
 #' ## Thermal model
@@ -65,8 +70,8 @@ Baseline <- R6::R6Class("Baseline",
     #' @param params Parameter list with at least: t_consigne, t_min, t_max,
     #'   p_pac_kw, cop_nominal, t_ref_cop, capacite_kwh_par_degre, dt_h.
     #'   For \code{"pv_tracking"} mode, also requires baseline_alpha.
-    #' @param mode Baseline mode: \code{"thermostat"} (default) or
-    #'   \code{"pv_tracking"}
+    #' @param mode Baseline mode: \code{"thermostat"} (default),
+    #'   \code{"pv_tracking"}, or \code{"measured"}
     #' @return The input df with added columns: t_ballon, offtake_kwh, intake_kwh
     run = function(df, params, mode = "thermostat") {
       if (inherits(params, "SimulationParams")) {
@@ -75,6 +80,15 @@ Baseline <- R6::R6Class("Baseline",
 
       # Support legacy mode names
       mode <- private$normalize_mode(mode)
+
+      # Measured mode: pass-through (no simulation)
+      if (mode == "measured") {
+        if (!"t_ballon" %in% names(df)) {
+          df$t_ballon <- NA_real_
+        }
+        private$result <- df
+        return(private$result)
+      }
 
       n <- nrow(df)
       pac_qt <- params$p_pac_kw * params$dt_h
