@@ -475,7 +475,12 @@ mod_sidebar_server <- function(id, sim_state) {
     compute_raw_data <- function() {
       if (input$data_source == "csv") {
         shiny::req(input$csv_file)
-        df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE) %>% dplyr::mutate(timestamp = lubridate::ymd_hms(timestamp))
+        df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE)
+        if (!inherits(df$timestamp, "POSIXct")) {
+          df$timestamp <- dplyr::coalesce(
+            lubridate::ymd_hms(df$timestamp, quiet = TRUE),
+            lubridate::ymd(df$timestamp, quiet = TRUE))
+        }
 
         # Validate required columns
         required <- c("timestamp", "pv_kwh", "offtake_kwh")

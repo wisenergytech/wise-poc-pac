@@ -19,9 +19,12 @@
 #'   are found.
 #' @export
 inject_belpex_prices <- function(df, api_key = "", data_dir = "data") {
+  ts_min <- min(df$timestamp, na.rm = TRUE)
+  ts_max <- max(df$timestamp, na.rm = TRUE)
+  if (is.na(ts_min) || is.na(ts_max)) return(df)
   belpex <- load_belpex_prices(
-    start_date = min(df$timestamp),
-    end_date = max(df$timestamp),
+    start_date = ts_min,
+    end_date = ts_max,
     api_key = api_key,
     data_dir = data_dir
   )
