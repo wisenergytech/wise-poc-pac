@@ -296,6 +296,144 @@ $$PV_{\text{local}}(t) = kWc_{\text{cible}} \times loadfactor(t) / 100$$
 
 ---
 
+## 5. Donnees terrain BigQuery (installation k0001)
+
+### Source
+
+**Google BigQuery** — projet `karno-410708`, dataset `wise`. Donnees de
+l'installation de Profondeville (PAC 20+40 kW, multiple dwellings).
+
+Deux tables sont utilisees :
+
+| Table | Contenu | Resolution native |
+|-------|---------|-------------------|
+| `wise.k0001` | Controleur PAC : consommation electrique, temperature ballon, COP | 5 min |
+| `wise.k0001_ores` | Compteur ORES : index cumulatifs soutirage et injection reseau | 5 min |
+
+### Donnees recuperees
+
+| Champ BigQuery | Colonne CSV | Description | Unite |
+|----------------|-------------|-------------|-------|
+| `Elec_consumption` | `pac_kwh` | Consommation electrique de la PAC (somme par quart d'heure) | kWh |
+| `T_tankUp` | `t_ballon` | Temperature en haut du ballon (moyenne par quart d'heure) | degres C |
+| `Consumption_index_kWh` | `offtake_kwh` | Soutirage reseau (delta d'index par quart d'heure) | kWh |
+| `Injection_index_kWh` | `feedin_kwh` | Injection reseau (delta d'index par quart d'heure) | kWh |
+
+### Jeux de donnees produits
+
+Le script `scripts/fetch_bigquery_pac.R` produit deux variantes selon la
+source PV :
+
+| Fichier | Source PV | Description |
+|---------|-----------|-------------|
+| `data/bq_k0001_elia.csv` | Elia ODS032 (region Namur, scalee a 65 kWc) | PV estimee depuis la production regionale |
+| `data/bq_k0001_fusion.csv` | FusionSolar (3 onduleurs locaux) | PV mesuree directement sur site |
+
+La variante **elia** utilise le scaling PV regional decrit en section 4.
+La puissance crete de reference (65 kWc) a ete calibree pour minimiser les
+incoherences de bilan energetique (`feedin > offtake + pv`) a moins de 1%.
+
+### Transformations
+
+1. **Aggregation 5 min -> 15 min** : les mesures 5-minutaires sont agregees
+   au quart d'heure — somme pour les energies (pac, offtake, feedin), moyenne
+   pour la temperature du ballon.
+2. **Delta d'index ORES** : le compteur ORES fournit des index cumulatifs
+   (kWh). Le soutirage et l'injection par quart d'heure sont calcules par
+   difference d'index consecutifs, avec un plancher a 0.
+3. **Exclusion des jours incomplets** : les jours contenant des NA sur
+   `pac_kwh` ou `offtake_kwh` sont exclus du CSV final.
+
+### Donnees externes ajoutees par l'application
+
+Quand un CSV BigQuery est charge dans l'app, `prepare_df()` l'enrichit avec :
+
+| Donnee externe | Source | Jointure | Usage |
+|----------------|--------|----------|-------|
+| Prix spot Belpex | ENTSO-E (section 1) | Par heure (`floor_date`) | Calcul du cout de soutirage et du revenu d'injection |
+| Temperature exterieure | Open-Meteo (section 2) | Par quart d'heure | Calcul du COP reel de la PAC |
+| Intensite CO2 | Elia (section 3) | Par quart d'heure | Calcul des emissions evitees |
+
+En plus, `prepare_df()` deduit automatiquement :
+
+- **`conso_hors_pac`** = `offtake + pv - injection - pac_kwh` (tout ce qui
+  n'est pas la PAC)
+- **`soutirage_estime_kwh`** = `pac_kwh * COP + pertes` (demande thermique
+  totale estimee)
+
+---
+
+## 6. Synchronisation temporelle des sources
+
+### Fuseaux horaires par source
+
+| Source | Fuseau natif | Conversion appliquee |
+|--------|-------------|----------------------|
+| ENTSO-E (prix Belpex) | **UTC** | Converti en `Europe/Brussels` via `with_tz()` avant jointure |
+| Open-Meteo (temperature) | **Europe/Brussels** | Aucune (deja en heure locale) |
+| Elia (CO2, PV) | **UTC** | Converti en `Europe/Brussels` via `with_tz()` |
+| BigQuery k0001 (PAC) | **Europe/Brussels** | Aucune (mesures terrain en heure locale) |
+| BigQuery k0001_ores (compteur) | **Europe/Brussels** | Aucune (mesures terrain en heure locale) |
+
+### Verification empirique des timestamps BigQuery
+
+Les timestamps BigQuery ne portent pas d'indicateur de fuseau horaire explicite.
+La verification a ete faite empiriquement en comparant les heures de debut et
+fin de production PV dans le CSV avec les heures reelles de lever/coucher du
+soleil a Namur :
+
+- **Periode** : novembre-decembre 2025 (hiver, CET = UTC+1)
+- **Premier PV > 0** : 07:15 -- 08:00 dans le CSV
+- **Dernier PV > 0** : 15:00 -- 15:30 dans le CSV
+- **Lever/coucher reel a Namur fin novembre** : ~08:00 / ~16:30 CET
+
+La production PV Elia scalee demarre legerement avant le pic solaire et
+s'arrete avant le coucher (effet du seuil de detection et de la moyenne
+regionale). Ces horaires correspondent bien a l'heure locale belge (CET).
+Si les timestamps etaient en UTC, le debut PV serait a 08:15-09:00 CET, ce
+qui serait trop tardif pour la realite solaire a cette latitude.
+
+### Mecanisme de jointure prix-mesures
+
+La jointure entre les prix Belpex (horaires) et les donnees de simulation
+(quart-horaires) se fait en trois etapes :
+
+1. **Conversion timezone** : les prix ENTSO-E (UTC) sont convertis en
+   `Europe/Brussels` (`with_tz()`)
+2. **Arrondi a l'heure** : les deux series sont arrondies a l'heure via
+   `floor_date(, "hour")` pour creer une cle de jointure commune (`heure_join`)
+3. **Left join** : chaque quart d'heure recoit le prix de l'heure
+   correspondante (4 quarts d'heure partagent le meme prix horaire)
+
+```r
+# Dans R6_data_generator.R, generate_demo()
+belpex_h <- belpex$data %>%
+  mutate(
+    datetime_bxl = with_tz(datetime, tzone = "Europe/Brussels"),
+    heure_join = floor_date(datetime_bxl, unit = "hour"),
+    prix_belpex = price_eur_mwh / 1000
+  )
+
+df_ts <- tibble(timestamp = ts) %>%
+  mutate(heure_join = floor_date(timestamp, unit = "hour")) %>%
+  left_join(belpex_h, by = "heure_join")
+```
+
+Les prix manquants apres jointure sont remplaces par la mediane de la serie.
+
+### Points d'attention
+
+- **Changement d'heure ete/hiver** : la conversion `with_tz()` gere
+  automatiquement les transitions CET/CEST. Un prix UTC `2025-03-30T01:00Z`
+  sera correctement mappe a 03:00 CEST (l'heure 02:00 n'existe pas en heure
+  locale belge ce jour-la).
+- **Pas de test automatise d'alignement** : la synchronisation repose sur la
+  rigueur des conversions `with_tz()` et `floor_date()`. Un test unitaire
+  verifiant l'alignement sur une transition ete/hiver serait une amelioration
+  souhaitable.
+
+---
+
 ## Architecture des fichiers
 
 ```
@@ -312,6 +450,11 @@ data/
   openmeteo_temperature_YYYY.csv  # Cache local temperature
   elia_co2_YYYY.csv               # Cache local CO2
   elia_solar_YYYY.csv             # Cache local production PV
+  bq_k0001_elia.csv               # Donnees terrain + PV Elia scalee
+  bq_k0001_fusion.csv             # Donnees terrain + PV FusionSolar
+
+scripts/
+  fetch_bigquery_pac.R            # Export BigQuery -> CSV (PAC + ORES + PV)
 ```
 
 ### Convention de nommage

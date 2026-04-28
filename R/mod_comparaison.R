@@ -24,6 +24,22 @@ mod_comparaison_ui <- function(id) {
               choices = NULL, selected = NULL),
             shiny::dateRangeInput(ns("compare_range"), "Zoom periode",
               start = Sys.Date() - 60, end = Sys.Date() - 5, language = "fr")),
+          # Time navigation bar
+          shiny::tags$div(
+            style = "display:flex; align-items:center; justify-content:center; gap:4px; margin-bottom:8px; flex-wrap:wrap;",
+            shiny::actionButton(ns("nav_back"),  "\u25c0", class = "btn-sm btn-outline-secondary", title = "Reculer"),
+            shiny::tags$div(
+              style = "display:flex; gap:2px;",
+              shiny::actionButton(ns("nav_win_4h"),  "4h",  class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 4h"),
+              shiny::actionButton(ns("nav_win_1d"),  "1j",  class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 1 jour"),
+              shiny::actionButton(ns("nav_win_3d"),  "3j",  class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 3 jours"),
+              shiny::actionButton(ns("nav_win_1w"),  "1sem", class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 1 semaine"),
+              shiny::actionButton(ns("nav_win_1m"),  "1m",  class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 1 mois"),
+              shiny::actionButton(ns("nav_win_2m"),  "2m",  class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 2 mois"),
+              shiny::actionButton(ns("nav_win_3m"),  "3m",  class = "btn-sm btn-outline-primary", title = "Fen\u00eatre 3 mois")
+            ),
+            shiny::actionButton(ns("nav_fwd"),   "\u25b6", class = "btn-sm btn-outline-secondary", title = "Avancer")
+          ),
           plotly::plotlyOutput(ns("plot_compare"), height = "480px")))))
 }
 
@@ -296,8 +312,43 @@ mod_comparaison_server <- function(id, sidebar) {
       shiny::req(date_range())
       shiny::updateDateRangeInput(session, "compare_range",
         start = date_range()[1], end = date_range()[2],
-        min = as.Date("2020-01-01"), max = Sys.Date())
+        min = as.Date("2020-01-01"), max = as.Date("2099-12-31"))
     })
+
+    # ---- Time navigation ----
+    # Window presets: set window size centered on current midpoint
+    nav_windows <- list(
+      nav_win_4h = 4 / 24,   nav_win_1d = 1,    nav_win_3d = 3,
+      nav_win_1w = 7,         nav_win_1m = 30,   nav_win_2m = 60,
+      nav_win_3m = 90
+    )
+
+    lapply(names(nav_windows), function(btn) {
+      shiny::observeEvent(input[[btn]], {
+        shiny::req(input$compare_range)
+        days <- nav_windows[[btn]]
+        mid <- as.Date(input$compare_range[1]) +
+          (as.Date(input$compare_range[2]) - as.Date(input$compare_range[1])) / 2
+        new_start <- mid - days / 2
+        new_end   <- mid + days / 2
+        shiny::updateDateRangeInput(session, "compare_range",
+          start = new_start, end = new_end)
+      })
+    })
+
+    # Arrow buttons: shift by 1/3 of current window (minimum 1 day)
+    shift_range <- function(direction) {
+      shiny::req(input$compare_range)
+      d1 <- as.Date(input$compare_range[1])
+      d2 <- as.Date(input$compare_range[2])
+      span <- as.numeric(d2 - d1)
+      shift <- max(ceiling(span / 3), 1L)
+      shiny::updateDateRangeInput(session, "compare_range",
+        start = d1 + direction * shift, end = d2 + direction * shift)
+    }
+
+    shiny::observeEvent(input$nav_back, shift_range(-1))
+    shiny::observeEvent(input$nav_fwd,  shift_range(1))
 
     # ---- Merge data for plotting ----
     compare_data <- shiny::reactive({
