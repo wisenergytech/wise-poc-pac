@@ -125,17 +125,20 @@ mod_sidebar_ui <- function(id) {
           shiny::uiOutput(ns("pv_auto_display"))),
         shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_auto")),
           shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5))),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
+      shiny::conditionalPanel(sprintf("input['%s']=='csv' && !output['%s']", ns("data_source"), ns("csv_measured")),
         shiny::numericInput(ns("pv_kwc_ref"), "kWc reference (donnees CSV)", 6, min = 1, max = 200, step = 0.5),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
-          shiny::HTML("Pr\u00e9-rempli depuis le pic PV observ\u00e9 : max(pv_kwh) / 0.25h / 0.90. <b>V\u00e9rifiez cette valeur.</b>")),
+          shiny::HTML("Pr\u00e9-rempli depuis le pic PV observ\u00e9 : max(pv_kwh) / 0.25h / 0.90. <b>V\u00e9rifiez cette valeur.</b>"))),
+      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_whatif_toggle")))),
 
     # ---- Baseline ----
     shiny::uiOutput(ns("measured_baseline_banner")),
-    shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Baseline", tip("Scenario de reference sans EMS. Par defaut : thermostat pur (aquastat ON/OFF). Activez le suivi PV si l'installation a deja un pilotage basique du surplus.")),
-      shiny::uiOutput(ns("baseline_controls"))),
+    shiny::conditionalPanel(sprintf("!output['%s']", ns("csv_measured")),
+      ns = function(x) x,
+      shiny::tags$div(class = "sidebar-section",
+        shiny::tags$div(class = "section-title", "Baseline", tip("Scenario de reference sans EMS. Par defaut : thermostat pur (aquastat ON/OFF). Activez le suivi PV si l'installation a deja un pilotage basique du surplus.")),
+        shiny::uiOutput(ns("baseline_controls")))),
 
     # ---- Batterie (conditionnel via config) ----
     if (isTRUE(ui_cfg$show_battery)) shiny::tags$div(class = "sidebar-section",
@@ -222,7 +225,9 @@ mod_sidebar_ui <- function(id) {
     shiny::actionButton(ns("run_sim"), "Simuler l'optimisation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
     shiny::conditionalPanel(sprintf("output['%s']", ns("has_sim_result")),
       ns = function(x) x,
-      shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download"))),
+      shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download")),
+      shiny::downloadButton(ns("download_rds"), "Exporter simulation (.rds)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-export"))),
+    shiny::fileInput(ns("import_rds"), NULL, accept = ".rds", buttonLabel = "Importer .rds", placeholder = "simulation.rds"),
     # Automagic button (masque temporairement)
     # shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
     # shiny::tags$div(style = "margin-top:8px;",
@@ -498,10 +503,13 @@ mod_sidebar_server <- function(id, sim_state) {
             lubridate::ymd(df$timestamp, quiet = TRUE))
         }
 
+        # Normalize column names early so the rest of the app uses consistent names
+        if ("feedin_kwh" %in% names(df) && !"intake_kwh" %in% names(df)) {
+          df <- dplyr::rename(df, intake_kwh = feedin_kwh)
+        }
+
         # Validate required columns
-        required <- c("timestamp", "pv_kwh", "offtake_kwh")
-        feedin_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else "intake_kwh"
-        required <- c(required, feedin_col)
+        required <- c("timestamp", "pv_kwh", "offtake_kwh", "intake_kwh")
         missing <- setdiff(required, names(df))
         if (length(missing) > 0) {
           shiny::showNotification(
@@ -513,7 +521,6 @@ mod_sidebar_server <- function(id, sim_state) {
         # --- CSV Import Report ---
         report <- character(0)
         warn_lines <- character(0)
-        inj_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else "intake_kwh"
         n_pts <- nrow(df)
         n_jours <- round(as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")), 1)
 
@@ -527,7 +534,7 @@ mod_sidebar_server <- function(id, sim_state) {
         report <- c(report, "",
           sprintf("&#9989; <code>pv_kwh</code> &mdash; production PV"),
           sprintf("&#9989; <code>offtake_kwh</code> &mdash; soutirage r\u00e9seau"),
-          sprintf("&#9989; <code>%s</code> &mdash; injection r\u00e9seau", inj_col))
+          sprintf("&#9989; <code>intake_kwh</code> &mdash; injection r\u00e9seau"))
 
         # Optional: pac_kwh
         if ("pac_kwh" %in% names(df)) {
@@ -564,7 +571,7 @@ mod_sidebar_server <- function(id, sim_state) {
         }
 
         # Energy balance validation
-        energy_cols <- c("pv_kwh", "offtake_kwh", inj_col)
+        energy_cols <- c("pv_kwh", "offtake_kwh", "intake_kwh")
         if ("pac_kwh" %in% names(df)) energy_cols <- c(energy_cols, "pac_kwh")
 
         for (col in energy_cols) {
@@ -574,7 +581,7 @@ mod_sidebar_server <- function(id, sim_state) {
           }
         }
 
-        conso_est <- df[["offtake_kwh"]] + df[["pv_kwh"]] - df[[inj_col]]
+        conso_est <- df[["offtake_kwh"]] + df[["pv_kwh"]] - df[["intake_kwh"]]
         n_neg_conso <- sum(conso_est < -0.01, na.rm = TRUE)
         if (n_neg_conso > n_pts * 0.05) {
           warn_lines <- c(warn_lines, sprintf("Bilan : offtake + pv &lt; injection sur %d pas de temps (%.0f%%)",
@@ -668,7 +675,7 @@ mod_sidebar_server <- function(id, sim_state) {
       df <- raw_data()
       has_pac <- "pac_kwh" %in% names(df)
       has_meter <- "offtake_kwh" %in% names(df) &&
-        any(c("feedin_kwh", "intake_kwh") %in% names(df))
+        "intake_kwh" %in% names(df)
       has_tbal <- "t_ballon" %in% names(df)
       pac_na_rate <- if (has_pac) sum(is.na(df$pac_kwh)) / nrow(df) else 1
       csv_measured_eligible(has_pac && has_meter && pac_na_rate < 0.10)
@@ -741,7 +748,7 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- What-if PV toggle (visible only when CSV eligible) ----
     output$pv_whatif_toggle <- shiny::renderUI({
-      if (!csv_measured_eligible()) return(NULL)
+      if (!csv_measured_eligible() || isTRUE(get_ui_config()$simple_mode)) return(NULL)
       ns <- session$ns
       shiny::tagList(
         shiny::checkboxInput(ns("pv_whatif"),
@@ -787,8 +794,7 @@ mod_sidebar_server <- function(id, sim_state) {
       ns <- session$ns
       df <- raw_data()
       pv_tot <- sum(df$pv_kwh, na.rm = TRUE)
-      inj_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else "intake_kwh"
-      inj_tot <- if (inj_col %in% names(df)) sum(df[[inj_col]], na.rm = TRUE) else 0
+      inj_tot <- if ("intake_kwh" %in% names(df)) sum(df[["intake_kwh"]], na.rm = TRUE) else 0
       ac_pct <- if (pv_tot > 0) round((1 - inj_tot / pv_tot) * 100, 1) else 0
 
       ecs_msg <- if (csv_has_t_ballon()) {
@@ -824,9 +830,10 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- Simulation ----
     sim_running <- shiny::reactiveVal(FALSE)
-    shiny::observeEvent(input$run_sim, { sim_running(TRUE) }, ignoreInit = TRUE)
+    sim_result <- shiny::reactiveVal(NULL)
 
-    sim_result <- shiny::eventReactive(input$run_sim, {
+    shiny::observeEvent(input$run_sim, {
+      sim_running(TRUE)
       on.exit(sim_running(FALSE), add = TRUE)
       p <- params_r(); df <- raw_data()
       p$tou_active <- isTRUE(input$tou_active)
@@ -860,7 +867,7 @@ mod_sidebar_server <- function(id, sim_state) {
         p$qp_w_smooth <- input$qp_w_smooth
       }
 
-      shiny::withProgress(message = "Preparation...", value = 0.1, {
+      res <- shiny::withProgress(message = "Preparation...", value = 0.1, {
         bl_detail <- if (baseline_mode_r == "measured") {
           "Baseline mesuree (donnees CSV)..."
         } else if (baseline_mode_r == "pv_tracking") {
@@ -878,7 +885,8 @@ mod_sidebar_server <- function(id, sim_state) {
         list(sim = result$sim, candidats = NULL, modes = NULL,
              df = result$df, params = result$params, mode = result$mode)
       })
-    })
+      sim_result(res)
+    }, ignoreInit = TRUE)
 
     # Log results and update date range
     shiny::observeEvent(sim_result(), {
@@ -976,7 +984,7 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- Sim result flag for conditionalPanel ----
-    output$has_sim_result <- shiny::reactive({ !is.null(tryCatch(sim_result(), error = function(e) NULL)) })
+    output$has_sim_result <- shiny::reactive({ !is.null(sim_result()) })
     shiny::outputOptions(output, "has_sim_result", suspendWhenHidden = FALSE)
 
     # Boolean output for conditionalPanel JS access to csv_measured_eligible
@@ -1019,6 +1027,50 @@ mod_sidebar_server <- function(id, sim_state) {
         write.csv(export, file, row.names = FALSE)
       }
     )
+
+    # ---- RDS Export ----
+    output$download_rds <- shiny::downloadHandler(
+      filename = function() {
+        paste0("pac_simulation_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".rds")
+      },
+      content = function(file) {
+        shiny::req(sim_result())
+        bundle <- list(
+          sim_result = sim_result(),
+          metadata = list(
+            exported_at = Sys.time(),
+            app_version = as.character(utils::packageVersion("wisepocpac"))
+          )
+        )
+        saveRDS(bundle, file)
+      }
+    )
+
+    # ---- RDS Import ----
+    shiny::observeEvent(input$import_rds, {
+      shiny::req(input$import_rds)
+      bundle <- tryCatch(readRDS(input$import_rds$datapath), error = function(e) NULL)
+      if (is.null(bundle) || is.null(bundle$sim_result)) {
+        shiny::showNotification("Fichier RDS invalide ou incompatible.", type = "error")
+        return()
+      }
+      required_cols <- c("timestamp", "sim_t_ballon", "sim_offtake", "sim_intake")
+      sim_df <- bundle$sim_result$sim
+      if (is.null(sim_df) || !all(required_cols %in% names(sim_df))) {
+        shiny::showNotification("Le fichier ne contient pas les colonnes de simulation attendues.", type = "error")
+        return()
+      }
+      sim_result(bundle$sim_result)
+      if (!is.null(sim_df$timestamp)) {
+        shiny::updateDateRangeInput(session, "date_range",
+          start = as.Date(min(sim_df$timestamp)),
+          end = as.Date(max(sim_df$timestamp)))
+      }
+      v <- if (!is.null(bundle$metadata$app_version)) bundle$metadata$app_version else "inconnue"
+      shiny::showNotification(
+        sprintf("Simulation importee (version %s, %d points)", v, nrow(sim_df)),
+        type = "message", duration = 5)
+    })
 
     # Return reactives for consumption by other modules
     list(
