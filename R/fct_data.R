@@ -44,9 +44,20 @@ inject_belpex_prices <- function(df, api_key = "", data_dir = "data") {
 
   if (!"prix_eur_kwh" %in% names(df)) df$prix_eur_kwh <- NA_real_
 
-  df %>%
+  df <- df %>%
     dplyr::mutate(heure_join = lubridate::floor_date(timestamp, unit = "hour")) %>%
     dplyr::left_join(belpex_h, by = "heure_join") %>%
     dplyr::mutate(prix_eur_kwh = dplyr::coalesce(prix_belpex, prix_eur_kwh)) %>%
     dplyr::select(-heure_join, -prix_belpex)
+
+  # Fill remaining NAs (end of price data, gaps) with median price
+  # to prevent solver crashes on NA coefficients
+  n_na <- sum(is.na(df$prix_eur_kwh))
+  if (n_na > 0) {
+    med_prix <- stats::median(df$prix_eur_kwh, na.rm = TRUE)
+    df$prix_eur_kwh[is.na(df$prix_eur_kwh)] <- med_prix
+    message(sprintf("[Belpex] %d NAs remplaces par le prix median (%.4f EUR/kWh)", n_na, med_prix))
+  }
+
+  df
 }

@@ -122,8 +122,8 @@ resolve_trace_config <- function(vars, agg_level, summable, unit_fn,
           else if (!is.na(u) && !is.na(unit2) && u == unit2) "y2"
           else "y2"
 
-    # Trace type: bars only for summable + coarse agg + y1
-    if (is_sum && use_bars && ax == "y") {
+    # Trace type: bars for summable vars at coarse aggregation (any axis)
+    if (is_sum && use_bars) {
       type <- "bar"
       n_bars_y1 <- n_bars_y1 + 1L
     } else {
