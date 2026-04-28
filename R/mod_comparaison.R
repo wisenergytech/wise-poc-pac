@@ -38,6 +38,7 @@ mod_comparaison_server <- function(id, sidebar) {
     sim_result   <- sidebar$sim_result
     date_range   <- sidebar$date_range
     raw_data     <- sidebar$raw_data
+    params_r     <- sidebar$params_r
 
     # ---- Variable definitions by category ----
     vars_external <- c(
@@ -318,7 +319,25 @@ mod_comparaison_server <- function(id, sidebar) {
             facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection
           )
       } else {
-        tryCatch(raw_data(), error = function(e) NULL)
+        raw <- tryCatch(raw_data(), error = function(e) NULL)
+        if (!is.null(raw) && nrow(raw) > 0) {
+          p <- params_r()
+          # Derive prices if not already present
+          if (!"prix_offtake" %in% names(raw)) {
+            if (p$type_contrat == "fixe") {
+              raw$prix_offtake <- p$prix_fixe_offtake
+              raw$prix_injection <- p$prix_fixe_injection
+            } else if ("prix_eur_kwh" %in% names(raw)) {
+              raw$prix_offtake <- raw$prix_eur_kwh + p$taxe_transport_eur_kwh
+              raw$prix_injection <- raw$prix_eur_kwh * p$coeff_injection
+            }
+          }
+          # Compute baseline bill if prices available
+          if (all(c("prix_offtake", "prix_injection", "offtake_kwh", "intake_kwh") %in% names(raw))) {
+            raw$facture_baseline <- raw$offtake_kwh * raw$prix_offtake - raw$intake_kwh * raw$prix_injection
+          }
+          raw
+        }
       }
 
       if (!is.null(merge_src) && nrow(merge_src) > 0) {
