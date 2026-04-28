@@ -245,7 +245,7 @@ mod_comparaison_server <- function(id, sidebar) {
         })]
       })
       filtered <- filtered[lengths(filtered) > 0]
-      c(list("Aucune" = ""), filtered)
+      c(list("\u2014" = c("Aucune (2 s\u00e9ries)" = "")), filtered)
     }
 
     update_var3 <- function(choices, v1, v2) {
