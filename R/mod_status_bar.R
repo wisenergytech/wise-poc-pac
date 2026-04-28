@@ -79,7 +79,8 @@ mod_status_bar_server <- function(id, sidebar) {
       }
 
       date_range <- sidebar$date_range()
-      data_src_label <- if (is_csv) "CSV" else "Demo"
+      csv_fn <- tryCatch(sidebar$csv_filename(), error = function(e) NULL)
+      data_src_label <- if (is_csv && !is.null(csv_fn)) csv_fn else if (is_csv) "CSV" else "Demo"
 
       # ---- DIM line ----
       dim_parts <- c()
@@ -96,11 +97,15 @@ mod_status_bar_server <- function(id, sidebar) {
       # ---- CFG line ----
       cfg_parts <- c(sprintf("Contrat=<b>%s</b>", contrat))
 
-      if (!is_simple) {
+      # Optimisation strategies
+      tou_on <- isTRUE(sidebar$tou_active())
+      if (is_simple) {
+        cfg_parts <- c(cfg_parts, sprintf("TOU=<b>%s</b>", if (tou_on) "on" else "off"))
+      } else {
         batt <- if (p$batterie_active) sprintf("%skWh/%skW rend=%.2f SoC[%d-%d]%%",
           p$batt_kwh, p$batt_kw, p$batt_rendement, round(p$batt_soc_min * 100), round(p$batt_soc_max * 100)) else "off"
         cfg_parts <- c(cfg_parts, sprintf("Batterie=<b>%s</b>", batt))
-        cfg_parts <- c(cfg_parts, sprintf("TOU=<b>%s</b>", if (isTRUE(sidebar$tou_active())) "on" else "off"))
+        cfg_parts <- c(cfg_parts, sprintf("TOU=<b>%s</b>", if (tou_on) "on" else "off"))
         cfg_parts <- c(cfg_parts, sprintf("Curtail=<b>%s</b>",
           if (isTRUE(sidebar$curtailment_active())) paste0(sidebar$curtail_kw(), "kW") else "off"))
         bloc <- switch(approche %||% "optimiseur_lp",

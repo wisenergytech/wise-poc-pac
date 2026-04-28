@@ -1119,6 +1119,7 @@ mod_sidebar_server <- function(id, sim_state) {
       baseline_alpha = baseline_alpha,
       ac_bounds = ac_bounds,
       csv_measured_eligible = csv_measured_eligible,
+      csv_filename = shiny::reactive(if (!is.null(input$csv_file)) input$csv_file$name else NULL),
       pv_whatif = shiny::reactive(input$pv_whatif),
       # Expose individual inputs needed by other modules/status bar
       date_range = shiny::reactive(input$date_range),
