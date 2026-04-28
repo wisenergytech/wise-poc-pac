@@ -30,7 +30,8 @@ get_ui_config <- function() {
       optimizers = c("optimiseur", "optimiseur_lp", "optimiseur_qp"),
       pv_sources = c("synthetic", "real_elia", "real_delaunoy"),
       show_battery = TRUE,
-      strategies = list(tou = TRUE, curtailment = TRUE)
+      strategies = list(tou = TRUE, curtailment = TRUE),
+      simple_mode = FALSE
     ))
   }
   active <- Sys.getenv("R_CONFIG_ACTIVE", "default")

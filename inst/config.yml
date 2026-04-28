@@ -22,12 +22,14 @@ default:
       tou: true
       curtailment: true
 
+    # Simple mode: hide optimizer/strategy controls, force LP 24h penalty 2.5 ToU
+    simple_mode: true
+
 profondeville:
   ui:
     optimizers:
       - optimiseur_lp
       - optimiseur_qp
-
 
     pv_sources:
       - real_elia
@@ -38,3 +40,5 @@ profondeville:
     strategies:
       tou: true
       curtailment: false
+
+    simple_mode: true

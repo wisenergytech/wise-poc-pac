@@ -75,10 +75,16 @@ mod_sidebar_ui <- function(id) {
       shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
       shiny::uiOutput(ns("ecs_field")),
-      shiny::conditionalPanel(sprintf("input['%s'] > 10 && !output['%s']", ns("p_pac_kw"), ns("csv_measured")),
-        shiny::selectInput(ns("building_type"), shiny::tags$span("Type de batiment", tip("Influence le coefficient de deperdition thermique (G) pour le chauffage d'ambiance. Passif = tres bien isole, Standard = construction recente, Ancien = peu isole.")),
-          choices = c("Passif (G faible)" = "passif", "Standard (RT2012)" = "standard", "Ancien (peu isole)" = "ancien"),
-          selected = "standard"))),
+      if (isTRUE(ui_cfg$simple_mode)) {
+        shiny::tags$div(style = "display:none;",
+          shiny::selectInput(ns("building_type"), NULL,
+            choices = c("Standard (RT2012)" = "standard"), selected = "standard"))
+      } else {
+        shiny::conditionalPanel(sprintf("input['%s'] > 10 && !output['%s']", ns("p_pac_kw"), ns("csv_measured")),
+          shiny::selectInput(ns("building_type"), shiny::tags$span("Type de batiment", tip("Influence le coefficient de deperdition thermique (G) pour le chauffage d'ambiance. Passif = tres bien isole, Standard = construction recente, Ancien = peu isole.")),
+            choices = c("Passif (G faible)" = "passif", "Standard (RT2012)" = "standard", "Ancien (peu isole)" = "ancien"),
+            selected = "standard"))
+      }),
 
     # ---- Tarification ----
     shiny::tags$div(class = "sidebar-section",
@@ -144,7 +150,12 @@ mod_sidebar_ui <- function(id) {
           "Rendement = part de l'energie recuperee apres un cycle charge/decharge (pertes thermiques). Plage SoC = limites min/max pour proteger la duree de vie."))),
 
     # ---- Optimisation ----
-    shiny::tags$div(class = "sidebar-section",
+    if (isTRUE(ui_cfg$simple_mode)) {
+      # Simple mode: force LP 24h, penalty 2.5, ToU on — no UI controls shown
+      shiny::tags$div(style = "display:none;",
+        shiny::radioButtons(ns("approche"), NULL, choices = c("LP" = "optimiseur_lp"), selected = "optimiseur_lp"),
+        shiny::checkboxInput(ns("tou_active"), NULL, TRUE))
+    } else shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Optimisation", tip("Choisissez l'approche de resolution et les strategies d'optimisation a activer.")),
       {
         all_optim <- c("MILP" = "optimiseur", "LP" = "optimiseur_lp", "QP" = "optimiseur_qp")
@@ -208,7 +219,7 @@ mod_sidebar_ui <- function(id) {
         shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux + API si besoin."))),
 
     # ---- Buttons ----
-    shiny::actionButton(ns("run_sim"), "Lancer la simulation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
+    shiny::actionButton(ns("run_sim"), "Simuler l'optimisation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
     shiny::conditionalPanel(sprintf("output['%s']", ns("has_sim_result")),
       ns = function(x) x,
       shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download"))),
@@ -471,7 +482,7 @@ mod_sidebar_server <- function(id, sim_state) {
         slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
         curtailment_active = if (!is.null(input$curtailment_active)) isTRUE(input$curtailment_active) else FALSE,
         curtail_kwh_per_qt = if (!is.null(input$curtailment_active) && isTRUE(input$curtailment_active)) input$curtail_kw * 0.25 else Inf,
-        optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 4)
+        optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24)
     })
 
     # ---- raw_data ----
@@ -842,7 +853,7 @@ mod_sidebar_server <- function(id, sim_state) {
         "lp")
 
       # Set mode-specific params
-      if (approche == "optimiseur_lp") p$optim_bloc_h <- input$optim_bloc_h_lp
+      if (approche == "optimiseur_lp") p$optim_bloc_h <- if (!is.null(input$optim_bloc_h_lp)) input$optim_bloc_h_lp else 24
       if (approche == "optimiseur_qp") {
         p$optim_bloc_h <- input$optim_bloc_h_qp
         p$qp_w_comfort <- input$qp_w_comfort
@@ -1032,10 +1043,10 @@ mod_sidebar_server <- function(id, sim_state) {
       pv_data_source = shiny::reactive(input$pv_data_source),
       baseline_type = shiny::reactive(input$baseline_type),
       approche = shiny::reactive(input$approche),
-      optim_bloc_h = shiny::reactive(input$optim_bloc_h),
-      optim_bloc_h_lp = shiny::reactive(input$optim_bloc_h_lp),
-      optim_bloc_h_qp = shiny::reactive(input$optim_bloc_h_qp),
-      slack_penalty = shiny::reactive(input$slack_penalty),
+      optim_bloc_h = shiny::reactive(if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24),
+      optim_bloc_h_lp = shiny::reactive(if (!is.null(input$optim_bloc_h_lp)) input$optim_bloc_h_lp else 24),
+      optim_bloc_h_qp = shiny::reactive(if (!is.null(input$optim_bloc_h_qp)) input$optim_bloc_h_qp else 24),
+      slack_penalty = shiny::reactive(if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5),
       tou_active = shiny::reactive(if (!is.null(input$tou_active)) input$tou_active else TRUE),
       curtailment_active = shiny::reactive(if (!is.null(input$curtailment_active)) input$curtailment_active else FALSE),
       curtail_kw = shiny::reactive(if (!is.null(input$curtail_kw)) input$curtail_kw else 5),
