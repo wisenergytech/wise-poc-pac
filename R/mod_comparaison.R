@@ -37,6 +37,7 @@ mod_comparaison_server <- function(id, sidebar) {
 
     sim_result   <- sidebar$sim_result
     date_range   <- sidebar$date_range
+    raw_data     <- sidebar$raw_data
 
     # ---- Variable definitions by category ----
     vars_external <- c(
@@ -212,13 +213,19 @@ mod_comparaison_server <- function(id, sidebar) {
         bl_avail <- bl_avail[!duplicated(bl_avail)]
         op_avail <- op_avail[!duplicated(op_avail)]
       } else {
-        bl_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
+        # Before simulation: show CSV columns if available
+        raw <- tryCatch(raw_data(), error = function(e) NULL)
+        if (!is.null(raw) && nrow(raw) > 0) {
+          bl_avail <- vars_baseline[vars_baseline %in% names(raw)]
+        } else {
+          bl_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
+        }
         op_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
       }
 
       list(
         "\U0001f4e1 Sources externes" = ext_avail,
-        "\U0001f3e0 Baseline"         = bl_avail,
+        "\U0001f3e0 Baseline / CSV"   = bl_avail,
         "\u2728 Optimis\u00e9"        = op_avail
       )
     }
@@ -248,16 +255,20 @@ mod_comparaison_server <- function(id, sidebar) {
       shiny::updateSelectInput(session, "compare_var3", choices = c3, selected = sel)
     }
 
-    # ---- Update selectInputs on external data load ----
-    shiny::observeEvent(external_data(), {
+    # ---- Update selectInputs on external data or raw CSV load ----
+    shiny::observeEvent(list(external_data(), raw_data()), {
       choices <- build_choices()
-      shiny::updateSelectInput(session, "compare_var1", choices = choices,
-        selected = if ("ext_pv" %in% unlist(choices)) "ext_pv" else unlist(choices)[1])
-      shiny::updateSelectInput(session, "compare_var2", choices = choices,
-        selected = if ("ext_prix" %in% unlist(choices)) "ext_prix" else unlist(choices)[min(2, length(unlist(choices)))])
-      update_var3(choices,
-        if ("ext_pv" %in% unlist(choices)) "ext_pv" else unlist(choices)[1],
-        if ("ext_prix" %in% unlist(choices)) "ext_prix" else unlist(choices)[min(2, length(unlist(choices)))])
+      all_vals <- unlist(choices)
+      # Prefer CSV baseline columns if available, else external
+      sel1 <- if ("pv_kwh" %in% all_vals) "pv_kwh"
+              else if ("ext_pv" %in% all_vals) "ext_pv"
+              else all_vals[1]
+      sel2 <- if ("offtake_kwh" %in% all_vals) "offtake_kwh"
+              else if ("ext_prix" %in% all_vals) "ext_prix"
+              else all_vals[min(2, length(all_vals))]
+      shiny::updateSelectInput(session, "compare_var1", choices = choices, selected = sel1)
+      shiny::updateSelectInput(session, "compare_var2", choices = choices, selected = sel2)
+      update_var3(choices, sel1, sel2)
     })
 
     # ---- Update selectInputs when sim becomes available ----
@@ -297,27 +308,28 @@ mod_comparaison_server <- function(id, sidebar) {
       df <- external_data()
       df <- dplyr::filter(df, timestamp >= d1, timestamp < d2)
 
-      # Merge sim data if available
-      if (has_sim()) {
-        sim <- sim_result()$sim
-        sim_cols <- sim %>%
+      # Merge sim or raw CSV data
+      merge_src <- if (has_sim()) {
+        sim_result()$sim %>%
           dplyr::mutate(
             autoconso_baseline = pmax(0, pv_kwh - intake_kwh),
             autoconso_opti = pmax(0, pv_kwh - sim_intake),
             facture_baseline = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
             facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection
           )
-        # Join sim columns to external grid (robust: floor to 15 min both sides)
-        sim_to_join <- sim_cols %>%
-          dplyr::select(timestamp, dplyr::any_of(c(
-            names(vars_baseline), names(vars_optimised),
-            unname(vars_baseline), unname(vars_optimised)
-          )))
-        sim_val_cols <- intersect(names(sim_to_join), c(unname(vars_baseline), unname(vars_optimised)))
-        sim_to_join <- sim_to_join[, c("timestamp", sim_val_cols)]
-        sim_to_join$timestamp <- lubridate::floor_date(sim_to_join$timestamp, "15 min")
-        df$timestamp <- lubridate::floor_date(df$timestamp, "15 min")
-        df <- dplyr::left_join(df, sim_to_join, by = "timestamp")
+      } else {
+        tryCatch(raw_data(), error = function(e) NULL)
+      }
+
+      if (!is.null(merge_src) && nrow(merge_src) > 0) {
+        all_val_cols <- c(unname(vars_baseline), unname(vars_optimised))
+        val_cols <- intersect(names(merge_src), all_val_cols)
+        if (length(val_cols) > 0) {
+          to_join <- merge_src[, c("timestamp", val_cols)]
+          to_join$timestamp <- lubridate::floor_date(to_join$timestamp, "15 min")
+          df$timestamp <- lubridate::floor_date(df$timestamp, "15 min")
+          df <- dplyr::left_join(df, to_join, by = "timestamp")
+        }
       }
 
       df
