@@ -57,22 +57,23 @@ mod_sidebar_ui <- function(id) {
     # ---- Ballon ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Ballon thermique", tip("Le ballon sert de batterie thermique. Plus il est gros, plus on peut stocker de chaleur pour decaler la consommation.")),
-      shiny::checkboxInput(ns("volume_auto"), "Volume auto", value = TRUE),
-      shiny::conditionalPanel(sprintf("input['%s']", ns("volume_auto")),
-        shiny::uiOutput(ns("volume_auto_display")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
-          shiny::HTML(paste0(
-            "Dimensionne le ballon pour stocker <b>2h de chaleur PAC</b> dans la plage de tolerance. ",
-            "Formule : V = P<sub>PAC</sub> &times; COP &times; 2h / (tolerance &times; 2 &times; 0.001163). ",
-            "Plus le ballon est gros, plus l'optimiseur peut decaler la consommation vers les heures creuses ou le surplus PV. ",
-            "Un ballon trop petit (ratio stockage/puissance faible) limite fortement les economies possibles.")))),
-      shiny::conditionalPanel(sprintf("!input['%s']", ns("volume_auto")),
+      shiny::conditionalPanel(sprintf("!output['%s']", ns("csv_measured")),
+        shiny::checkboxInput(ns("volume_auto"), "Volume auto", value = TRUE),
+        shiny::conditionalPanel(sprintf("input['%s']", ns("volume_auto")),
+          shiny::uiOutput(ns("volume_auto_display")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
+            shiny::HTML(paste0(
+              "Dimensionne le ballon pour stocker <b>2h de chaleur PAC</b> dans la plage de tolerance. ",
+              "Formule : V = P<sub>PAC</sub> &times; COP &times; 2h / (tolerance &times; 2 &times; 0.001163). ",
+              "Plus le ballon est gros, plus l'optimiseur peut decaler la consommation vers les heures creuses ou le surplus PV. ",
+              "Un ballon trop petit (ratio stockage/puissance faible) limite fortement les economies possibles."))))),
+      shiny::conditionalPanel(sprintf("!input['%s'] || output['%s']", ns("volume_auto"), ns("csv_measured")),
         shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 200, min = 50, max = 100000, step = 50)),
       shiny::numericInput(ns("t_consigne"), "Consigne (C)", 50, min = 35, max = 65, step = 1),
       shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
       shiny::uiOutput(ns("ecs_field")),
-      shiny::conditionalPanel(sprintf("input['%s'] > 10", ns("p_pac_kw")),
+      shiny::conditionalPanel(sprintf("input['%s'] > 10 && !output['%s']", ns("p_pac_kw"), ns("csv_measured")),
         shiny::selectInput(ns("building_type"), shiny::tags$span("Type de batiment", tip("Influence le coefficient de deperdition thermique (G) pour le chauffage d'ambiance. Passif = tres bien isole, Standard = construction recente, Ancien = peu isole.")),
           choices = c("Passif (G faible)" = "passif", "Standard (RT2012)" = "standard", "Ancien (peu isole)" = "ancien"),
           selected = "standard"))),
@@ -94,26 +95,28 @@ mod_sidebar_ui <- function(id) {
     # ---- PV ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Dimensionnement PV", tip("Simulez l'impact d'une installation PV plus grande ou plus petite. Les donnees sont mises a l'echelle proportionnellement.")),
-      {
-        all_pv <- c("Synth\u00e9tique" = "synthetic",
-                     "R\u00e9el Elia (Namur)" = "real_elia",
-                     "R\u00e9el Delaunoy (2024)" = "real_delaunoy")
-        pv_choices <- all_pv[all_pv %in% ui_cfg$pv_sources]
-        pv_selected <- if (ui_cfg$pv_sources[1] %in% pv_choices) ui_cfg$pv_sources[1] else pv_choices[1]
-        shiny::radioButtons(ns("pv_data_source"), "Source PV",
-          choices = pv_choices, selected = pv_selected, inline = FALSE)
-      },
-      shiny::conditionalPanel(sprintf("input['%s']=='real_elia'", ns("pv_data_source")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Production PV r\u00e9elle du parc namurois (Elia ODS032), mise \u00e0 l'\u00e9chelle selon votre kWc."))),
-      shiny::conditionalPanel(sprintf("input['%s']=='real_delaunoy'", ns("pv_data_source")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Donn\u00e9es mesur\u00e9es d'une installation r\u00e9elle en Wallonie (16 kWc, 2024), mises \u00e0 l'\u00e9chelle selon votre kWc."))),
-      shiny::checkboxInput(ns("pv_auto"), "PV auto (couvre la PAC)", value = TRUE),
-      shiny::conditionalPanel(sprintf("input['%s']", ns("pv_auto")),
-        shiny::uiOutput(ns("pv_auto_display"))),
-      shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_auto")),
-        shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5)),
+      # Source PV + PV auto: hidden when CSV measured baseline active
+      shiny::conditionalPanel(sprintf("!output['%s']", ns("csv_measured")),
+        {
+          all_pv <- c("Synth\u00e9tique" = "synthetic",
+                       "R\u00e9el Elia (Namur)" = "real_elia",
+                       "R\u00e9el Delaunoy (2024)" = "real_delaunoy")
+          pv_choices <- all_pv[all_pv %in% ui_cfg$pv_sources]
+          pv_selected <- if (ui_cfg$pv_sources[1] %in% pv_choices) ui_cfg$pv_sources[1] else pv_choices[1]
+          shiny::radioButtons(ns("pv_data_source"), "Source PV",
+            choices = pv_choices, selected = pv_selected, inline = FALSE)
+        },
+        shiny::conditionalPanel(sprintf("input['%s']=='real_elia'", ns("pv_data_source")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+            shiny::HTML("Production PV r\u00e9elle du parc namurois (Elia ODS032), mise \u00e0 l'\u00e9chelle selon votre kWc."))),
+        shiny::conditionalPanel(sprintf("input['%s']=='real_delaunoy'", ns("pv_data_source")),
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+            shiny::HTML("Donn\u00e9es mesur\u00e9es d'une installation r\u00e9elle en Wallonie (16 kWc, 2024), mises \u00e0 l'\u00e9chelle selon votre kWc."))),
+        shiny::checkboxInput(ns("pv_auto"), "PV auto (couvre la PAC)", value = TRUE),
+        shiny::conditionalPanel(sprintf("input['%s']", ns("pv_auto")),
+          shiny::uiOutput(ns("pv_auto_display"))),
+        shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_auto")),
+          shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5))),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::numericInput(ns("pv_kwc_ref"), "kWc reference (donnees CSV)", 6, min = 1, max = 200, step = 0.5),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
@@ -687,11 +690,11 @@ mod_sidebar_server <- function(id, sim_state) {
           shiny::HTML("Active le rescaling PV et bascule en baseline simul\u00e9e.")))
     })
 
-    # ---- Lock pv_kwc when measured baseline active ----
+    # ---- Lock controls when measured baseline active ----
     shiny::observe({
       if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
-        # Lock PV controls to pv_kwc_ref
         shiny::updateCheckboxInput(session, "pv_auto", value = FALSE)
+        shiny::updateCheckboxInput(session, "volume_auto", value = FALSE)
         if (!is.null(input$pv_kwc_ref)) {
           shiny::updateSliderInput(session, "pv_kwc_manual", value = input$pv_kwc_ref)
         }
@@ -915,6 +918,10 @@ mod_sidebar_server <- function(id, sim_state) {
     # ---- Sim result flag for conditionalPanel ----
     output$has_sim_result <- shiny::reactive({ !is.null(tryCatch(sim_result(), error = function(e) NULL)) })
     shiny::outputOptions(output, "has_sim_result", suspendWhenHidden = FALSE)
+
+    # Boolean output for conditionalPanel JS access to csv_measured_eligible
+    output$csv_measured <- shiny::reactive({ csv_measured_eligible() && !isTRUE(input$pv_whatif) })
+    shiny::outputOptions(output, "csv_measured", suspendWhenHidden = FALSE)
 
     # ---- CSV Template Download ----
     output$download_template <- shiny::downloadHandler(
