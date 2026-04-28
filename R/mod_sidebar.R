@@ -51,6 +51,7 @@ mod_sidebar_ui <- function(id) {
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques electriques de votre PAC. Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
       shiny::numericInput(ns("p_pac_kw"), "Puissance (kW)", 60, min = 0.5, max = 100, step = 0.5),
+      shiny::uiOutput(ns("pac_csv_hint")),
       shiny::numericInput(ns("cop_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "COP = Coefficient de Performance. Un COP de 3.5 signifie que 1 kWh electrique produit 3.5 kWh de chaleur.")),
 
@@ -68,7 +69,8 @@ mod_sidebar_ui <- function(id) {
               "Plus le ballon est gros, plus l'optimiseur peut decaler la consommation vers les heures creuses ou le surplus PV. ",
               "Un ballon trop petit (ratio stockage/puissance faible) limite fortement les economies possibles."))))),
       shiny::conditionalPanel(sprintf("!input['%s'] || output['%s']", ns("volume_auto"), ns("csv_measured")),
-        shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 200, min = 50, max = 100000, step = 50)),
+        shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 200, min = 50, max = 100000, step = 50),
+        shiny::uiOutput(ns("volume_csv_hint"))),
       shiny::numericInput(ns("t_consigne"), "Consigne (C)", 50, min = 35, max = 65, step = 1),
       shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
@@ -119,8 +121,8 @@ mod_sidebar_ui <- function(id) {
           shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5))),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::numericInput(ns("pv_kwc_ref"), "kWc reference (donnees CSV)", 6, min = 1, max = 200, step = 0.5),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          "Taille du PV dans vos donnees CSV. Le ratio kWc/ref rescale la production."),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
+          shiny::HTML("Pr\u00e9-rempli depuis le pic PV observ\u00e9 : max(pv_kwh) / 0.25h / 0.90. <b>V\u00e9rifiez cette valeur.</b>")),
         shiny::uiOutput(ns("pv_whatif_toggle")))),
 
     # ---- Baseline ----
@@ -667,6 +669,30 @@ mod_sidebar_server <- function(id, sim_state) {
         est_kwc <- max(1, min(200, est_kwc))
         shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
       }
+
+      # Pre-fill PAC power from max observed consumption
+      if (has_pac) {
+        est_pac_kw <- round(max(df$pac_kwh, na.rm = TRUE) / 0.25 * 2) / 2
+        est_pac_kw <- max(0.5, min(100, est_pac_kw))
+        shiny::updateNumericInput(session, "p_pac_kw", value = est_pac_kw)
+      }
+
+      # Pre-fill ballon volume from heating rate
+      if (has_pac && has_tbal) {
+        delta_t <- diff(df$t_ballon)
+        pac_vals <- df$pac_kwh[-1]
+        # Select heating periods: PAC running, temperature rising
+        heating <- which(pac_vals > 0.5 & delta_t > 0.1)
+        if (length(heating) > 5) {
+          cop_est <- input$cop_nominal %||% 3.5
+          vol_estimates <- pac_vals[heating] * cop_est / (delta_t[heating] * 0.001163)
+          est_vol <- round(stats::median(vol_estimates, na.rm = TRUE) / 100) * 100
+          est_vol <- max(50, min(100000, est_vol))
+          shiny::updateNumericInput(session, "volume_ballon_manual", value = est_vol)
+          message(sprintf("[CSV] Volume ballon estime: %d L (mediane sur %d creneaux de chauffe)",
+            est_vol, length(heating)))
+        }
+      }
     })
 
     # Trigger raw_data computation at boot (once inputs are initialized)
@@ -677,6 +703,19 @@ mod_sidebar_server <- function(id, sim_state) {
       raw_data()
       boot_done(TRUE)
       message("[Boot] raw_data ready.")
+    })
+
+    # ---- CSV estimation hints (visible only when CSV eligible) ----
+    output$pac_csv_hint <- shiny::renderUI({
+      if (!csv_measured_eligible()) return(NULL)
+      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-6px;margin-bottom:4px;", cl$success),
+        shiny::HTML("Estim\u00e9 depuis le CSV : max(pac_kwh) / 0.25h. <b>V\u00e9rifiez.</b>"))
+    })
+
+    output$volume_csv_hint <- shiny::renderUI({
+      if (!csv_measured_eligible() || !csv_has_t_ballon()) return(NULL)
+      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-6px;", cl$success),
+        shiny::HTML("Estim\u00e9 depuis le CSV : m\u00e9diane de pac&times;COP / (&Delta;T&times;0.001163) sur les cr\u00e9neaux de chauffe. <b>V\u00e9rifiez.</b>"))
     })
 
     # ---- What-if PV toggle (visible only when CSV eligible) ----
