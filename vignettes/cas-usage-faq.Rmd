@@ -234,6 +234,31 @@ inferieur a l'economie realisee grace au prix moyen du kWh plus bas.
 meme si le reservoir plus lourd augmente legerement la consommation. Le
 surcout en carburant est inferieur a l'economie realisee sur le prix.
 
+#### "Baseline mesuree vs simulee : quelle difference ?"
+
+L'app propose deux modes de baseline selon les donnees disponibles :
+
+| Mode | Quand | Ce que ca fait |
+|---|---|---|
+| **Mesuree** | CSV avec `pac_kwh` + compteur (`offtake_kwh` + `feedin_kwh`) | Les donnees reelles du CSV sont utilisees comme reference. Les gains compares sont optimise vs **ce qui s'est reellement passe**. |
+| **Simulee** | Mode Demo ou CSV sans `pac_kwh` | Un comportement est simule (thermostat ou suivi PV) via un modele thermique. Les gains sont optimise vs **un scenario hypothetique**. |
+
+La baseline mesuree est **plus fiable** : elle ne depend pas d'un modele
+ou d'un parametre alpha. Les KPI baseline (soutirage, injection, conso
+PAC) correspondent exactement a vos mesures.
+
+**Quand la baseline mesuree est-elle desactivee ?**
+
+- Si le CSV ne contient pas `pac_kwh` (pas de sous-compteur PAC)
+- Si vous activez "Tester un autre dimensionnement PV" (rescaling du PV).
+  Les mesures reelles refletent l'equilibre avec votre PV actuel, pas un
+  PV de taille differente. L'app bascule alors en baseline simulee.
+- Si `pac_kwh` a plus de 10% de valeurs manquantes (donnees trop lacunaires)
+
+Le bandeau dans la sidebar indique clairement quel mode est actif. Si
+`t_ballon` est absent du CSV, l'estimation des soutirages ECS se fait par
+profil synthetique (le bandeau le mentionne).
+
 ### Questions sur les reglages
 
 #### "Quel optimiseur choisir ?"

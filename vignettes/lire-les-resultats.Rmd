@@ -152,6 +152,11 @@ pourquoi :
 **Exemple concret** : +3% de kWh mais -13% sur la facture. C'est le cout
 de l'arbitrage tarifaire, et il est rentable.
 
+**Note** : en mode **baseline mesuree** (CSV avec `pac_kwh` + compteur),
+la conso PAC baseline correspond exactement aux donnees de votre
+sous-compteur. Le bandeau dans la sidebar indique si la baseline est
+mesuree ou simulee.
+
 ### Les graphiques en barres
 
 Les 4 graphiques montrent l'evolution temporelle. Chaque barre a deux

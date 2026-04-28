@@ -17,8 +17,8 @@
 
 **Purpose**: No new project structure needed. Verify existing test suite passes before any changes.
 
-- [ ] T001 Run existing test suite to establish green baseline: `Rscript -e "devtools::test()"`
-- [ ] T002 Generate test CSV files if not present: `Rscript scripts/generate_test_csv.R`
+- [x] T001 Run existing test suite to establish green baseline: `Rscript -e "devtools::test()"` — 118 pass, 2 pre-existing failures (reference value drift in test-R6_simulation.R)
+- [x] T002 Generate test CSV files if not present: `Rscript scripts/generate_test_csv.R` — already present
 
 **Checkpoint**: All existing tests pass. Test CSV files available in `data/`.
 
@@ -28,10 +28,10 @@
 
 **Purpose**: Add the `"measured"` pass-through mode to the Baseline R6 class. This MUST be complete before any UI work.
 
-- [ ] T003 Add mode `"measured"` to `Baseline$run()` in `R/R6_baseline.R`. When mode is `"measured"`, skip the thermal simulation loop entirely and return the input dataframe as-is (preserve existing `offtake_kwh`, `intake_kwh`, `t_ballon` columns). Add `"measured"` to the mode documentation. Handle the case where `t_ballon` is absent (set column to NA).
-- [ ] T004 [P] Add unit test for measured mode in `tests/testthat/test-R6_baseline.R`. Test that `Baseline$run(df, params, mode = "measured")` returns the dataframe with `offtake_kwh`, `intake_kwh`, `t_ballon` identical to input. Test with and without `t_ballon` column.
-- [ ] T005 Verify `Simulation$run_baseline(mode = "measured")` works in `R/R6_simulation.R`. The mode is already passed through to `Baseline$run()` — verify no special-casing is needed. Add `"measured"` to the `@param mode` roxygen documentation.
-- [ ] T006 Run full test suite to confirm non-regression: `Rscript -e "devtools::test()"`
+- [x] T003 Add mode `"measured"` to `Baseline$run()` in `R/R6_baseline.R`. When mode is `"measured"`, skip the thermal simulation loop entirely and return the input dataframe as-is (preserve existing `offtake_kwh`, `intake_kwh`, `t_ballon` columns). Add `"measured"` to the mode documentation. Handle the case where `t_ballon` is absent (set column to NA).
+- [x] T004 [P] Add unit test for measured mode in `tests/testthat/test-R6_baseline.R`. Test that `Baseline$run(df, params, mode = "measured")` returns the dataframe with `offtake_kwh`, `intake_kwh`, `t_ballon` identical to input. Test with and without `t_ballon` column.
+- [x] T005 Verify `Simulation$run_baseline(mode = "measured")` works in `R/R6_simulation.R`. The mode is already passed through to `Baseline$run()` — verify no special-casing is needed. Add `"measured"` to the `@param mode` roxygen documentation.
+- [x] T006 Run full test suite to confirm non-regression: `Rscript -e "devtools::test()"` — 126 pass, same 2 pre-existing failures
 
 **Checkpoint**: `Baseline$run(mode = "measured")` works as pass-through. All existing tests still pass.
 
@@ -45,15 +45,15 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Add CSV eligibility detection function in `R/mod_sidebar.R`. After CSV is loaded and validated (around line 473), compute: `has_pac_kwh`, `has_meter`, `has_t_ballon`, `pac_na_rate`. Store result in a new `reactiveVal` `csv_measured_eligible` (logical). Eligibility = `has_pac_kwh & has_meter & pac_na_rate < 0.10`.
-- [ ] T008 [US1] Add `pv_kwc_ref` heuristic pre-fill in `R/mod_sidebar.R`. When CSV is loaded and contains `pv_kwh`, compute `estimated_kwc = round(max(pv_kwh, na.rm=TRUE) / 0.25 / 0.90 * 2) / 2` (nearest 0.5). Update the `pv_kwc_ref` numericInput with this value. Add a form-text message below: "Estime a partir du pic PV observe. Verifiez cette valeur."
-- [ ] T009 [US1] Conditionally hide baseline controls in `R/mod_sidebar.R`. When `csv_measured_eligible()` is TRUE and `pv_kwc == pv_kwc_ref` (no what-if): hide the checkbox "Suivi PV existant" (`pv_tracking`), the slider `autoconso_cible`, the button `calibrate_ac`, and the `renderUI` panel `autoconso_panel_calibrated`. Use `conditionalPanel` or `renderUI` wrapping with a reactive condition.
-- [ ] T010 [US1] Conditionally hide ECS field in `R/mod_sidebar.R`. When `csv_measured_eligible()` is TRUE and `has_t_ballon` is TRUE, hide the `ecs_kwh_jour` numericInput. When `has_t_ballon` is FALSE but eligible, keep it visible.
-- [ ] T011 [US1] Add measured baseline banner in `R/mod_sidebar.R`. When `csv_measured_eligible()` is TRUE, render a `renderUI` banner showing: "Baseline = donnees mesurees (completes)" if `has_t_ballon`, or "Baseline = donnees mesurees. ECS estime par profil synthetique (pas de t_ballon)." otherwise. Include the measured AC% as read-only: `AC = (sum(pv_kwh) - sum(feedin_kwh)) / sum(pv_kwh) * 100`. Style with the existing theme colors from `fct_ui_theme.R`.
-- [ ] T012 [US1] Wire baseline mode to `"measured"` in `R/mod_sidebar.R`. In the `sim_result` eventReactive (around line 634), when `csv_measured_eligible()` is TRUE and no what-if active, set `baseline_mode_r <- "measured"` instead of thermostat/pv_tracking. Pass to `run_simulation()`.
-- [ ] T013 [US1] Update status bar for measured mode in `R/mod_status_bar.R`. When baseline mode is "measured", display "Baseline=Mesuree" instead of "AC XX%" in the CFG line (around line 98).
-- [ ] T014 [US1] Handle `t_ballon` NA in KPI conformity in `R/R6_kpi.R`. In `get_conformite()` (line 293), if all `sim_t_ballon` values are NA, return NA instead of computing percentages. In `compute()`, if `t_ballon` is all NA in baseline_data, set `conformite_baseline` to NA.
-- [ ] T015 [US1] Run test suite + manual test with `data/test_csv_complet.csv` upload.
+- [x] T007 [US1] Add CSV eligibility detection function in `R/mod_sidebar.R`. After CSV is loaded and validated (around line 473), compute: `has_pac_kwh`, `has_meter`, `has_t_ballon`, `pac_na_rate`. Store result in a new `reactiveVal` `csv_measured_eligible` (logical). Eligibility = `has_pac_kwh & has_meter & pac_na_rate < 0.10`.
+- [x] T008 [US1] Add `pv_kwc_ref` heuristic pre-fill in `R/mod_sidebar.R`. When CSV is loaded and contains `pv_kwh`, compute `estimated_kwc = round(max(pv_kwh, na.rm=TRUE) / 0.25 / 0.90 * 2) / 2` (nearest 0.5). Update the `pv_kwc_ref` numericInput with this value. Add a form-text message below: "Estime a partir du pic PV observe. Verifiez cette valeur."
+- [x] T009 [US1] Conditionally hide baseline controls in `R/mod_sidebar.R`. When `csv_measured_eligible()` is TRUE and `pv_kwc == pv_kwc_ref` (no what-if): hide the checkbox "Suivi PV existant" (`pv_tracking`), the slider `autoconso_cible`, the button `calibrate_ac`, and the `renderUI` panel `autoconso_panel_calibrated`. Use `conditionalPanel` or `renderUI` wrapping with a reactive condition.
+- [x] T010 [US1] Conditionally hide ECS field in `R/mod_sidebar.R`. When `csv_measured_eligible()` is TRUE and `has_t_ballon` is TRUE, hide the `ecs_kwh_jour` numericInput. When `has_t_ballon` is FALSE but eligible, keep it visible.
+- [x] T011 [US1] Add measured baseline banner in `R/mod_sidebar.R`. When `csv_measured_eligible()` is TRUE, render a `renderUI` banner showing: "Baseline = donnees mesurees (completes)" if `has_t_ballon`, or "Baseline = donnees mesurees. ECS estime par profil synthetique (pas de t_ballon)." otherwise. Include the measured AC% as read-only: `AC = (sum(pv_kwh) - sum(feedin_kwh)) / sum(pv_kwh) * 100`. Style with the existing theme colors from `fct_ui_theme.R`.
+- [x] T012 [US1] Wire baseline mode to `"measured"` in `R/mod_sidebar.R`. In the `sim_result` eventReactive (around line 634), when `csv_measured_eligible()` is TRUE and no what-if active, set `baseline_mode_r <- "measured"` instead of thermostat/pv_tracking. Pass to `run_simulation()`.
+- [x] T013 [US1] Update status bar for measured mode in `R/mod_status_bar.R`. When baseline mode is "measured", display "Baseline=Mesuree" instead of "AC XX%" in the CFG line (around line 98).
+- [x] T014 [US1] Handle `t_ballon` NA in KPI conformity in `R/R6_kpi.R`. In `get_conformite()` (line 293), if all `sim_t_ballon` values are NA, return NA instead of computing percentages. In `compute()`, if `t_ballon` is all NA in baseline_data, set `conformite_baseline` to NA.
+- [x] T015 [US1] Run test suite + manual test with `data/test_csv_complet.csv` upload.
 
 **Checkpoint**: Uploading a complete CSV activates measured baseline. KPI baseline = CSV sums. Slider AC hidden. Banner visible.
 
@@ -67,11 +67,11 @@
 
 ### Implementation for User Story 2
 
-- [ ] T016 [US2] Add what-if PV toggle checkbox in `R/mod_sidebar.R`. Add `checkboxInput(ns("pv_whatif"), "Tester un autre dimensionnement PV", value = FALSE)` in the PV section, visible only when `csv_measured_eligible()` is TRUE (via conditionalPanel). When unchecked, the `pv_kwc` field (slider or numericInput) is disabled/hidden and locked to `pv_kwc_ref`.
-- [ ] T017 [US2] Wire toggle to baseline mode switch in `R/mod_sidebar.R`. Add an `observe` that watches `input$pv_whatif`. When toggled ON: enable pv_kwc field, re-show AC slider + calibration + suivi PV checkbox. When toggled OFF: reset pv_kwc to pv_kwc_ref value, re-hide controls, switch back to measured mode.
-- [ ] T018 [US2] Update `baseline_mode_r` logic in `R/mod_sidebar.R`. The mode selection (around line 634) must account for the what-if state: `if (csv_measured_eligible() && !isTRUE(input$pv_whatif))` → measured, else → existing thermostat/pv_tracking logic.
-- [ ] T019 [US2] Update banner text when what-if is active in `R/mod_sidebar.R`. When toggle is ON, replace the measured banner with: "PV rescale (XX kWc) -> baseline simulee (les mesures ne sont plus valides pour cette taille PV)." styled as a warning.
-- [ ] T020 [US2] Manual test: upload CSV, toggle what-if on/off, verify mode switches correctly.
+- [x] T016 [US2] Add what-if PV toggle checkbox in `R/mod_sidebar.R`. Add `checkboxInput(ns("pv_whatif"), "Tester un autre dimensionnement PV", value = FALSE)` in the PV section, visible only when `csv_measured_eligible()` is TRUE (via conditionalPanel). When unchecked, the `pv_kwc` field (slider or numericInput) is disabled/hidden and locked to `pv_kwc_ref`.
+- [x] T017 [US2] Wire toggle to baseline mode switch in `R/mod_sidebar.R`. Add an `observe` that watches `input$pv_whatif`. When toggled ON: enable pv_kwc field, re-show AC slider + calibration + suivi PV checkbox. When toggled OFF: reset pv_kwc to pv_kwc_ref value, re-hide controls, switch back to measured mode.
+- [x] T018 [US2] Update `baseline_mode_r` logic in `R/mod_sidebar.R`. The mode selection (around line 634) must account for the what-if state: `if (csv_measured_eligible() && !isTRUE(input$pv_whatif))` → measured, else → existing thermostat/pv_tracking logic.
+- [x] T019 [US2] Update banner text when what-if is active in `R/mod_sidebar.R`. When toggle is ON, replace the measured banner with: "PV rescale (XX kWc) -> baseline simulee (les mesures ne sont plus valides pour cette taille PV)." styled as a warning.
+- [x] T020 [US2] Manual test: upload CSV, toggle what-if on/off, verify mode switches correctly.
 
 **Checkpoint**: Toggle cleanly switches between measured and simulated. Deactivating restores measured mode.
 
@@ -85,9 +85,9 @@
 
 ### Implementation for User Story 3
 
-- [ ] T021 [US3] Verify non-regression with partial CSV. Upload `data/test_csv_complet_partial.csv` (no pac_kwh, no t_ballon). Confirm: slider AC visible, calibrate button visible, suivi PV checkbox visible, banner not shown. No code change expected — just verify the conditionals from US1 correctly fall through.
-- [ ] T022 [US3] Verify Demo mode non-regression. Switch to Demo mode. Confirm all controls visible, baseline simulated. No code change expected.
-- [ ] T023 [US3] Run full test suite: `Rscript -e "devtools::test()"`
+- [x] T021 [US3] Verify non-regression with partial CSV. Upload `data/test_csv_complet_partial.csv` (no pac_kwh, no t_ballon). Confirm: slider AC visible, calibrate button visible, suivi PV checkbox visible, banner not shown. No code change expected — just verify the conditionals from US1 correctly fall through.
+- [x] T022 [US3] Verify Demo mode non-regression. Switch to Demo mode. Confirm all controls visible, baseline simulated. No code change expected.
+- [x] T023 [US3] Run full test suite: `Rscript -e "devtools::test()"`
 
 **Checkpoint**: Existing behavior preserved for Demo and partial CSV.
 
@@ -97,9 +97,9 @@
 
 **Purpose**: Documentation and final validation.
 
-- [ ] T024 [P] Update `vignettes/lire-les-resultats.Rmd` — add a note in the "Conso PAC" section explaining that in measured baseline mode, the baseline values come directly from the CSV (not simulated). Mention that the bandeau in the sidebar indicates which mode is active.
-- [ ] T025 [P] Update `vignettes/cas-usage-faq.Rmd` — add a new FAQ entry: "Baseline mesuree vs simulee : quelle difference ?" explaining when each mode is used, why measured is more reliable, and when it falls back to simulated (PV rescaling).
-- [ ] T026 Commit all changes with descriptive message referencing the spec.
+- [x] T024 [P] Update `vignettes/lire-les-resultats.Rmd` — add a note in the "Conso PAC" section explaining that in measured baseline mode, the baseline values come directly from the CSV (not simulated). Mention that the bandeau in the sidebar indicates which mode is active.
+- [x] T025 [P] Update `vignettes/cas-usage-faq.Rmd` — add a new FAQ entry: "Baseline mesuree vs simulee : quelle difference ?" explaining when each mode is used, why measured is more reliable, and when it falls back to simulated (PV rescaling).
+- [x] T026 Commit all changes with descriptive message referencing the spec.
 
 ---
 
