@@ -117,7 +117,8 @@ mod_sidebar_ui <- function(id) {
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::numericInput(ns("pv_kwc_ref"), "kWc reference (donnees CSV)", 6, min = 1, max = 200, step = 0.5),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          "Taille du PV dans vos donnees CSV. Le ratio kWc/ref rescale la production."))),
+          "Taille du PV dans vos donnees CSV. Le ratio kWc/ref rescale la production."),
+        shiny::uiOutput(ns("pv_whatif_toggle")))),
 
     # ---- Baseline ----
     shiny::uiOutput(ns("measured_baseline_banner")),
@@ -670,6 +671,28 @@ mod_sidebar_server <- function(id, sim_state) {
       message("[Boot] raw_data ready.")
     })
 
+    # ---- What-if PV toggle (visible only when CSV eligible) ----
+    output$pv_whatif_toggle <- shiny::renderUI({
+      if (!csv_measured_eligible()) return(NULL)
+      ns <- session$ns
+      shiny::tagList(
+        shiny::checkboxInput(ns("pv_whatif"),
+          "Tester un autre dimensionnement PV", value = FALSE),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-6px;", cl$text_muted),
+          shiny::HTML("Active le rescaling PV et bascule en baseline simul\u00e9e.")))
+    })
+
+    # ---- Lock pv_kwc when measured baseline active ----
+    shiny::observe({
+      if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
+        # Lock PV controls to pv_kwc_ref
+        shiny::updateCheckboxInput(session, "pv_auto", value = FALSE)
+        if (!is.null(input$pv_kwc_ref)) {
+          shiny::updateSliderInput(session, "pv_kwc_manual", value = input$pv_kwc_ref)
+        }
+      }
+    })
+
     # ---- ECS field (hidden when CSV has t_ballon + measured baseline) ----
     output$ecs_field <- shiny::renderUI({
       ns <- session$ns
@@ -681,7 +704,18 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- Measured baseline banner ----
     output$measured_baseline_banner <- shiny::renderUI({
-      if (!csv_measured_eligible() || isTRUE(input$pv_whatif)) return(NULL)
+      if (!csv_measured_eligible()) return(NULL)
+
+      # What-if mode: show warning instead of measured banner
+      if (isTRUE(input$pv_whatif)) {
+        kwc <- if (!is.null(input$pv_kwc_manual)) input$pv_kwc_manual else input$pv_kwc_ref
+        return(shiny::tags$div(
+          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.75rem;line-height:1.4;",
+            cl$card_bg, "#f59e0b"),
+          shiny::HTML(sprintf(
+            "<b style='color:%s;'>PV rescal\u00e9 (%s kWc)</b><br><span style='font-size:.65rem;color:%s;'>Baseline simul\u00e9e (les mesures ne sont plus valides pour cette taille PV)</span>",
+            "#f59e0b", kwc, cl$text_muted))))
+      }
       ns <- session$ns
       df <- raw_data()
       pv_tot <- sum(df$pv_kwh, na.rm = TRUE)
