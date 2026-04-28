@@ -332,6 +332,10 @@ mod_comparaison_server <- function(id, sidebar) {
         }
       }
 
+      # Convert price columns from EUR/kWh to EUR/MWh for display
+      if ("prix_offtake" %in% names(df)) df$prix_offtake <- df$prix_offtake * 1000
+      if ("prix_injection" %in% names(df)) df$prix_injection <- df$prix_injection * 1000
+
       df
     })
 

@@ -328,6 +328,15 @@ DataGenerator <- R6::R6Class("DataGenerator",
       if ("soutirage_ecs_kwh" %in% names(df)) {
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
         df <- df %>% dplyr::mutate(soutirage_estime_kwh = soutirage_ecs_kwh)
+      } else if (has_pac_kwh) {
+        # Back-calculate total thermal demand from measured PAC consumption
+        # soutirage = pac_kwh * COP + standing losses (captures heating + ECS + all losses)
+        params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
+        df <- df %>% dplyr::mutate(
+          soutirage_estime_kwh = pmax(0, pac_kwh * cop_reel + params$perte_kwh_par_qt)
+        )
+        message(sprintf("[prepare_df] soutirage back-calcule depuis pac_kwh: %.1f kWh_th/jour",
+          sum(df$soutirage_estime_kwh, na.rm = TRUE) / max(1, as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")))))
       } else if ("delta_t_mesure" %in% names(df)) {
         # Estimate ECS draws from tank temperature drops (legacy t_ballon path)
         pm <- df %>%

@@ -20,10 +20,10 @@ WORKDIR /app
 COPY renv.lock renv.lock
 
 # Pre-install packages that fail to download via renv on Cloud Build
-RUN R -e "install.packages(c('Rcpp', 'S7'), repos = 'https://packagemanager.posit.co/cran/__linux__/noble/latest')"
+RUN R -e "install.packages(c('Rcpp', 'S7', 'highs', 'ROI.plugin.highs'), repos = 'https://packagemanager.posit.co/cran/__linux__/noble/latest')"
 
 # Restore all packages from lockfile (exclude Rcpp/S7 already installed above)
-RUN R -e "renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE, exclude = c('Rcpp', 'S7'))"
+RUN R -e "renv::restore(lockfile = 'renv.lock', library = .libPaths()[1], prompt = FALSE, exclude = c('Rcpp', 'S7', 'highs', 'ROI.plugin.highs'))"
 
 # Copy the rest of the project
 COPY . .
