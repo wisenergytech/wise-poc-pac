@@ -155,10 +155,17 @@ mod_sidebar_ui <- function(id) {
 
     # ---- Optimisation ----
     if (isTRUE(ui_cfg$simple_mode)) {
-      # Simple mode: force LP 24h, penalty 2.5, ToU on — no UI controls shown
-      shiny::tags$div(style = "display:none;",
-        shiny::radioButtons(ns("approche"), NULL, choices = c("LP" = "optimiseur_lp"), selected = "optimiseur_lp"),
-        shiny::checkboxInput(ns("tou_active"), NULL, TRUE))
+      # Simple mode: force LP 24h, penalty 2.5, ToU on — show only TOU info
+      shiny::tagList(
+        shiny::tags$div(style = "display:none;",
+          shiny::radioButtons(ns("approche"), NULL, choices = c("LP" = "optimiseur_lp"), selected = "optimiseur_lp"),
+          shiny::checkboxInput(ns("tou_active"), NULL, TRUE)),
+        shiny::tags$div(class = "sidebar-section",
+          shiny::tags$div(class = "section-title", "Optimisation"),
+          shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;line-height:1.4;", cl$text),
+            shiny::HTML(sprintf(
+              "<b style='color:%s;'>TOU (Time of Use)</b> &mdash; activ\u00e9<br><span style='font-size:.65rem;color:%s;'>L'optimiseur exploite les variations de prix Belpex pour d\u00e9caler la consommation PAC vers les heures les moins ch\u00e8res.</span>",
+              cl$success, cl$text_muted)))))
     } else shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Optimisation", tip("Choisissez l'approche de resolution et les strategies d'optimisation a activer.")),
       {
