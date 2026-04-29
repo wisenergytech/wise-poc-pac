@@ -65,8 +65,16 @@ mod_status_bar_server <- function(id, sidebar) {
         sim <- res$sim
         jours <- round(as.numeric(difftime(max(sim$timestamp), min(sim$timestamp), units = "days")), 1)
         k_sb <- sidebar$kpis_r()
-        gain <- k_sb$gain_eur
-        pct <- k_sb$gain_pct
+        k_cible <- tryCatch(sidebar$kpis_cible_r(), error = function(e) NULL)
+        if (!is.null(k_cible)) {
+          fa <- k_sb$facture_baseline
+          fd <- k_cible$facture_opti
+          gain <- fa - fd
+          pct <- if (abs(fa) > 0.001) gain / abs(fa) * 100 else 0
+        } else {
+          gain <- k_sb$gain_eur
+          pct <- k_sb$gain_pct
+        }
         gain_col <- if (gain > 0.01) cl$success else if (gain < -0.01) cl$danger else cl$text_muted
         shiny::tags$span(shiny::HTML(sprintf("SIMULATION %s -- %.1f j &middot; %s pts &middot; GAIN <b style='color:%s'>%.1f EUR (%.1f%%)</b>",
           mode_label, jours, formatC(nrow(sim), format = "d", big.mark = " "),

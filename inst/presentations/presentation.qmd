@@ -109,6 +109,8 @@ bg_b64 <- img_to_b64("images/background.png")
 logo_destore_b64 <- img_to_b64("images/destore-logo.png")
 logo_karno_b64 <- img_to_b64("images/karno-logo.png")
 logo_wise_b64 <- img_to_b64("images/wise-logo.png")
+rtbf_b64 <- if (file.exists("images/RTBF.png")) img_to_b64("images/RTBF.png") else NULL
+lalibre_b64 <- if (file.exists("images/lalibre.png")) img_to_b64("images/lalibre.png") else NULL
 photo_team_b64 <- if (file.exists("images/photo_team_wise.jpg")) {
   img_to_b64("images/photo_team_wise.jpg", mime = "image/jpeg")
 } else NULL
@@ -201,9 +203,9 @@ La geothermie est la source principale. L'aerothermie assure le backup et l'equi
 | **Autoconsommation PV** | `r fmt1(params$ac_baseline)`% | ~`r round(100 - params$ac_baseline)`% du PV est reinjecte (vendu a bas prix) |
 | **Autosuffisance** | `r fmt1(params$as_baseline)`% | ~`r round(100 - params$as_baseline)`% de l'electricite vient du reseau (achetee a prix fort) |
 | **Part PAC dans la conso** | `r params$pct_pac_conso`% | La PAC est le premier poste de consommation electrique |
-| **Facture nette** | `r fmt(params$facture_baseline)` EUR / `r params$n_days` j | Soit ~`r fmt(round(params$facture_baseline / params$n_days * 365))` EUR/an extrapole |
+| **Facture nette** | `r fmt(params$facture_baseline)` EUR / `r params$n_days` j | Soit ~`r fmt(params$proj_facture_baseline_an)` EUR/an extrapole |
 
-**En resume** : la PAC tourne surtout **la nuit et le matin**, quand l'energie est chere et le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilite de stockage thermique **inexploitee**.
+**En resume** : la PAC tourne surtout **la nuit et le matin**, quand l'energie est chere, carbonee et le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilite de stockage thermique **inexploitee**.
 
 Ce decalage est un probleme, mais aussi une **opportunite**.
 
@@ -218,6 +220,7 @@ Le marche de l'electricite belge connait une transformation profonde :
 
 - **Volatilite croissante** : les prix spot varient de < 0 a > 300 EUR/MWh au sein d'une meme journee
 - **Prix negatifs structurels** : au printemps/ete, la surproduction solaire fait regulierement plonger les prix, surtout les week-ends
+- **Prix bas = electricite verte** : quand le solaire et l'eolien dominent le mix, les prix chutent **et** l'intensite carbone du reseau aussi. Consommer aux heures bon marche, c'est aussi consommer **decarbone**
 - **Contrats dynamiques** : seuls les consommateurs en contrat indexe sur le spot peuvent capter ces opportunites
 - **Flexibilite = valeur** : un reseau de chaleur avec stockage thermique est idealement place pour **absorber les heures gratuites** et eviter les heures cheres
 
@@ -233,7 +236,14 @@ Dimanche 26 avril 2026, le prix spot belge a chute a **-479,27 EUR/MWh** — un 
 - Une PAC avec stockage thermique aurait pu etre **remuneree** pour chauffer
 - Ce type d'episode se repete de plus en plus souvent
 
-Sources : [RTBF](https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-le-marche-de-gros-le-consommateur-y-gagne-t-il-11716042), [La Libre](https://www.lalibre.be/economie/mes-finances/2026/04/26/le-prix-de-lelectricite-est-passe-nettement-sous-la-barre-de-zero-dimanche-BZ34KKMI2ZEKJMRJ4DRKVJH6OY/), [Xemex](https://www.xemex.eu/en/dynamic-energy-prices-in-belgium-turning-risk-into-value/) (avril 2026)
+```{r press-images, echo=FALSE, results='asis'}
+imgs <- c()
+if (!is.null(rtbf_b64)) imgs <- c(imgs, sprintf('<a href="https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-le-marche-de-gros-le-consommateur-y-gagne-t-il-11716042" target="_blank"><img src="%s" alt="RTBF" style="max-height:200px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.2);" /></a>', rtbf_b64))
+if (!is.null(lalibre_b64)) imgs <- c(imgs, sprintf('<a href="https://www.lalibre.be/economie/mes-finances/2026/04/26/le-prix-de-lelectricite-est-passe-nettement-sous-la-barre-de-zero-dimanche-BZ34KKMI2ZEKJMRJ4DRKVJH6OY/" target="_blank"><img src="%s" alt="La Libre" style="max-height:200px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.2);" /></a>', lalibre_b64))
+if (length(imgs) > 0) {
+  cat(sprintf('<div style="display:flex;justify-content:center;gap:24px;margin-top:16px;">%s</div>\n', paste(imgs, collapse = "\n")))
+}
+```
 
 ::: notes
 -479 EUR/MWh signifie que le producteur paie le consommateur pour absorber son electricite. Avec un ballon tampon de 32 000 L et une PAC de 60 kW, on aurait pu stocker de la chaleur pendant ces heures et etre remunere pour le faire.
@@ -241,12 +251,12 @@ Sources : [RTBF](https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-l
 
 ## Quelles strategies de flexibilite ?
 
-| Strategie | Gain annuel estime | Risque confort | Principe |
+| Strategie | Gain estime | Risque confort | Principe |
 |---|---:|:---:|---|
-| **ToU shifting** | **1 500 -- 4 000 EUR** | Faible | Decaler la PAC vers les heures creuses / prix bas |
-| Peak shaving | 500 -- 2 000 EUR | Faible | Ecreter les pics de puissance (tarif capacitaire) |
-| Curtailment | 200 -- 800 EUR | Moyen | Couper la PAC pendant les prix extremes |
-| **ToU + Peak** | **2 000 -- 5 500 EUR** | Faible | Combinaison des deux premiers leviers |
+| **ToU shifting** | **15 -- 30%** | Faible | Decaler la PAC vers les heures creuses / prix bas |
+| Peak shaving | 5 -- 15% | Faible | Ecreter les pics de puissance (tarif capacitaire) |
+| Curtailment | 2 -- 5% | Moyen | Couper la PAC pendant les prix extremes |
+| **ToU + Peak** | **20 -- 40%** | Faible | Combinaison des deux premiers leviers |
 
 Le **Time-of-Use** est le levier le plus rentable pour ce site :
 
@@ -393,7 +403,7 @@ Ces chiffres sont calcules sur `r params$n_days` jours de donnees reelles mesure
 if (has_tranche) p_tranches
 ```
 
-Le Wise Brain **deplace** la consommation PAC de la nuit et des heures de pointe vers la **tranche solaire** (10h-16h), ou le PV produit et les prix sont bas.
+Le Wise Brain **deplace** la consommation PAC de la nuit et des heures de pointe vers la **tranche solaire** (10h-16h), ou le PV produit, les prix sont bas et l'electricite est **decarbonee**. Double benefice : **facture et empreinte carbone** baissent simultanement.
 
 ::: notes
 Le graphique montre la redistribution de la consommation PAC entre les 4 tranches horaires. Le prix spot moyen est annote sur chaque barre baseline. L'optimiseur concentre la consommation sur les heures solaires, quand le PV et les prix bas convergent.
@@ -405,7 +415,7 @@ Le graphique montre la redistribution de la consommation PAC entre les 4 tranche
 if (has_profil) p_profil
 ```
 
-Le **profil horaire** confirme : la baseline (orange) tourne la nuit et le soir — les heures les plus cheres (fond rouge). Le Wise Brain (cyan) concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
+Le **profil horaire** confirme : la baseline tourne la nuit et le soir — les heures les plus cheres (fond rouge). Le Wise Brain concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
 
 ::: notes
 Le fond colore indique le prix spot moyen par heure : vert = bon marche, rouge = cher. La courbe pointillee grise montre le prix moyen sur l'axe de droite. La baseline montre deux pics (nuit + soir) typiques d'un thermostat. L'optimise montre un pic unique en milieu de journee, aligne avec la production solaire.
@@ -433,8 +443,8 @@ L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac
 dual <- isTRUE(params$has_dual_contrat)
 
 cat("## Projection annuelle (estimation)\n\n")
-cat(sprintf("Nos %s jours de mesures couvrent **%s%% de la demande thermique annuelle**^[Calcule a partir des degres-jours de chauffage (DJ 16.5 C, normales Synergrid 30 ans). Les mois mesures totalisent %s%% des DJ annuels. L'extrapolation corrige pour : (1) le **COP saisonnier** — estime a partir des temperatures Open-Meteo 2024-2026 (COP plus eleve en ete = moins de kWh electriques par DJ), et (2) le **spread de prix BELPEX** — ecart interquartile horaire par mois (donnees ENTSO-E 2024-2026), qui determine le potentiel d'arbitrage ToU.] (nov-avr = saison de chauffe). Projection sur 12 mois, ponderee par le profil climatique belge :\n\n",
-  params$n_days, params$proj_heat_coverage_pct, params$proj_heat_coverage_pct))
+cat(sprintf("Nos %s jours de mesures couvrent **%s%% de la demande de chauffage annuelle**^[Pondere par les degres-jours Synergrid (normales 30 ans), le COP saisonnier (temperatures Open-Meteo 2024-2026) et le spread de prix BELPEX mensuel (ENTSO-E 2024-2026).]. Projection sur 12 mois :\n\n",
+  params$n_days, params$proj_heat_coverage_pct))
 
 if (dual) {
   cat("| KPI | Mesure | Projection annuelle |\n")
@@ -470,11 +480,11 @@ if (dual) {
     fmt(params$co2_saved_kg), fmt(params$proj_co2_saved_an_kg)))
 }
 
-cat("**Hypotheses** : les mois non mesures sont extrapoles via DJ Synergrid, corriges par le COP moyen mensuel (temperatures Open-Meteo 2024-2026) et le spread de prix BELPEX mensuel (ENTSO-E 2024-2026). Limite : le comportement thermique estival (ECS seule, pas de chauffage) n'est pas modelise explicitement.\n")
+cat("**Estimation prudente** : en ete il y a peu de chauffage mais beaucoup de PV — le gain ToU est plus faible, mais l'autoconsommation \"gratuite\" augmente.\n")
 ```
 
 ::: notes
-La projection corrige pour deux effets saisonniers : (1) le COP plus eleve en ete reduit les kWh electriques par DJ (~4.5 en mai vs ~2.5 en janvier), et (2) le spread de prix BELPEX varie par mois (plus de volatilite solaire en ete). Les mois d'ete (juin-aout) representent ~2% de la demande thermique annuelle — leur contribution financiere reste marginale meme apres correction.
+La projection tient compte de la saisonnalite : en ete le COP est plus eleve (~4.5 vs ~2.5 en hiver, donc moins de kWh par degre-jour) et les spreads de prix sont differents. Les mois d'ete representent ~2% de la demande thermique — leur poids financier est marginal.
 :::
 
 # Et ensuite ?
@@ -499,7 +509,7 @@ Les axes d'amelioration sont nombreux — les prochaines implementations seront 
 - **Peak shaving** : ecreter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en sequencant le demarrage des deux PAC ?
 - **Curtailment** : limiter l'injection PV en periode de prix negatifs pour maximiser l'autoconsommation ?
 - **Distinction GSHP / ASHP** : piloter les deux PAC independamment (on/off vs modulante). Un sous-comptage individuel existe deja mais n'est pas encore exploite — reste a definir comment cette distinction s'implemente en termes d'optimisation sous contraintes (variables de decision separees, contraintes de demarrage sequentiel, etc.)
-- **Comparaison contrats** : simuler le gain additionnel d'un passage BELIX → dynamique ?
+
 
 ::: notes
 Aujourd'hui l'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Avec un sous-comptage separe GSHP/ASHP, on pourrait planifier les cycles GSHP sur les heures bon marche tout en modulant l'ASHP en temps reel.

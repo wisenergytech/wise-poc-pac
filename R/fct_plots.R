@@ -95,7 +95,7 @@ plot_profil_horaire <- function(profil_data, profil_prix) {
       marker = list(color = cl$opti, size = 5),
       hovertemplate = "<b>%{x}h</b><br>Optimise: %{y:.1f} kW<extra></extra>") %>%
     plotly::add_trace(
-      data = hp, x = ~hour, y = ~(prix_moy * 1000), name = "Prix moyen",
+      data = hp, x = ~hour, y = ~(prix_moy * 1000), name = "Prix spot Belpex",
       type = "scatter", mode = "lines",
       line = list(color = cl$text_muted, width = 1, dash = "dot"),
       yaxis = "y2",
