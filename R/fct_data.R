@@ -5,6 +5,48 @@
 # No Shiny dependency — usable in scripts, reports, and tests.
 # =============================================================================
 
+#' Compute monthly BELIX averages (peak and off-peak)
+#'
+#' BELIX peak = average spot price during 8h-20h per month.
+#' BELIX off-peak = average spot price during 20h-8h per month.
+#'
+#' @param df Dataframe with \code{timestamp} and \code{prix_eur_kwh} columns
+#' @return A dataframe with columns: year_month, belix_peak_eur_kwh, belix_offpeak_eur_kwh
+#' @export
+compute_belix_monthly <- function(df) {
+  h <- as.integer(format(df$timestamp, "%H", tz = "Europe/Brussels"))
+  is_belix_peak <- h >= 8 & h < 20
+
+  df_belix <- dplyr::tibble(
+    year_month = format(df$timestamp, "%Y-%m", tz = "Europe/Brussels"),
+    prix_eur_kwh = df$prix_eur_kwh,
+    is_belix_peak = is_belix_peak
+  )
+
+  df_belix %>%
+    dplyr::group_by(year_month) %>%
+    dplyr::summarise(
+      belix_peak_eur_kwh = mean(prix_eur_kwh[is_belix_peak], na.rm = TRUE),
+      belix_offpeak_eur_kwh = mean(prix_eur_kwh[!is_belix_peak], na.rm = TRUE),
+      .groups = "drop"
+    )
+}
+
+#' Determine if each timestamp falls in contract peak hours
+#'
+#' @param timestamps POSIXct vector
+#' @param peak_hours List of c(start, end) pairs defining peak hours (e.g. list(c(7,11), c(17,22)))
+#' @return Logical vector, TRUE = peak
+#' @export
+is_contract_peak <- function(timestamps, peak_hours) {
+  h <- as.integer(format(timestamps, "%H", tz = "Europe/Brussels"))
+  is_peak <- rep(FALSE, length(h))
+  for (slot in peak_hours) {
+    is_peak <- is_peak | (h >= slot[1] & h < slot[2])
+  }
+  is_peak
+}
+
 #' Inject real Belpex prices into simulation dataframe
 #'
 #' Loads Belpex (ENTSO-E) day-ahead prices from local CSV cache or API,

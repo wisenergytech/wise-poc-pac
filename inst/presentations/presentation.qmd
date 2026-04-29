@@ -1,0 +1,337 @@
+---
+title: "Karno x Wise Brain"
+subtitle: "Proof of Concept - Pilotage du reseau de chaleur de Profondeville"
+author: "WISE"
+date: today
+lang: fr
+params:
+  # Site
+  site_name: "Profondeville"
+  n_logements: 20
+  n_immeubles: 4
+  surface_m2: 2000
+  conso_chauffage_mwh_an: 198
+  co2_evite_20ans_t: 717
+  # Technical
+  pac_kw: 60
+  pv_kwc: 64
+  volume_ballon_l: 32000
+  t_min: 45
+  t_max: 55
+  cop_median_hiver: 2.5
+  cop_median_misaison: 4.5
+  # Simulation period
+  date_debut: "20/11/2025"
+  date_fin: "28/04/2026"
+  n_days: 159
+  mode_optim: "LP"
+  type_contrat: "spot"
+  # Financial KPIs
+  cout_soutirage_baseline: 3507
+  cout_soutirage_opti: 2379
+  rev_injection_baseline: 313
+  rev_injection_opti: 238
+  facture_baseline: 3195
+  facture_opti: 2141
+  gain_eur: 1054
+  gain_pct: 33
+  gain_eur_per_day: 6.60
+  gain_eur_per_year: 2420
+  # Energy KPIs
+  soutirage_baseline_kwh: 14223
+  soutirage_opti_kwh: 10587
+  injection_baseline_kwh: 7792
+  injection_opti_kwh: 4543
+  ac_baseline: 50.1
+  ac_opti: 70.9
+  as_baseline: 35.5
+  as_opti: 51.1
+  conso_pac_baseline_kwh: 12015
+  conso_pac_opti_kwh: 11364
+  conformite_baseline: 3.1
+  conformite_opti: 99.7
+  pct_pac_conso: 55
+  # CO2 KPIs
+  co2_baseline_kg: 1274
+  co2_saved_kg: 420
+  co2_pct_reduction: 33
+  co2_equiv_car_km: 8043
+  co2_equiv_trees_year: 39
+format:
+  revealjs:
+    embed-resources: true
+    theme: [default, custom-theme.scss]
+    footer: "Karno x Wise Brain — Profondeville"
+    slide-number: true
+    transition: fade
+    transition-speed: fast
+    width: 1600
+    height: 900
+  pptx:
+    reference-doc: template.pptx
+---
+
+```{r setup, include=FALSE}
+# Helper for formatting numbers
+fmt <- function(x, digits = 0) formatC(x, format = "f", big.mark = " ", digits = digits)
+fmt1 <- function(x) formatC(x, format = "f", big.mark = " ", digits = 1)
+pct_delta <- function(base, opti) round((base - opti) / base * 100)
+
+# Encode images as base64 data URIs for self-contained HTML
+img_to_b64 <- function(path, mime = "image/png") {
+  paste0("data:", mime, ";base64,", base64enc::base64encode(path))
+}
+bg_b64 <- img_to_b64("images/background.png")
+logo_destore_b64 <- img_to_b64("images/destore-logo.png")
+logo_karno_b64 <- img_to_b64("images/karno-logo.png")
+logo_wise_b64 <- img_to_b64("images/wise-logo.png")
+```
+
+```{r logos-and-background, echo=FALSE, results='asis'}
+cat(sprintf('
+<script>
+  (function() {
+    // Inject partner logos into .reveal (outside .slides) so they appear on ALL slides
+    var logos = document.createElement("div");
+    logos.id = "partner-logos";
+    logos.innerHTML = \'<img src="%s" alt="Karno Energy" /><img src="%s" alt="Destore" /><img src="%s" alt="WISE" />\';
+    document.querySelector(".reveal").appendChild(logos);
+
+    // Apply background image to ALL slides
+    function applyBackgrounds() {
+      var bg = "%s";
+      document.querySelectorAll(".reveal .slides section").forEach(function(slide) {
+        slide.setAttribute("data-background-image", bg);
+        slide.setAttribute("data-background-size", "cover");
+        slide.setAttribute("data-background-position", "center bottom");
+      });
+      if (window.Reveal) Reveal.sync();
+    }
+    if (window.Reveal && Reveal.isReady()) {
+      applyBackgrounds();
+    } else if (window.Reveal) {
+      Reveal.on("ready", applyBackgrounds);
+    } else {
+      document.addEventListener("DOMContentLoaded", applyBackgrounds);
+    }
+  })();
+</script>
+', logo_karno_b64, logo_destore_b64, logo_wise_b64, bg_b64))
+```
+
+## Sommaire
+
+1. **Le site** — `r params$site_name`, installation et constats
+2. **Le contexte** — Marche de l'energie et opportunite
+3. **Notre approche** — Donnees, algorithme et optimisation ToU
+4. **Les resultats** — Economies, flexibilite et impact
+5. **Et ensuite ?** — Prochaines etapes
+
+# Le site
+## Le projet en bref
+
+**`r params$n_logements` logements** repartis en **`r params$n_immeubles` immeubles** residentiels (`r fmt(params$surface_m2)` m2), rue des Dechanges, 5170 `r params$site_name`.
+
+- Reseau de chaleur mis en service en **novembre 2024**
+- Promoteur : **Devlop Ream Group** | Operateur DBFMO : **Karno** (K-0001)
+- Consommation chauffage annuelle : **`r params$conso_chauffage_mwh_an` MWh**
+- Decarbonation : **100%** — `r params$co2_evite_20ans_t` tonnes CO2 evitees sur 20 ans
+
+::: notes
+Contrat DBFMO (Design-Build-Finance-Maintain-Operate) d'un cout de 430 000 EUR HTVA. Etudes et dimensionnement par Resolia, soutien financier de la Region Wallonne. Projet pilote demontrant la viabilite de reseaux de chaleur decarbones pour des quartiers residentiels de petite taille.
+:::
+
+## Installation technique
+
+- **Champ de sondes geothermiques** (source principale)
+- **PAC geothermique (GSHP)** : 40 kW, fonctionnement on/off
+- **PAC aerothermique (ASHP)** : 20 kW, modulation continue (backup & equilibrage)
+- **Ballon tampon** pour le stockage thermique (`r fmt(params$volume_ballon_l)` L)
+- **Installation PV** (~`r params$pv_kwc` kWc, panneaux installes sept. 2025)
+- Compteur ORES bidirectionnel (import/export)
+
+La combinaison **PAC + PV + stockage thermique** offre plusieurs degres de liberte pour l'optimisation.
+
+::: notes
+La geothermie est la source principale. L'aerothermie assure le backup et l'equilibrage thermique. Le PV a ete ajoute en 2025, un an apres la mise en service du reseau de chaleur.
+:::
+
+## Constats : un decalage production / consommation
+
+Aujourd'hui, la PAC tourne surtout **la nuit et tot le matin**, alors que le PV produit en **milieu de journee** (10h-14h).
+
+- **Decalage temporel important** entre production et consommation
+- Pic de puissance instantane : **`r params$pac_kw` kW** au demarrage simultane des deux PAC
+- Faible taux d'autoconsommation PV
+- COP median : **`r params$cop_median_hiver` a `r params$cop_median_misaison`** selon la saison
+- Prix BELPEX tres volatils : de < 50 a > 300 EUR/MWh
+
+Ce decalage est un probleme, mais aussi une **opportunite**.
+
+::: notes
+Le profil de consommation actuel n'est pas aligne avec la production PV. Le demarrage simultane des deux PAC cree des pointes de puissance qui augmentent le cout du contrat reseau. La volatilite des prix spot et le faible taux d'autoconsommation representent a la fois un defi et une opportunite d'optimisation.
+:::
+
+# Le contexte
+## Le marche de l'energie pousse au pilotage intelligent
+
+Dimanche 26 avril 2026, le prix spot belge a chute a **-479,27 EUR/MWh** — un record historique. Cause : surproduction solaire massive et faible demande le week-end.
+
+- Les prix negatifs deviennent **structurels** au printemps/ete, surtout les week-ends
+- Seuls les consommateurs en **contrat dynamique** en profitent reellement
+- Un reseau de chaleur avec stockage thermique est idealement place pour **absorber ces heures gratuites (voire remunerees)**
+
+Sources : [RTBF](https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-le-marche-de-gros-le-consommateur-y-gagne-t-il-11716042), [La Libre](https://www.lalibre.be/economie/mes-finances/2026/04/26/le-prix-de-lelectricite-est-passe-nettement-sous-la-barre-de-zero-dimanche-BZ34KKMI2ZEKJMRJ4DRKVJH6OY/), [Xemex](https://www.xemex.eu/en/dynamic-energy-prices-in-belgium-turning-risk-into-value/) (avril 2026)
+
+::: notes
+Ce record de -479 EUR/MWh depasse meme l'Allemagne (-414 EUR/MWh) le meme jour.
+:::
+
+## Les leviers du Wise Brain
+
+Le Wise Brain peut exploiter plusieurs strategies :
+
+- **Autoconsommation PV** : maximiser l'usage local du solaire (sans signal de prix)
+- **Peak shaving** : ecreter les pointes de puissance pour reduire la puissance souscrite
+- **Curtailment** : limiter l'injection PV pour maximiser l'autoconsommation
+- **Time-of-Use (ToU)** : decaler la consommation vers les heures bon marche
+
+Dans cette presentation, on se concentre sur le levier **Time-of-Use** — celui avec le plus grand potentiel de gains sur ce site.
+
+::: notes
+Le ballon tampon est la cle de la flexibilite : il permet de decoupler le moment de production thermique du moment de consommation.
+:::
+
+# Notre approche
+## D'ou viennent les donnees ?
+
+Pour optimiser, il faut croiser **3 flux terrain** au pas de 5 min :
+
+| Flux | Source | Ce qu'on mesure |
+|------|--------|-----------------|
+| **Consommation PAC** | Controleur Komfor (BigQuery) | Electricite consommee + temperature du ballon |
+| **Echanges reseau** | Compteur ORES (BigQuery) | Soutirage et injection (import/export) |
+| **Production PV** | Profil Elia (API) | Estimation regionale mise a l'echelle (~`r params$pv_kwc` kWc) |
+
+Ce croisement est possible **depuis novembre 2025** — on peut donc simuler l'optimisation jusqu'a aujourd'hui.
+
+::: notes
+L'API Elia fournit la production PV agregee par zone au pas de 15 min. Par calibration inverse, on obtient un facteur d'echelle equivalent a `r params$pv_kwc` kWc.
+:::
+
+## Que fait-on de ces donnees ?
+
+A ces 3 flux terrain, on ajoute deux sources externes pour **contextualiser** chaque pas de temps :
+
+- **Prix spot BELPEX** (ENTSO-E) : combien coute le kWh a cet instant ?
+- **Temperature exterieure** (Open-Meteo) : quel est le rendement (COP) de la PAC ?
+
+On en deduit ensuite deux grandeurs cles :
+
+- **Consommation hors PAC** = tout ce que le batiment consomme en dehors de la PAC
+- **Demande thermique** = chaleur produite par la PAC (consommation x COP)
+
+L'optimiseur combine le tout pour repondre a : **"Quand aurait-il fallu faire tourner la PAC pour payer moins cher, a confort egal ?"**
+
+::: notes
+Le COP varie avec la temperature exterieure (de ~`r params$cop_median_hiver` en hiver a ~`r params$cop_median_misaison` en mi-saison), ce qui impacte directement le cout reel de production thermique.
+:::
+
+## L'optimiseur ToU : principe
+
+**Idee** : deplacer la consommation PAC des heures cheres vers les heures bon marche, grace a l'inertie thermique du ballon tampon.
+
+On le **pre-chauffe** quand le prix est bas, et on **puise dedans** quand le prix est haut.
+
+L'optimiseur utilise la **programmation lineaire (LP)** : la PAC module sa charge en continu (0-100%) selon le prix spot, pour trouver le planning de fonctionnement le moins cher.
+
+**Contrainte de confort** : la temperature du ballon reste dans la plage de consigne [`r params$t_min`-`r params$t_max` C] — les occupants ne doivent rien ressentir.
+
+::: notes
+L'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Une variante MILP (on/off pur) existe pour les PAC sans inverter, mais le mode LP est utilise en production pour `r params$site_name`.
+:::
+
+## L'optimiseur ToU : fonctionnement
+
+1. Decoupe la periode en **blocs de 24 h** avec chevauchement (lookahead)
+2. Pour chaque bloc, resout un **programme lineaire (LP)** minimisant le cout sous contraintes thermiques
+3. Verifie a chaque pas que `t_ballon` reste entre `r params$t_min` et `r params$t_max` C
+4. Integre le **COP variable** (fonction de la temperature exterieure)
+5. **Chaine les blocs** : la temperature finale d'un bloc initialise le suivant
+
+**Garde-fou** : si la facture optimisee est pire que la baseline, l'optimiseur retombe sur le profil mesure.
+
+::: notes
+Le COP varie avec la temperature exterieure : ~`r params$cop_median_hiver` par -3 C (hiver) a ~`r params$cop_median_misaison` par 17 C (mi-saison). La contrainte T_min est "molle" (soft constraint avec penalite) pour garantir que le solveur trouve toujours une solution.
+:::
+
+# Les resultats
+## Impact financier : -`r params$gain_pct`% sur la facture
+
+**Simulation** : mode `r params$mode_optim` | `r params$n_days` jours (`r params$date_debut` -> `r params$date_fin`) | contrat `r params$type_contrat` | PAC `r params$pac_kw` kW | PV `r params$pv_kwc` kWc | Ballon `r fmt(params$volume_ballon_l)` L [`r params$t_min`-`r params$t_max` C]
+
+|  | Baseline (thermostat) | Optimise (EMS Wise) | Gain |
+|--|----------------------:|--------------------:|-----:|
+| Cout soutirage | `r fmt(params$cout_soutirage_baseline)` EUR | `r fmt(params$cout_soutirage_opti)` EUR | `r fmt(params$cout_soutirage_baseline - params$cout_soutirage_opti)` EUR |
+| Revenu injection | `r fmt(params$rev_injection_baseline)` EUR | `r fmt(params$rev_injection_opti)` EUR | `r fmt(params$rev_injection_opti - params$rev_injection_baseline)` EUR |
+| **Facture nette** | **`r fmt(params$facture_baseline)` EUR** | **`r fmt(params$facture_opti)` EUR** | **-`r fmt(params$gain_eur)` EUR (-`r params$gain_pct`%)** |
+| **Extrapole /an** | **`r fmt(round(params$facture_baseline / params$n_days * 365))` EUR** | **`r fmt(round(params$facture_opti / params$n_days * 365))` EUR** | **-`r fmt(params$gain_eur_per_year)` EUR/an** |
+
+**`r fmt(params$gain_eur_per_day, 2)` EUR d'economie par jour**, juste en pilotant intelligemment la PAC.
+
+::: notes
+Ces chiffres sont calcules sur `r params$n_days` jours de donnees reelles mesurees sur site. L'extrapolation annuelle suppose un profil de consommation similaire sur les mois manquants.
+:::
+
+## Energie et flexibilite
+
+| Metrique | Baseline | Optimise (EMS) | Delta |
+|----------|--------:|---------:|------:|
+| Soutirage reseau | `r fmt(params$soutirage_baseline_kwh)` kWh | `r fmt(params$soutirage_opti_kwh)` kWh | `r fmt(params$soutirage_baseline_kwh - params$soutirage_opti_kwh)` kWh (-`r pct_delta(params$soutirage_baseline_kwh, params$soutirage_opti_kwh)`%) |
+| Injection reseau | `r fmt(params$injection_baseline_kwh)` kWh | `r fmt(params$injection_opti_kwh)` kWh | `r fmt(params$injection_baseline_kwh - params$injection_opti_kwh)` kWh (-`r pct_delta(params$injection_baseline_kwh, params$injection_opti_kwh)`%) |
+| Autoconsommation PV | `r fmt1(params$ac_baseline)`% | `r fmt1(params$ac_opti)`% | +`r round(params$ac_opti - params$ac_baseline)` points |
+| Autosuffisance | `r fmt1(params$as_baseline)`% | `r fmt1(params$as_opti)`% | +`r round(params$as_opti - params$as_baseline)` points |
+| Conso PAC electrique | `r fmt(params$conso_pac_baseline_kwh)` kWh | `r fmt(params$conso_pac_opti_kwh)` kWh | `r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh (-`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%) |
+| Conformite thermique | `r fmt1(params$conformite_baseline)`% | `r fmt1(params$conformite_opti)`% | +`r round(params$conformite_opti - params$conformite_baseline)` points |
+
+La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. L'EMS ne reduit pas la consommation, il la **decale** vers les heures solaires et les prix bas.
+
+::: notes
+La conformite thermique passe de `r fmt1(params$conformite_baseline)`% a `r fmt1(params$conformite_opti)`% : le thermostat actuel maintient le ballon sous `r params$t_min` C la majorite du temps, alors que l'EMS le maintient dans la plage [`r params$t_min`-`r params$t_max` C]. L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%.
+:::
+
+## Impact CO2
+
+| | Valeur |
+|---|------:|
+| Emissions baseline | `r fmt(params$co2_baseline_kg)` kg CO2eq |
+| Reduction estimee | ~`r fmt(params$co2_saved_kg)` kg CO2eq (-`r params$co2_pct_reduction`%) |
+| Equiv. voiture | `r fmt(params$co2_equiv_car_km)` km evites/an |
+| Equiv. arbres | `r params$co2_equiv_trees_year` arbres plantes/an |
+
+Le decalage vers les heures solaires reduit aussi l'intensite carbone de la consommation.
+
+::: notes
+Les emissions CO2 sont calculees sur base du mix electrique belge (167 gCO2/kWh). La reduction provient principalement du decalage de consommation vers les heures solaires, ou l'intensite carbone du reseau est plus faible.
+:::
+
+# Et ensuite ?
+## Le message cle
+
+> "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit et le soir quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
+
+**Bonus confort** : la temperature du ballon actuelle est en moyenne sous `r params$t_min` C. L'EMS la maintient dans la plage [`r params$t_min`-`r params$t_max` C] — le client gagne en confort **et** en economies.
+
+::: notes
+Argument double : non seulement la facture baisse de `r params$gain_pct`%, mais le confort thermique est aussi ameliore.
+:::
+
+## Prochaines implementations
+
+- **Peak shaving** : ecreter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en sequencant le demarrage des deux PAC
+- **Curtailment** : limiter l'injection PV en periode de prix negatifs pour maximiser l'autoconsommation
+- **Distinction GSHP / ASHP** : piloter les deux PAC independamment (on/off vs modulante) — necessite un sous-comptage individuel
+
+::: notes
+Aujourd'hui l'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Avec un sous-comptage separe GSHP/ASHP, on pourrait planifier les cycles GSHP sur les heures bon marche tout en modulant l'ASHP en temps reel.
+:::

@@ -29,6 +29,13 @@ SimulationParams <- R6::R6Class("SimulationParams",
     taxe_transport_eur_kwh = NULL,
     coeff_injection = NULL,
 
+    # --- BELIX contract ---
+    belix_m_eur_mwh = NULL,
+    belix_r_eur_mwh = NULL,
+    belix_t_eur_mwh = NULL,
+    belix_peak_hours = NULL,
+    belix_injection_fixe = NULL,
+
     # --- Battery ---
     batterie_active = NULL,
     batt_kwh = NULL,
@@ -66,18 +73,23 @@ SimulationParams <- R6::R6Class("SimulationParams",
     qp_w_smooth = NULL,
 
     #' @description Create a new SimulationParams object.
-    #' @param t_consigne Target tank temperature (degrees C, default 50)
+    #' @param t_consigne Target tank temperature (degrees C, default 35)
     #' @param t_tolerance Temperature tolerance band (degrees C, default 5)
     #' @param p_pac_kw Heat pump electrical power (kW). If NULL, derived from p_pac_th_kw / cop_nominal.
     #' @param p_pac_th_kw Heat pump thermal power (kW, default 60). This is the manufacturer-rated output.
     #' @param cop_nominal Nominal COP at reference temperature (default 3.5)
     #' @param t_ref_cop Reference external temperature for COP (default 7)
     #' @param volume_ballon_l Tank volume in liters (NULL = auto-size based on PAC power)
-    #' @param type_contrat Contract type: "dynamique" or "fixe" (default "dynamique")
+    #' @param type_contrat Contract type: "dynamique", "fixe", or "belix" (default "dynamique")
     #' @param prix_fixe_offtake Fixed offtake price EUR/kWh (default 0.30)
     #' @param prix_fixe_injection Fixed injection price EUR/kWh (default 0.03)
     #' @param taxe_transport_eur_kwh Transport tax EUR/kWh (default 0.15)
     #' @param coeff_injection Injection coefficient (default 1.0)
+    #' @param belix_m_eur_mwh BELIX supplier margin EUR/MWh (default 65.15)
+    #' @param belix_r_eur_mwh BELIX network fees EUR/MWh (default 112.10)
+    #' @param belix_t_eur_mwh BELIX taxes EUR/MWh (default 16.29)
+    #' @param belix_peak_hours BELIX contract peak hours list (default list(c(7,11), c(17,22)))
+    #' @param belix_injection_fixe BELIX fixed injection price EUR/kWh (default 0.03)
     #' @param batterie_active Whether battery is enabled (default FALSE)
     #' @param batt_kwh Battery capacity in kWh (default 10)
     #' @param batt_kw Battery power in kW (default 5)
@@ -101,12 +113,15 @@ SimulationParams <- R6::R6Class("SimulationParams",
     #' @param qp_w_comfort QP comfort weight (default 0.001)
     #' @param qp_w_smooth QP smoothing weight (default 0.01)
     initialize = function(
-      t_consigne = 50, t_tolerance = 5,
+      t_consigne = 35, t_tolerance = 5,
       p_pac_kw = NULL, p_pac_th_kw = 60, cop_nominal = 3.5, t_ref_cop = 7,
       volume_ballon_l = NULL,
       type_contrat = "dynamique",
       prix_fixe_offtake = 0.30, prix_fixe_injection = 0.03,
       taxe_transport_eur_kwh = 0.15, coeff_injection = 1.0,
+      belix_m_eur_mwh = 65.15, belix_r_eur_mwh = 112.10,
+      belix_t_eur_mwh = 16.29, belix_peak_hours = list(c(7, 11), c(17, 22)),
+      belix_injection_fixe = 0.03,
       batterie_active = FALSE, batt_kwh = 10, batt_kw = 5,
       batt_rendement = 0.90, batt_soc_min = 0.10, batt_soc_max = 0.90,
       curtailment_active = FALSE, curtail_kw = 5,
@@ -149,6 +164,11 @@ SimulationParams <- R6::R6Class("SimulationParams",
       self$prix_fixe_injection <- prix_fixe_injection
       self$taxe_transport_eur_kwh <- taxe_transport_eur_kwh
       self$coeff_injection <- coeff_injection
+      self$belix_m_eur_mwh <- belix_m_eur_mwh
+      self$belix_r_eur_mwh <- belix_r_eur_mwh
+      self$belix_t_eur_mwh <- belix_t_eur_mwh
+      self$belix_peak_hours <- belix_peak_hours
+      self$belix_injection_fixe <- belix_injection_fixe
 
       self$batterie_active <- batterie_active
       self$batt_kwh <- batt_kwh
@@ -200,6 +220,11 @@ SimulationParams <- R6::R6Class("SimulationParams",
         coeff_injection = self$coeff_injection,
         prix_fixe_offtake = self$prix_fixe_offtake,
         prix_fixe_injection = self$prix_fixe_injection,
+        belix_m_eur_mwh = self$belix_m_eur_mwh,
+        belix_r_eur_mwh = self$belix_r_eur_mwh,
+        belix_t_eur_mwh = self$belix_t_eur_mwh,
+        belix_peak_hours = self$belix_peak_hours,
+        belix_injection_fixe = self$belix_injection_fixe,
         perte_kwh_par_qt = self$perte_kwh_par_qt,
         autoconso_cible = self$autoconso_cible,
         baseline_alpha = self$baseline_alpha,

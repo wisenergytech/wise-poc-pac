@@ -71,7 +71,17 @@ mod_sidebar_ui <- function(id) {
       shiny::conditionalPanel(sprintf("!input['%s'] || output['%s']", ns("volume_auto"), ns("csv_measured")),
         shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 200, min = 50, max = 100000, step = 50),
         shiny::uiOutput(ns("volume_csv_hint"))),
-      shiny::numericInput(ns("t_consigne"), "Consigne (C)", 50, min = 35, max = 65, step = 1),
+      shiny::numericInput(ns("t_consigne"), "Consigne (C)", 35, min = 20, max = 65, step = 1),
+      shiny::tags$div(
+        style = sprintf(
+          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:2px 0 6px 0;font-size:.72rem;line-height:1.4;",
+          cl$bg_card, cl$text_muted),
+        shiny::HTML(sprintf(
+          paste0(
+            "<span style='color:%s;'><b>D\u00e9faut : 35\u00b0C</b> (moyenne mesur\u00e9e Karno : 33\u00b0C pour SP tank top). ",
+            "Typique d'un r\u00e9seau basse temp\u00e9rature aliment\u00e9 par PAC. ",
+            "Ajustez selon votre installation.</span>"),
+          cl$text_muted))),
       shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
       shiny::uiOutput(ns("ecs_field")),
@@ -90,11 +100,25 @@ mod_sidebar_ui <- function(id) {
     # ---- Tarification ----
     shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Tarification", tip("Le type de contrat change fondamentalement la strategie optimale. En dynamique, le prix varie chaque heure selon le marche Belpex.")),
-      shiny::radioButtons(ns("type_contrat"), "Contrat", choices = c("Dynamique (spot)" = "dynamique", "Fixe" = "fixe"), selected = "dynamique", inline = TRUE),
+      shiny::radioButtons(ns("type_contrat"), "Contrat", choices = c("Dynamique (spot)" = "dynamique", "Index\u00e9 BELIX" = "belix", "Fixe" = "fixe"), selected = "dynamique", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='fixe'", ns("type_contrat")),
         shiny::numericInput(ns("prix_fixe_offtake"), "Prix soutirage (EUR/kWh)", 0.30, min = 0, max = 1, step = 0.01),
         shiny::numericInput(ns("prix_fixe_injection"), "Prix injection (EUR/kWh)", 0.03, min = -0.05, max = 0.5, step = 0.005),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Prix constants sur toute la periode. En contrat fixe, le mode 'cout' perd son avantage car il n'y a pas de variation de prix a exploiter.")),
+      shiny::conditionalPanel(sprintf("input['%s']=='belix'", ns("type_contrat")),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.4;margin-bottom:6px;", cl$text_muted),
+          shiny::HTML("Prix = BELIX mensuel + M + R + T.<br>BELIX = moyenne mensuelle des prix spot Belpex (peak 8h-20h / off-peak 20h-8h).")),
+        shiny::numericInput(ns("belix_m"), "M - Marge fournisseur (EUR/MWh)", 65.15, min = 0, max = 200, step = 0.01),
+        shiny::numericInput(ns("belix_r"), "R - Frais reseau (EUR/MWh)", 112.10, min = 0, max = 300, step = 0.01),
+        shiny::numericInput(ns("belix_t"), "T - Taxes (EUR/MWh)", 16.29, min = 0, max = 100, step = 0.01),
+        shiny::uiOutput(ns("belix_mrt_total")),
+        shiny::numericInput(ns("belix_injection_fixe"), "Prix injection (EUR/kWh)", 0.03, min = -0.05, max = 0.5, step = 0.005),
+        shiny::tags$details(
+          shiny::tags$summary(style = sprintf("font-size:.7rem;color:%s;cursor:pointer;margin-top:4px;", cl$text_muted), "Plages horaires du contrat"),
+          shiny::tags$div(style = "margin-top:4px;",
+            shiny::textInput(ns("belix_peak_def"), "Heures pleines (debut-fin, ...)", value = "7-11, 17-22"),
+            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
+              shiny::HTML("Les heures non couvertes sont creuses.<br>Defaut Profondeville : pleines 7h-11h et 17h-22h."))))),
       shiny::conditionalPanel(sprintf("input['%s']=='dynamique'", ns("type_contrat")),
         shiny::numericInput(ns("taxe_transport"), "Taxes reseau (EUR/kWh)", 0.15, min = 0, max = 0.5, step = 0.01),
         shiny::numericInput(ns("coeff_injection"), "Coeff. injection / spot", 1.0, min = 0, max = 1.5, step = 0.05),
@@ -237,7 +261,7 @@ mod_sidebar_ui <- function(id) {
       ns = function(x) x,
       shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download")),
       shiny::downloadButton(ns("download_rds"), "Exporter simulation (.rds)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-export")),
-      shiny::downloadButton(ns("download_pptx"), "Exporter presentation (.pptx)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-powerpoint"))),
+      shiny::downloadButton(ns("download_presentation"), "Exporter presentation (.html)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-code"))),
     shiny::fileInput(ns("import_rds"), NULL, accept = ".rds", buttonLabel = "Importer .rds", placeholder = "simulation.rds"),
     # Automagic button (masque temporairement)
     # shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
@@ -472,6 +496,32 @@ mod_sidebar_server <- function(id, sim_state) {
     })
     shiny::outputOptions(output, "pv_auto_display", suspendWhenHidden = FALSE)
 
+    # ---- BELIX M+R+T total display ----
+    output$belix_mrt_total <- shiny::renderUI({
+      m <- input$belix_m; r <- input$belix_r; t_val <- input$belix_t
+      shiny::req(m, r, t_val)
+      total <- m + r + t_val
+      shiny::tags$div(style = sprintf("font-size:.8rem;color:%s;padding:4px 8px;background:%s;border-radius:4px;margin-bottom:6px;",
+        cl$opti, cl$bg_input),
+        shiny::HTML(sprintf("<b>M+R+T = %.2f EUR/MWh</b> (%.4f EUR/kWh)", total, total / 1000)))
+    })
+
+    # ---- BELIX peak hours parser ----
+    belix_peak_hours_parsed <- shiny::reactive({
+      txt <- input$belix_peak_def
+      if (is.null(txt) || nchar(trimws(txt)) == 0) return(list(c(7, 11), c(17, 22)))
+      parts <- trimws(strsplit(txt, ",")[[1]])
+      result <- list()
+      for (p in parts) {
+        bounds <- as.integer(trimws(strsplit(p, "-")[[1]]))
+        if (length(bounds) == 2 && !any(is.na(bounds))) {
+          result <- c(result, list(bounds))
+        }
+      }
+      if (length(result) == 0) return(list(c(7, 11), c(17, 22)))
+      result
+    })
+
     # ---- params_r ----
     params_r <- shiny::reactive({
       shiny::req(input$t_consigne, input$t_tolerance, input$p_pac_th_kw,
@@ -490,6 +540,11 @@ mod_sidebar_server <- function(id, sim_state) {
         coeff_injection = ifelse(input$type_contrat == "dynamique", input$coeff_injection, 1),
         prix_fixe_offtake = ifelse(input$type_contrat == "fixe", input$prix_fixe_offtake, 0.30),
         prix_fixe_injection = ifelse(input$type_contrat == "fixe", input$prix_fixe_injection, 0.03),
+        belix_m_eur_mwh = if (input$type_contrat == "belix" && !is.null(input$belix_m)) input$belix_m else 65.15,
+        belix_r_eur_mwh = if (input$type_contrat == "belix" && !is.null(input$belix_r)) input$belix_r else 112.10,
+        belix_t_eur_mwh = if (input$type_contrat == "belix" && !is.null(input$belix_t)) input$belix_t else 16.29,
+        belix_peak_hours = belix_peak_hours_parsed(),
+        belix_injection_fixe = if (input$type_contrat == "belix" && !is.null(input$belix_injection_fixe)) input$belix_injection_fixe else 0.03,
         perte_kwh_par_qt = 0.05,
         pv_kwc = kwc,
         pv_kwc_ref = if (input$data_source == "csv") input$pv_kwc_ref else kwc,
@@ -1163,10 +1218,10 @@ mod_sidebar_server <- function(id, sim_state) {
       }
     )
 
-    # ---- PPTX Export ----
-    output$download_pptx <- shiny::downloadHandler(
+    # ---- Presentation Export (RevealJS HTML) ----
+    output$download_presentation <- shiny::downloadHandler(
       filename = function() {
-        paste0("pac_presentation_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".pptx")
+        paste0("pac_presentation_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
       },
       content = function(file) {
         shiny::req(sim_filtered(), kpis_r())
@@ -1176,7 +1231,7 @@ mod_sidebar_server <- function(id, sim_state) {
             params = params_r(),
             sim_data = sim_filtered(),
             output_file = file,
-            format = "pptx"
+            format = "revealjs"
           )
         })
       }

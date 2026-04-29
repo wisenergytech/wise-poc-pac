@@ -318,6 +318,27 @@ DataGenerator <- R6::R6Class("DataGenerator",
           prix_offtake   = params$prix_fixe_offtake,
           prix_injection = params$prix_fixe_injection
         )
+      } else if (params$type_contrat == "belix") {
+        # BELIX indexed contract: monthly average spot + M + R + T
+        spread_eur_kwh <- (params$belix_m_eur_mwh + params$belix_r_eur_mwh +
+                            params$belix_t_eur_mwh) / 1000
+        belix_monthly <- compute_belix_monthly(df)
+        peak_hours <- if (!is.null(params$belix_peak_hours)) {
+          params$belix_peak_hours
+        } else {
+          list(c(7, 11), c(17, 22))
+        }
+        is_peak <- is_contract_peak(df$timestamp, peak_hours)
+        ym <- format(df$timestamp, "%Y-%m", tz = "Europe/Brussels")
+        belix_lookup <- stats::setNames(belix_monthly$belix_peak_eur_kwh, belix_monthly$year_month)
+        belix_lookup_off <- stats::setNames(belix_monthly$belix_offpeak_eur_kwh, belix_monthly$year_month)
+        belix_price <- ifelse(is_peak, belix_lookup[ym], belix_lookup_off[ym])
+        df <- df %>% dplyr::mutate(
+          prix_offtake   = belix_price + spread_eur_kwh,
+          prix_injection = params$belix_injection_fixe
+        )
+        message(sprintf("[BELIX] Spread M+R+T = %.2f EUR/kWh, %d mois calcules",
+          spread_eur_kwh, nrow(belix_monthly)))
       } else {
         df <- df %>% dplyr::mutate(
           prix_offtake   = prix_eur_kwh + params$taxe_transport_eur_kwh,

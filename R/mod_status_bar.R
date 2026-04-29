@@ -50,6 +50,9 @@ mod_status_bar_server <- function(id, sidebar) {
       }
       contrat <- if (p$type_contrat == "fixe") {
         sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
+      } else if (p$type_contrat == "belix") {
+        mrt <- (p$belix_m_eur_mwh + p$belix_r_eur_mwh + p$belix_t_eur_mwh) / 1000
+        sprintf("BELIX (M+R+T=%.4f EUR/kWh)", mrt)
       } else {
         sprintf("spot (taxe=%.3f, coeff_inj=%.2f)", p$taxe_transport_eur_kwh, p$coeff_injection)
       }

@@ -1,0 +1,149 @@
+/*-- scss:defaults --*/
+
+// Fonts — Raleway from Google Fonts (WISE brand)
+@import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&display=swap');
+
+$font-family-sans-serif: "Raleway", Helvetica, sans-serif;
+$presentation-heading-font: "Raleway", Helvetica, sans-serif;
+
+// WISE brand colors from _brand.yml
+$body-bg: #ffffff;
+$body-color: #272626;                          // body-text
+$link-color: #cd8f40;                          // gold (secondary)
+$link-color-hover: lighten(#cd8f40, 15%);
+$selection-bg: lighten(#cd8f40, 35%);
+
+// Heading styling — dark-green primary
+$presentation-heading-color: #234547;           // primary / dark-green
+$presentation-heading-font-weight: 700;
+$presentation-heading-text-transform: none;
+
+// Font sizes
+$presentation-font-size-root: 36px;
+$presentation-h2-font-size: 1.5em;
+$presentation-h3-font-size: 1.2em;
+
+// Code
+$code-block-bg: #f4f6f6;                       // light (dark-green-50)
+$code-block-border-color: #d4d4d4;             // border
+$code-color: #234547;                           // primary
+
+// Borders
+$border-color: #d4d4d4;                         // border
+
+/*-- scss:rules --*/
+
+// Background wave image is injected via JS (data-background-image) in the .qmd
+// to ensure proper embedding in self-contained HTML output.
+
+// Hide any auto-injected slide-logo from _brand.yml
+.reveal .slide-logo {
+  display: none !important;
+}
+
+// Partner logos: Karno + Destore + WISE — fixed bottom-right, next to slide number
+#partner-logos {
+  position: fixed;
+  bottom: 6px;
+  right: 60px;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  img:nth-child(1) {
+    // Karno logo — largest, vertically centered on the others
+    height: 55px;
+    width: auto;
+  }
+
+  img:nth-child(2) {
+    // Destore logo — wide
+    height: 30px;
+    width: auto;
+  }
+
+  img:nth-child(3) {
+    // WISE logo — wide/short
+    height: 24px;
+    width: auto;
+  }
+}
+
+// Title slide styling
+.reveal .slides section.quarto-title-block {
+  text-align: left;
+}
+
+.reveal .quarto-title-block .quarto-title {
+  color: #234547;
+}
+
+.reveal .quarto-title-block .subtitle {
+  color: #cd8f40;                               // gold
+  font-weight: 500;
+  font-size: 0.7em;
+  margin-top: 0.3em;
+}
+
+.reveal .quarto-title-block .quarto-title-authors,
+.reveal .quarto-title-block .quarto-title-author-name {
+  color: #4f6a6c;                               // dark-green-800
+}
+
+.reveal .quarto-title-block .date {
+  color: #7d7d7d;                               // muted-text
+}
+
+// Table styling — WISE brand
+.reveal table {
+  border-collapse: collapse;
+  font-size: 0.65em;
+}
+
+.reveal table thead th {
+  background-color: #234547;                    // primary
+  color: #ffffff;
+  font-weight: 600;
+  border-bottom: 2px solid #234547;
+}
+
+.reveal table tbody td {
+  border-bottom: 1px solid #d4d4d4;             // border
+}
+
+.reveal table tbody tr:nth-child(even) {
+  background-color: #f4f6f6;                    // light
+}
+
+// Strong/bold text — gold accent
+.reveal strong {
+  color: #cd8f40;                               // gold
+  font-weight: 700;
+}
+
+// Slide number
+.reveal .slide-number {
+  color: #7d7d7d;                               // muted-text
+  font-size: 0.5em;
+}
+
+// Footer
+.reveal .footer {
+  color: #7d7d7d;                               // muted-text
+  font-size: 0.4em;
+}
+
+// Lists
+.reveal ul li,
+.reveal ol li {
+  margin-bottom: 0.4em;
+}
+
+// Blockquote — gold accent bar
+.reveal blockquote {
+  border-left: 4px solid #cd8f40;               // gold
+  padding-left: 1em;
+  font-style: italic;
+  color: #4f6a6c;                               // dark-green-800
+}
