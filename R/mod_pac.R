@@ -14,22 +14,6 @@ mod_pac_ui <- function(id) {
         shiny::tags$div(class = "d-flex align-items-center gap-2",
           shiny::tags$strong("Work in progress"),
           shiny::tags$span(class = "text-muted", "— Analyse PAC en cours de developpement")))),
-    bslib::layout_columns(col_widths = c(4, 4, 4),
-      bslib::value_box(
-        title = "Heures creuses BELIX",
-        value = shiny::uiOutput(ns("vb_belix_temps")),
-        showcase = bsicons::bs_icon("clock"),
-        theme = "secondary"),
-      bslib::value_box(
-        title = "Conso PAC en heures creuses",
-        value = shiny::uiOutput(ns("vb_belix_pac")),
-        showcase = bsicons::bs_icon("lightning-charge"),
-        theme = "secondary"),
-      bslib::value_box(
-        title = "Verdict pilotage",
-        value = shiny::uiOutput(ns("vb_belix_verdict")),
-        showcase = bsicons::bs_icon("thermometer-half"),
-        theme = "secondary")),
     bslib::layout_columns(col_widths = 12,
       bslib::card(full_screen = TRUE,
         card_header_tip("Profil horaire moyen de la PAC",
@@ -93,17 +77,6 @@ mod_pac_server <- function(id, sidebar) {
         dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
     }
 
-    # ---- Helper: price-to-color (green=cheap, red=expensive) ----
-    prix_to_color <- function(prix, alpha = 0.15) {
-      rng <- range(prix, na.rm = TRUE)
-      span <- max(rng[2] - rng[1], 0.001)
-      t <- (prix - rng[1]) / span  # 0=cheapest, 1=most expensive
-      r <- round(34 + 205 * t)
-      g <- round(139 - 71 * t)
-      b <- round(69 - 1 * t)
-      sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
-    }
-
     # ---- BELIX pilotage value boxes ----
     belix_data <- shiny::reactive({
       shiny::req(sim_filtered())
@@ -145,46 +118,11 @@ mod_pac_server <- function(id, sidebar) {
       op <- compute_hourly_profile(sim, params, "optimized")
       hp <- compute_hourly_prix(sim)
 
-      # Build price-colored background shapes (one rect per hour)
-      colors <- prix_to_color(hp$prix_moy, alpha = 0.12)
-      shapes <- lapply(seq_len(nrow(hp)), function(i) {
-        list(type = "rect", xref = "x", yref = "paper",
-          x0 = hp$hour[i] - 0.5, x1 = hp$hour[i] + 0.5,
-          y0 = 0, y1 = 1,
-          fillcolor = colors[i], line = list(width = 0))
-      })
-
-      plotly::plot_ly() %>%
-        plotly::add_trace(
-          data = bl, x = ~hour, y = ~pac_moy_kw, name = "Baseline",
-          type = "scatter", mode = "lines+markers",
-          line = list(color = cl$reel, width = 2.5),
-          marker = list(color = cl$reel, size = 5),
-          hovertemplate = "<b>%{x}h</b><br>Baseline: %{y:.1f} kW<extra></extra>") %>%
-        plotly::add_trace(
-          data = op, x = ~hour, y = ~pac_moy_kw, name = "Optimise",
-          type = "scatter", mode = "lines+markers",
-          line = list(color = cl$opti, width = 2.5),
-          marker = list(color = cl$opti, size = 5),
-          hovertemplate = "<b>%{x}h</b><br>Optimise: %{y:.1f} kW<extra></extra>") %>%
-        plotly::add_trace(
-          data = hp, x = ~hour, y = ~(prix_moy * 1000), name = "Prix moyen",
-          type = "scatter", mode = "lines",
-          line = list(color = cl$text_muted, width = 1, dash = "dot"),
-          yaxis = "y2",
-          hovertemplate = "<b>%{x}h</b><br>Prix: %{y:.0f} EUR/MWh<extra></extra>") %>%
-        plotly::layout(
-          shapes = shapes,
-          xaxis = list(dtick = 1, tick0 = 0,
-            title = list(text = "Heure", standoff = 10)),
-          yaxis2 = list(
-            overlaying = "y", side = "right",
-            title = list(text = "EUR/MWh", standoff = 5),
-            showgrid = FALSE,
-            tickfont = list(size = 9, color = cl$text_muted)),
-          legend = list(orientation = "h", y = -0.15)
-        ) %>%
-        pl_layout(ylab = "Puissance PAC moyenne (kW)")
+      profil_data <- rbind(
+        transform(bl, scenario = "Baseline"),
+        transform(op, scenario = "Optimise")
+      )
+      plot_profil_horaire(profil_data, hp)
     })
 
   })

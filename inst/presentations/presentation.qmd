@@ -1,6 +1,6 @@
 ---
-title: "Karno x Wise Brain"
-subtitle: "Proof of Concept - Pilotage du reseau de chaleur de Profondeville"
+title: "Pilotage du reseau de chaleur de Profondeville avec WISE. Brain"
+subtitle: "Proof of Concept"
 author: "WISE"
 date: today
 lang: fr
@@ -15,6 +15,7 @@ params:
   # Technical
   pac_kw: 60
   pv_kwc: 42
+  pv_kwc_ref: 64
   volume_ballon_l: 2500
   t_min: 45
   t_max: 55
@@ -68,6 +69,18 @@ params:
   belix_pct_pac_offpeak: 58.9
   belix_ecart_pp: -3.6
   belix_verdict: "thermostat"
+  # Dual-contract decomposition
+  has_dual_contrat: false
+  type_contrat_cible: ""
+  dual_fa: 3195
+  dual_fb: 2141
+  dual_fd: 0
+  dual_levier1: 1054
+  dual_levier2: 0
+  dual_gain_total: 0
+  dual_gain_total_pct: 0
+  dual_proj_gain_total_an: 0
+  dual_proj_fd_an: 0
 format:
   revealjs:
     embed-resources: true
@@ -100,18 +113,14 @@ photo_team_b64 <- if (file.exists("images/photo_team_wise.jpg")) {
   img_to_b64("images/photo_team_wise.jpg", mime = "image/jpeg")
 } else NULL
 
-# Load pre-computed chart data (saved by render_presentation)
-tranche_file <- "tranche_data.rds"
-has_tranche <- file.exists(tranche_file)
-if (has_tranche) tranche_data <- readRDS(tranche_file)
+# Load pre-built plotly objects (saved by render_presentation)
+plot_tranches_file <- "plot_tranches.rds"
+has_tranche <- file.exists(plot_tranches_file)
+if (has_tranche) p_tranches <- readRDS(plot_tranches_file)
 
-profil_file <- "profil_data.rds"
-has_profil <- file.exists(profil_file)
-if (has_profil) {
-  profil_raw <- readRDS(profil_file)
-  profil_data <- profil_raw$profil
-  profil_prix <- profil_raw$prix
-}
+plot_profil_file <- "plot_profil.rds"
+has_profil <- file.exists(plot_profil_file)
+if (has_profil) p_profil <- readRDS(plot_profil_file)
 ```
 
 ```{r logos-and-background, echo=FALSE, results='asis'}
@@ -324,73 +333,64 @@ L'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Le COP
 :::
 
 # Les resultats
-## Impact financier : -`r params$gain_pct`% sur la facture
 
-**Simulation** : `r params$n_days` jours | contrat `r params$type_contrat` | PAC `r params$pac_kw` kW | PV `r params$pv_kwc` kWc | Ballon `r fmt(params$volume_ballon_l)` L [`r params$t_min`-`r params$t_max` C]
+```{r impact-financier, echo=FALSE, results='asis'}
+dual <- isTRUE(params$has_dual_contrat)
 
-|  | Baseline (thermostat) | Optimise (Wise Brain) | Gain |
-|--|----------------------:|--------------------:|-----:|
-| Cout soutirage | `r fmt(params$cout_soutirage_baseline)` EUR | `r fmt(params$cout_soutirage_opti)` EUR | `r fmt(params$cout_soutirage_baseline - params$cout_soutirage_opti)` EUR |
-| Revenu injection | `r fmt(params$rev_injection_baseline)` EUR | `r fmt(params$rev_injection_opti)` EUR | `r fmt(params$rev_injection_opti - params$rev_injection_baseline)` EUR |
-| **Facture nette** | **`r fmt(params$facture_baseline)` EUR** | **`r fmt(params$facture_opti)` EUR** | **-`r fmt(params$gain_eur)` EUR (-`r params$gain_pct`%)** |
-| **Extrapole /an** | **`r fmt(params$proj_facture_baseline_an)` EUR** | **`r fmt(params$proj_facture_opti_an)` EUR** | **-`r fmt(params$proj_gain_eur_an)` EUR/an** |
-
-**`r fmt(params$gain_eur_per_day, 2)` EUR d'economie par jour**, juste en pilotant intelligemment la PAC.
+if (dual) {
+  cat(sprintf("## Impact financier : -%s%% sur la facture\n\n", params$dual_gain_total_pct))
+  cat(sprintf("**Simulation** : %s jours | %s -> %s | PAC %s kW | PV %s kWc | Ballon %s L [%s-%s C]\n\n",
+    params$n_days, params$type_contrat, params$type_contrat_cible,
+    params$pac_kw, params$pv_kwc, fmt(params$volume_ballon_l),
+    params$t_min, params$t_max))
+  cat("|  | EUR | % facture actuelle |\n")
+  cat("|--|----:|---:|\n")
+  cat(sprintf("| **Situation actuelle** (%s, thermostat) | **%s** | — |\n",
+    params$type_contrat, fmt(params$dual_fa)))
+  cat(sprintf("| Levier 1 : Pilotage ToU (meme contrat) | -%s | -%s%% |\n",
+    fmt(params$dual_levier1),
+    round(params$dual_levier1 / params$dual_fa * 100)))
+  cat(sprintf("| Levier 2 : Passage %s -> %s | -%s | -%s%% |\n",
+    params$type_contrat, params$type_contrat_cible,
+    fmt(params$dual_levier2),
+    round(params$dual_levier2 / params$dual_fa * 100)))
+  cat(sprintf("| **Resultat final** (%s + Wise Brain) | **%s** | **-%s%%** |\n\n",
+    params$type_contrat_cible, fmt(params$dual_fd), params$dual_gain_total_pct))
+  cat(sprintf("**Economie totale : %s EUR** sur %s jours = levier pilotage (%s EUR) + levier contrat (%s EUR).\n\n",
+    fmt(params$dual_gain_total), params$n_days,
+    fmt(params$dual_levier1), fmt(params$dual_levier2)))
+} else {
+  cat(sprintf("## Impact financier : -%s%% sur la facture\n\n", params$gain_pct))
+  cat(sprintf("**Simulation** : %s jours | contrat %s | PAC %s kW | PV %s kWc | Ballon %s L [%s-%s C]\n\n",
+    params$n_days, params$type_contrat, params$pac_kw, params$pv_kwc,
+    fmt(params$volume_ballon_l), params$t_min, params$t_max))
+  cat("|  | Baseline (thermostat) | Optimise (Wise Brain) | Gain |\n")
+  cat("|--|----------------------:|--------------------:|-----:|\n")
+  cat(sprintf("| Cout soutirage | %s EUR | %s EUR | %s EUR |\n",
+    fmt(params$cout_soutirage_baseline), fmt(params$cout_soutirage_opti),
+    fmt(params$cout_soutirage_baseline - params$cout_soutirage_opti)))
+  cat(sprintf("| Revenu injection | %s EUR | %s EUR | %s EUR |\n",
+    fmt(params$rev_injection_baseline), fmt(params$rev_injection_opti),
+    fmt(params$rev_injection_opti - params$rev_injection_baseline)))
+  cat(sprintf("| **Facture nette** | **%s EUR** | **%s EUR** | **-%s EUR (-%s%%)** |\n",
+    fmt(params$facture_baseline), fmt(params$facture_opti),
+    fmt(params$gain_eur), params$gain_pct))
+  cat(sprintf("| **Extrapole /an** | **%s EUR** | **%s EUR** | **-%s EUR/an** |\n\n",
+    fmt(params$proj_facture_baseline_an), fmt(params$proj_facture_opti_an),
+    fmt(params$proj_gain_eur_an)))
+  cat(sprintf("**%s EUR d'economie par jour**, juste en pilotant intelligemment la PAC.\n\n",
+    fmt(params$gain_eur_per_day, 2)))
+}
+```
 
 ::: notes
-Ces chiffres sont calcules sur `r params$n_days` jours de donnees reelles mesurees sur site. L'extrapolation annuelle suppose un profil de consommation similaire sur les mois manquants.
+Ces chiffres sont calcules sur `r params$n_days` jours de donnees reelles mesurees sur site. En mode dual-contrat, le levier 1 (pilotage) montre le gain du Wise Brain sur le contrat actuel, le levier 2 montre le gain additionnel du changement de contrat.
 :::
 
 ## Le glissement en action
 
 ```{r plot-pac-tranches, echo=FALSE, fig.width=12, fig.height=5}
-if (has_tranche) {
-  bl <- tranche_data[tranche_data$scenario == "Baseline", ]
-  op <- tranche_data[tranche_data$scenario == "Optimise", ]
-
-  bl_color <- "rgba(249,115,22,0.75)"
-  op_color <- "rgba(6,182,212,0.75)"
-
-  p <- plotly::plot_ly() |>
-    plotly::add_bars(
-      data = bl, x = ~tranche, y = ~kwh, name = "Baseline",
-      text = ~paste0(pct, "%"), textposition = "outside",
-      textfont = list(size = 12, family = "JetBrains Mono"),
-      marker = list(color = bl_color),
-      hovertemplate = paste0(
-        "<b>%{x}</b><br>Baseline: %{y:.0f} kWh (%{text})",
-        "<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>"),
-      customdata = ~prix_moyen) |>
-    plotly::add_bars(
-      data = op, x = ~tranche, y = ~kwh, name = "Optimise",
-      text = ~paste0(pct, "%"), textposition = "outside",
-      textfont = list(size = 12, family = "JetBrains Mono"),
-      marker = list(color = op_color),
-      hovertemplate = paste0(
-        "<b>%{x}</b><br>Optimise: %{y:.0f} kWh (%{text})",
-        "<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>"),
-      customdata = ~prix_moyen)
-
-  # Price annotations on baseline bars
-  for (i in seq_len(nrow(bl))) {
-    p <- p |> plotly::add_annotations(
-      x = bl$tranche[i], y = bl$kwh[i] + max(bl$kwh) * 0.15,
-      text = paste0(round(bl$prix_moyen[i]), " EUR/MWh"),
-      showarrow = FALSE,
-      font = list(size = 11, color = "#94a3b8"))
-  }
-
-  p |>
-    plotly::layout(
-      barmode = "group", bargap = 0.15,
-      paper_bgcolor = "rgba(0,0,0,0)",
-      plot_bgcolor = "rgba(0,0,0,0)",
-      font = list(color = "#e2e8f0", family = "Raleway, sans-serif", size = 13),
-      yaxis = list(title = "kWh", gridcolor = "rgba(148,163,184,0.15)"),
-      xaxis = list(title = "", gridcolor = "rgba(0,0,0,0)"),
-      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15)
-    )
-}
+if (has_tranche) p_tranches
 ```
 
 Le Wise Brain **deplace** la consommation PAC de la nuit et des heures de pointe vers la **tranche solaire** (10h-16h), ou le PV produit et les prix sont bas.
@@ -402,69 +402,7 @@ Le graphique montre la redistribution de la consommation PAC entre les 4 tranche
 ## Le glissement en action (suite)
 
 ```{r plot-profil-horaire, echo=FALSE, fig.width=14, fig.height=5}
-if (has_profil) {
-  bl <- profil_data[profil_data$scenario == "Baseline", ]
-  op <- profil_data[profil_data$scenario == "Optimise", ]
-  hp <- profil_prix
-
-  # Price-to-color: green (cheap) to red (expensive)
-  prix_to_color <- function(prix, alpha = 0.12) {
-    rng <- range(prix, na.rm = TRUE)
-    span <- max(rng[2] - rng[1], 0.001)
-    t <- (prix - rng[1]) / span
-    r <- round(34 + 205 * t)
-    g <- round(139 - 71 * t)
-    b <- round(69 - 1 * t)
-    sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
-  }
-
-  # Background shapes colored by price
-  colors <- prix_to_color(hp$prix_moy, alpha = 0.12)
-  shapes <- lapply(seq_len(nrow(hp)), function(i) {
-    list(type = "rect", xref = "x", yref = "paper",
-      x0 = hp$hour[i] - 0.5, x1 = hp$hour[i] + 0.5,
-      y0 = 0, y1 = 1,
-      fillcolor = colors[i], line = list(width = 0))
-  })
-
-  bl_color <- "rgba(249,115,22,0.9)"
-  op_color <- "rgba(6,182,212,0.9)"
-
-  plotly::plot_ly() |>
-    plotly::add_trace(
-      data = bl, x = ~hour, y = ~pac_moy_kw, name = "Baseline",
-      type = "scatter", mode = "lines+markers",
-      line = list(color = bl_color, width = 2.5),
-      marker = list(color = bl_color, size = 5),
-      hovertemplate = "<b>%{x}h</b><br>Baseline: %{y:.1f} kW<extra></extra>") |>
-    plotly::add_trace(
-      data = op, x = ~hour, y = ~pac_moy_kw, name = "Optimise",
-      type = "scatter", mode = "lines+markers",
-      line = list(color = op_color, width = 2.5),
-      marker = list(color = op_color, size = 5),
-      hovertemplate = "<b>%{x}h</b><br>Optimise: %{y:.1f} kW<extra></extra>") |>
-    plotly::add_trace(
-      data = hp, x = ~hour, y = ~(prix_moy * 1000), name = "Prix moyen",
-      type = "scatter", mode = "lines",
-      line = list(color = "#94a3b8", width = 1, dash = "dot"),
-      yaxis = "y2",
-      hovertemplate = "<b>%{x}h</b><br>Prix: %{y:.0f} EUR/MWh<extra></extra>") |>
-    plotly::layout(
-      shapes = shapes,
-      paper_bgcolor = "rgba(0,0,0,0)",
-      plot_bgcolor = "rgba(0,0,0,0)",
-      font = list(color = "#e2e8f0", family = "Raleway, sans-serif", size = 13),
-      xaxis = list(dtick = 1, tick0 = 0, title = "Heure",
-        gridcolor = "rgba(0,0,0,0)"),
-      yaxis = list(title = "Puissance PAC moyenne (kW)",
-        gridcolor = "rgba(148,163,184,0.15)"),
-      yaxis2 = list(overlaying = "y", side = "right",
-        title = list(text = "EUR/MWh", standoff = 5),
-        showgrid = FALSE,
-        tickfont = list(size = 9, color = "#94a3b8")),
-      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15)
-    )
-}
+if (has_profil) p_profil
 ```
 
 Le **profil horaire** confirme : la baseline (orange) tourne la nuit et le soir — les heures les plus cheres (fond rouge). Le Wise Brain (cyan) concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
@@ -491,29 +429,68 @@ La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. Le Wise Bra
 L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%. Le soutirage reseau diminue car on consomme davantage de PV localement.
 :::
 
-## Projection annuelle (estimation)
+```{r projection-annuelle, echo=FALSE, results='asis'}
+dual <- isTRUE(params$has_dual_contrat)
 
-Nos `r params$n_days` jours de mesures couvrent **`r params$proj_heat_coverage_pct`% de la demande thermique annuelle**^[Calcule a partir des degres-jours de chauffage (DJ 16.5 C, normales Synergrid 30 ans). Les mois mesures totalisent `r params$proj_heat_coverage_pct`% des DJ annuels. L'extrapolation suppose que le cout est proportionnel a la demande thermique — ce qui ne tient pas compte des variations saisonnieres de prix spot ou de COP.] (nov-avr = saison de chauffe). Projection sur 12 mois, ponderee par le profil climatique belge :
+cat("## Projection annuelle (estimation)\n\n")
+cat(sprintf("Nos %s jours de mesures couvrent **%s%% de la demande thermique annuelle**^[Calcule a partir des degres-jours de chauffage (DJ 16.5 C, normales Synergrid 30 ans). Les mois mesures totalisent %s%% des DJ annuels. L'extrapolation corrige pour : (1) le **COP saisonnier** — estime a partir des temperatures Open-Meteo 2024-2026 (COP plus eleve en ete = moins de kWh electriques par DJ), et (2) le **spread de prix BELPEX** — ecart interquartile horaire par mois (donnees ENTSO-E 2024-2026), qui determine le potentiel d'arbitrage ToU.] (nov-avr = saison de chauffe). Projection sur 12 mois, ponderee par le profil climatique belge :\n\n",
+  params$n_days, params$proj_heat_coverage_pct, params$proj_heat_coverage_pct))
 
-| KPI | Mesure (`r params$n_days` j) | Projection annuelle |
-|-----|---:|---:|
-| **Facture baseline** | `r fmt(params$facture_baseline)` EUR | ~`r fmt(params$proj_facture_baseline_an)` EUR |
-| **Facture optimisee** | `r fmt(params$facture_opti)` EUR | ~`r fmt(params$proj_facture_opti_an)` EUR |
-| **Economie** | `r fmt(params$gain_eur)` EUR (-`r params$gain_pct`%) | **~`r fmt(params$proj_gain_eur_an)` EUR (-`r params$proj_gain_pct_an`%)** |
-| Production PV | `r fmt(round(params$soutirage_baseline_kwh + params$injection_baseline_kwh))` kWh | ~`r fmt(params$proj_pv_total_an)` kWh |
-| Autoconsommation opti | `r fmt1(params$ac_opti)`% | ~`r fmt1(params$proj_ac_opti_an)`% |
-| CO2 evite | `r fmt(params$co2_saved_kg)` kg | ~`r fmt(params$proj_co2_saved_an_kg)` kg |
+if (dual) {
+  cat("| KPI | Mesure | Projection annuelle |\n")
+  cat("|-----|---:|---:|\n")
+  cat(sprintf("| **Facture actuelle** (%s) | %s EUR | ~%s EUR |\n",
+    params$type_contrat, fmt(params$dual_fa), fmt(params$proj_facture_baseline_an)))
+  cat(sprintf("| **Facture finale** (%s + Wise Brain) | %s EUR | ~%s EUR |\n",
+    params$type_contrat_cible, fmt(params$dual_fd), fmt(params$dual_proj_fd_an)))
+  cat(sprintf("| **Economie totale** | %s EUR (-%s%%) | **~%s EUR/an** |\n",
+    fmt(params$dual_gain_total), params$dual_gain_total_pct,
+    fmt(params$dual_proj_gain_total_an)))
+  cat(sprintf("| Production PV | %s kWh | ~%s kWh |\n",
+    fmt(round(params$soutirage_baseline_kwh + params$injection_baseline_kwh)),
+    fmt(params$proj_pv_total_an)))
+  cat(sprintf("| CO2 evite | %s kg | ~%s kg |\n\n",
+    fmt(params$co2_saved_kg), fmt(params$proj_co2_saved_an_kg)))
+} else {
+  cat(sprintf("| KPI | Mesure (%s j) | Projection annuelle |\n", params$n_days))
+  cat("|-----|---:|---:|\n")
+  cat(sprintf("| **Facture baseline** | %s EUR | ~%s EUR |\n",
+    fmt(params$facture_baseline), fmt(params$proj_facture_baseline_an)))
+  cat(sprintf("| **Facture optimisee** | %s EUR | ~%s EUR |\n",
+    fmt(params$facture_opti), fmt(params$proj_facture_opti_an)))
+  cat(sprintf("| **Economie** | %s EUR (-%s%%) | **~%s EUR (-%s%%)** |\n",
+    fmt(params$gain_eur), params$gain_pct,
+    fmt(params$proj_gain_eur_an), params$proj_gain_pct_an))
+  cat(sprintf("| Production PV | %s kWh | ~%s kWh |\n",
+    fmt(round(params$soutirage_baseline_kwh + params$injection_baseline_kwh)),
+    fmt(params$proj_pv_total_an)))
+  cat(sprintf("| Autoconsommation opti | %s%% | ~%s%% |\n",
+    fmt1(params$ac_opti), fmt1(params$proj_ac_opti_an)))
+  cat(sprintf("| CO2 evite | %s kg | ~%s kg |\n\n",
+    fmt(params$co2_saved_kg), fmt(params$proj_co2_saved_an_kg)))
+}
 
-**Attention** : estimation a la grosse louche. Les mois d'ete ont peu de chauffage mais beaucoup de PV — le gain ToU est plus faible, mais l'autoconsommation "gratuite" augmente.
+cat("**Hypotheses** : les mois non mesures sont extrapoles via DJ Synergrid, corriges par le COP moyen mensuel (temperatures Open-Meteo 2024-2026) et le spread de prix BELPEX mensuel (ENTSO-E 2024-2026). Limite : le comportement thermique estival (ECS seule, pas de chauffage) n'est pas modelise explicitement.\n")
+```
 
 ::: notes
-La projection utilise les degres-jours de chauffage (HDD) mensuels typiques pour Namur comme poids de saisonnalite. Les mois d'ete (juin-aout) representent ~4% de la demande thermique annuelle. La production PV est ponderee par l'irradiation solaire mensuelle. L'autoconsommation projetee est plus basse car en ete le ratio PV/demande est eleve (beaucoup de PV, peu de charge a absorber).
+La projection corrige pour deux effets saisonniers : (1) le COP plus eleve en ete reduit les kWh electriques par DJ (~4.5 en mai vs ~2.5 en janvier), et (2) le spread de prix BELPEX varie par mois (plus de volatilite solaire en ete). Les mois d'ete (juin-aout) representent ~2% de la demande thermique annuelle — leur contribution financiere reste marginale meme apres correction.
 :::
 
 # Et ensuite ?
 ## Le message cle
 
-> "La PAC du projet K-0001 a Profondeville represente `r params$pct_pac_conso`% de la consommation electrique et tourne surtout la nuit quand l'energie est chere. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$proj_gain_eur_an)` EUR/an**, avec les donnees mesurees sur site."
+```{r message-cle, echo=FALSE, results='asis'}
+dual <- isTRUE(params$has_dual_contrat)
+if (dual) {
+  cat(sprintf('> "La PAC du projet K-0001 a Profondeville represente %s%% de la consommation electrique et tourne surtout la nuit quand l\'energie est chere. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. En combinant pilotage ToU et passage %s -> %s : **-%s%% sur la facture, ~%s EUR/an d\'economie**, avec les donnees mesurees sur site."\n',
+    params$pct_pac_conso, params$type_contrat, params$type_contrat_cible,
+    params$dual_gain_total_pct, fmt(params$dual_proj_gain_total_an)))
+} else {
+  cat(sprintf('> "La PAC du projet K-0001 a Profondeville represente %s%% de la consommation electrique et tourne surtout la nuit quand l\'energie est chere. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-%s%% sur la facture, ~%s EUR/an d\'economie**, avec les donnees mesurees sur site."\n',
+    params$pct_pac_conso, params$gain_pct, fmt(params$proj_gain_eur_an)))
+}
+```
 
 ## Prochaines etapes
 
@@ -575,7 +552,7 @@ La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_
 La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). Le Wise Brain pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
 :::
 
-## Pourquoi le PV affiche ~`r params$pv_kwc` kWc alors que l'installation fait 42 kWc ? {#faq-pv}
+## Pourquoi le PV affiche ~`r params$pv_kwc_ref` kWc alors que l'installation fait `r params$pv_kwc` kWc ? {#faq-pv}
 
 Les donnees de production PV mesurees (FusionSolar) presentent des problemes de **desynchronisation et de couverture partielle** qui les rendent inexploitables pour la simulation. On utilise donc le **profil regional Elia** (province de Namur, quart-horaire) mis a l'echelle.
 

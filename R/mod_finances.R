@@ -221,42 +221,9 @@ mod_finances_server <- function(id, sidebar) {
 
       bl$scenario <- "Baseline"
       op$scenario <- "Optimise"
-      df <- rbind(bl, op)
+      tranche_data <- rbind(bl, op)
 
-      bl_rgba <- paste0("rgba(",
-        paste(grDevices::col2rgb(cl$reel), collapse = ","), ",",
-        cl$scenarios$baseline$bar_opacity, ")")
-      op_rgba <- paste0("rgba(",
-        paste(grDevices::col2rgb(cl$opti), collapse = ","), ",",
-        cl$scenarios$optimise$bar_opacity, ")")
-
-      p <- plotly::plot_ly() %>%
-        plotly::add_bars(
-          data = bl, x = ~tranche, y = ~kwh, name = "Baseline",
-          text = ~paste0(pct, "%"), textposition = "outside",
-          textfont = list(size = 10, family = "JetBrains Mono"),
-          marker = list(color = bl_rgba),
-          hovertemplate = "<b>%{x}</b><br>Baseline: %{y:.0f} kWh (%{text})<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>",
-          customdata = ~prix_moyen) %>%
-        plotly::add_bars(
-          data = op, x = ~tranche, y = ~kwh, name = "Optimise",
-          text = ~paste0(pct, "%"), textposition = "outside",
-          textfont = list(size = 10, family = "JetBrains Mono"),
-          marker = list(color = op_rgba),
-          hovertemplate = "<b>%{x}</b><br>Optimise: %{y:.0f} kWh (%{text})<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>",
-          customdata = ~prix_moyen)
-
-      # Add price annotations on baseline bars
-      for (i in seq_len(nrow(bl))) {
-        p <- p %>% plotly::add_annotations(
-          x = bl$tranche[i], y = bl$kwh[i] + max(bl$kwh) * 0.12,
-          text = paste0(round(bl$prix_moyen[i]), " EUR/MWh"),
-          showarrow = FALSE, font = list(size = 9, color = cl$text_muted))
-      }
-
-      p %>%
-        plotly::layout(barmode = "group", bargap = 0.15) %>%
-        pl_layout(ylab = "kWh")
+      plot_pac_tranches(tranche_data)
     })
 
     # ---- Waterfall ----

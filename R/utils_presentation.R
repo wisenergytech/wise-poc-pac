@@ -10,7 +10,8 @@
 #' @param format "revealjs" (HTML) or "pptx"
 #' @return Path to the rendered file (invisibly)
 render_presentation <- function(kpis, params, sim_data, output_file,
-                                format = c("revealjs", "pptx")) {
+                                format = c("revealjs", "pptx"),
+                                kpis_cible = NULL, params_cible = NULL) {
   format <- match.arg(format)
 
   # Date range from simulation data
@@ -45,6 +46,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     # Technical (from simulation params)
     pac_kw = params$p_pac_th_kw %||% 60,
     pv_kwc = params$pv_kwc %||% 64,
+    pv_kwc_ref = params$pv_kwc_ref %||% params$pv_kwc %||% 64,
     volume_ballon_l = params$volume_ballon_l %||% 32000,
     t_min = params$t_min %||% 45,
     t_max = params$t_max %||% 55,
@@ -97,7 +99,26 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     belix_pct_temps_offpeak = belix$pct_temps_offpeak,
     belix_pct_pac_offpeak = belix$pct_pac_offpeak,
     belix_ecart_pp = belix$ecart_pp,
-    belix_verdict = belix$verdict
+    belix_verdict = belix$verdict,
+    # Dual-contract decomposition (optional)
+    has_dual_contrat = !is.null(kpis_cible),
+    type_contrat_cible = if (!is.null(params_cible)) params_cible$type_contrat else "",
+    dual_fa = round(kpis$facture_baseline),
+    dual_fb = round(kpis$facture_opti),
+    dual_fd = if (!is.null(kpis_cible)) round(kpis_cible$facture_opti) else 0,
+    dual_levier1 = round(kpis$facture_baseline - kpis$facture_opti),
+    dual_levier2 = if (!is.null(kpis_cible)) round(kpis$facture_opti - kpis_cible$facture_opti) else 0,
+    dual_gain_total = if (!is.null(kpis_cible)) round(kpis$facture_baseline - kpis_cible$facture_opti) else 0,
+    dual_gain_total_pct = if (!is.null(kpis_cible) && abs(kpis$facture_baseline) > 0.001) {
+      round((kpis$facture_baseline - kpis_cible$facture_opti) / abs(kpis$facture_baseline) * 100)
+    } else 0,
+    # Dual-contract annual projections
+    dual_proj_gain_total_an = if (!is.null(kpis_cible)) {
+      round((kpis$facture_baseline - kpis_cible$facture_opti) * proj$facture_baseline_an / max(kpis$facture_baseline, 1))
+    } else 0,
+    dual_proj_fd_an = if (!is.null(kpis_cible)) {
+      round(kpis_cible$facture_opti * proj$facture_baseline_an / max(kpis$facture_baseline, 1))
+    } else 0
   )
 
   # Locate the .qmd template
@@ -106,14 +127,15 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     qmd_path <- file.path("inst", "presentations", "presentation.qmd")
   }
 
-  # --- PAC par tranche horaire ---
+  # --- PAC par tranche horaire (plotly object) ---
   tranche_baseline <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "baseline")
   tranche_opti <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "optimized")
   tranche_baseline$scenario <- "Baseline"
   tranche_opti$scenario <- "Optimise"
   tranche_data <- rbind(tranche_baseline, tranche_opti)
+  p_tranches <- plot_pac_tranches(tranche_data)
 
-  # --- Profil horaire moyen (puissance PAC + prix) ---
+  # --- Profil horaire moyen (plotly object) ---
   get_pac_kwh_vec <- function(sim, params, type) {
     if (type == "optimized") {
       sim$sim_pac_on * params$p_pac_kw * params$dt_h
@@ -143,6 +165,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   profil_prix <- dplyr::tibble(hour = h_vec, prix = sim_data$prix_offtake) %>%
     dplyr::group_by(hour) %>%
     dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
+  p_profil <- plot_profil_horaire(profil_data, profil_prix)
 
   # Copy template + assets to a temp dir for rendering
   tmp_dir <- tempfile("presentation_")
@@ -150,10 +173,9 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   src_dir <- dirname(qmd_path)
   file.copy(list.files(src_dir, full.names = TRUE), tmp_dir, recursive = TRUE)
 
-  # Save pre-computed chart data for the .qmd
-  saveRDS(tranche_data, file.path(tmp_dir, "tranche_data.rds"))
-  saveRDS(list(profil = profil_data, prix = profil_prix),
-          file.path(tmp_dir, "profil_data.rds"))
+  # Save pre-built plotly objects for the .qmd
+  saveRDS(p_tranches, file.path(tmp_dir, "plot_tranches.rds"))
+  saveRDS(p_profil, file.path(tmp_dir, "plot_profil.rds"))
 
   tmp_qmd <- file.path(tmp_dir, "presentation.qmd")
 

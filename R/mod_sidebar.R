@@ -203,8 +203,17 @@ mod_sidebar_ui <- function(id) {
           shiny::tags$div(class = "section-title", "Optimisation"),
           shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;line-height:1.4;", cl$text),
             shiny::HTML(sprintf(
-              "<b style='color:%s;'>TOU (Time of Use)</b> &mdash; activ\u00e9<br><span style='font-size:.65rem;color:%s;'>L'optimiseur exploite les variations de prix Belpex pour d\u00e9caler la consommation PAC vers les heures les moins ch\u00e8res.</span>",
-              cl$success, cl$text_muted)))))
+              "<b style='color:%s;'>TOU (Time of Use)</b> &mdash; activ\u00e9",
+              cl$success)),
+            shiny::conditionalPanel(sprintf("input['%s']=='belix'", ns("type_contrat")),
+              shiny::tags$span(style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+                "L'optimiseur d\u00e9cale la consommation PAC vers les heures creuses (tarif r\u00e9duit).")),
+            shiny::conditionalPanel(sprintf("input['%s']=='dynamique'", ns("type_contrat")),
+              shiny::tags$span(style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+                "L'optimiseur exploite les variations de prix spot (Belpex) pour d\u00e9caler la consommation PAC vers les heures les moins ch\u00e8res.")),
+            shiny::conditionalPanel(sprintf("input['%s']=='fixe'", ns("type_contrat")),
+              shiny::tags$span(style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+                "Prix plat : l'optimiseur maximise l'autoconsommation PV (pas de signal horaire).")))))
     } else shiny::tags$div(class = "sidebar-section",
       shiny::tags$div(class = "section-title", "Optimisation", tip("Choisissez l'approche de resolution et les strategies d'optimisation a activer.")),
       {
@@ -244,11 +253,18 @@ mod_sidebar_ui <- function(id) {
       shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
         shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strategies d'optimisation"),
         if (isTRUE(ui_cfg$strategies$tou)) shiny::tagList(
-          shiny::checkboxInput(ns("tou_active"), shiny::tags$span("TOU (Time of Use)", tip("Exploite les variations de prix Belpex pour decaler la consommation PAC vers les heures les moins cheres. Desactivez pour optimiser uniquement l'autoconsommation PV, sans tenir compte des prix.")),
+          shiny::checkboxInput(ns("tou_active"), shiny::tags$span("TOU (Time of Use)", tip("Exploite le signal prix (heures creuses/pleines ou spot Belpex selon le contrat) pour decaler la consommation PAC. Desactivez pour optimiser uniquement l'autoconsommation PV, sans tenir compte des prix.")),
             TRUE),
           shiny::conditionalPanel(sprintf("input['%s']", ns("tou_active")),
-            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
-              shiny::HTML("L'optimiseur exploite les variations de prix Belpex pour minimiser le cout."))),
+            shiny::conditionalPanel(sprintf("input['%s']=='belix'", ns("type_contrat")),
+              shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+                "L'optimiseur decale la consommation vers les heures creuses (tarif reduit BELIX).")),
+            shiny::conditionalPanel(sprintf("input['%s']=='dynamique'", ns("type_contrat")),
+              shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+                "L'optimiseur exploite les variations de prix spot (Belpex) pour minimiser le cout.")),
+            shiny::conditionalPanel(sprintf("input['%s']=='fixe'", ns("type_contrat")),
+              shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
+                "Prix plat : l'optimiseur maximise l'autoconsommation PV (pas de signal horaire)."))),
           shiny::conditionalPanel(sprintf("!input['%s']", ns("tou_active")),
             shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
               shiny::HTML("Prix aplatis : l'optimiseur maximise l'autoconsommation PV sans signal prix.")))),
@@ -266,7 +282,7 @@ mod_sidebar_ui <- function(id) {
       shiny::dateRangeInput(ns("date_range"), NULL, start = default_start, end = default_end, language = "fr",
         min = as.Date("2020-01-01"), max = Sys.Date()),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-        shiny::HTML("Prix Belpex reels (ENTSO-E) utilises automatiquement.<br>Source : CSV locaux + API si besoin."))),
+        shiny::HTML("Prix reels (ENTSO-E / grilles tarifaires) utilises automatiquement.<br>Source : CSV locaux + API si besoin."))),
 
     # ---- Buttons ----
     shiny::actionButton(ns("run_sim"), "Simuler l'optimisation", class = "btn-primary w-100 mt-2", icon = shiny::icon("play")),
@@ -433,7 +449,7 @@ mod_sidebar_server <- function(id, sim_state) {
       } else if (alpha < 0.7) {
         list(txt = "Bon suivi PV", col = "#f59e0b", marge = "moderee")
       } else {
-        list(txt = "Suivi PV intensif", col = cl$reel, marge = "faible -- gains = valeur du Belpex")
+        list(txt = "Suivi PV intensif", col = cl$reel, marge = "faible -- gains = valeur du signal prix")
       }
 
       stale_warning <- if (stale) {
@@ -1310,7 +1326,9 @@ mod_sidebar_server <- function(id, sim_state) {
             params = params_r(),
             sim_data = sim_filtered(),
             output_file = file,
-            format = "revealjs"
+            format = "revealjs",
+            kpis_cible = kpis_cible_r(),
+            params_cible = sim_result()$params_cible
           )
         })
       }

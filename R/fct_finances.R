@@ -11,10 +11,11 @@
 # Source: https://www.synergrid.be/fr/centre-de-documentation/statistiques-et-donnees/degres-jours
 # Raw DJ: Jan=396, Feb=335, Mar=290, Apr=185, May=95, Jun=28, Jul=10, Aug=9, Sep=51, Oct=148, Nov=272, Dec=367
 # Total = 2186
-.monthly_heating_weight <- c(
+.monthly_dj <- c(
   Jan = 396, Feb = 335, Mar = 290, Apr = 185, May = 95, Jun = 28,
   Jul = 10, Aug = 9, Sep = 51, Oct = 148, Nov = 272, Dec = 367
-) / 2186
+)
+.monthly_heating_weight <- .monthly_dj / sum(.monthly_dj)
 
 # Solar irradiation: PVGIS-SARAH3, Namur (50.47N, 4.87E), horizontal plane
 # Source: https://re.jrc.ec.europa.eu/api/v5_3/MRcalc (year 2020)
@@ -26,73 +27,174 @@
   Jul = 159.46, Aug = 146.77, Sep = 112.31, Oct = 48.98, Nov = 36.10, Dec = 20.34
 ) / 1201.99
 
+#' Compute monthly COP and price spread profiles from historical data
+#'
+#' Loads local BELPEX prices and Open-Meteo temperatures (2024-2026) to build
+#' monthly average COP and price spread for each calendar month. Used by
+#' \code{project_annual_kpis()} to weight seasonal corrections.
+#'
+#' @param cop_nominal Nominal COP at reference temperature (default 3.5)
+#' @param t_ref Reference external temperature for nominal COP (default 7)
+#' @param data_dir Directory containing CSV data files
+#' @return Named list with \code{cop} (named numeric, 12 months) and
+#'   \code{spread} (named numeric, 12 months, EUR/MWh interquartile spread)
+#' @keywords internal
+.compute_monthly_profiles <- function(cop_nominal = 3.5, t_ref = 7,
+                                      data_dir = "data") {
+  month_names <- names(.monthly_dj)
+
+  # --- Temperature -> COP per month ---
+  temp_files <- list.files(data_dir, pattern = "openmeteo_temperature_.*\\.csv$",
+                           full.names = TRUE)
+  if (length(temp_files) > 0) {
+    temp_df <- do.call(rbind, lapply(temp_files, function(f) {
+      d <- utils::read.csv(f, stringsAsFactors = FALSE)
+      d$timestamp <- as.POSIXct(d$timestamp, tz = "UTC")
+      d
+    }))
+    temp_df$month <- format(temp_df$timestamp, "%b")
+    monthly_t <- tapply(temp_df$t_ext, temp_df$month, mean, na.rm = TRUE)
+    cop_monthly <- calc_cop(as.numeric(monthly_t[month_names]),
+                            cop_nominal, t_ref)
+    names(cop_monthly) <- month_names
+  } else {
+    cop_monthly <- rep(cop_nominal, 12)
+    names(cop_monthly) <- month_names
+  }
+
+  # --- Prices -> spread per month (IQR of hourly prices) ---
+  price_files <- list.files(data_dir, pattern = "entsoe_prices_.*\\.csv$",
+                            full.names = TRUE)
+  if (length(price_files) > 0) {
+    price_df <- do.call(rbind, lapply(price_files, function(f) {
+      d <- utils::read.csv(f, stringsAsFactors = FALSE)
+      names(d) <- c("datetime", "price_eur_mwh")
+      d$datetime <- as.POSIXct(gsub("Z$", "", d$datetime), tz = "UTC")
+      d
+    }))
+    price_df$month <- format(price_df$datetime, "%b")
+    # Spread = IQR (Q75 - Q25) of daily prices, averaged per month
+    # This captures the room for ToU arbitrage
+    spread_monthly <- tapply(price_df$price_eur_mwh, price_df$month,
+                             function(x) {
+                               q <- quantile(x, c(0.25, 0.75), na.rm = TRUE)
+                               q[2] - q[1]
+                             })
+    spread_monthly <- as.numeric(spread_monthly[month_names])
+    names(spread_monthly) <- month_names
+  } else {
+    spread_monthly <- rep(1, 12)
+    names(spread_monthly) <- month_names
+  }
+
+  list(cop = cop_monthly, spread = spread_monthly)
+}
+
 #' Project KPIs to a full year using seasonal weights
 #'
 #' Takes KPIs computed over a partial year (e.g. Nov-Apr) and projects them
-#' to a full 12-month cycle using typical Belgian heating demand and PV
-#' production monthly profiles. This is a rough estimate ("grosse louche").
+#' to a full 12-month cycle using heating degree-days, COP seasonality
+#' (from historical temperatures), and price spread seasonality (from
+#' historical BELPEX prices).
 #'
 #' @param kpis Named list from KPICalculator$compute()
 #' @param sim_data Simulation dataframe with \code{timestamp} column
-#' @return Named list with projected annual KPIs:
-#'   \describe{
-#'     \item{measured_months}{Character vector of months covered}
-#'     \item{n_months_measured}{Number of months with data}
-#'     \item{facture_baseline_an}{Projected annual baseline bill (EUR)}
-#'     \item{facture_opti_an}{Projected annual optimised bill (EUR)}
-#'     \item{gain_eur_an}{Projected annual savings (EUR)}
-#'     \item{gain_pct_an}{Projected annual savings (\%)}
-#'     \item{pv_total_an}{Projected annual PV production (kWh)}
-#'     \item{ac_opti_an}{Projected annual self-consumption (\%)}
-#'     \item{co2_saved_an_kg}{Projected annual CO2 savings (kg)}
-#'   }
+#' @param cop_nominal Nominal COP at reference temperature (default 3.5)
+#' @param t_ref Reference external temperature for nominal COP (default 7)
+#' @param data_dir Directory for historical CSV data (default "data")
+#' @return Named list with projected annual KPIs
 #' @export
-project_annual_kpis <- function(kpis, sim_data) {
+project_annual_kpis <- function(kpis, sim_data, cop_nominal = 3.5, t_ref = 7,
+                                data_dir = "data") {
   # Identify which months are covered by simulation data
   months_covered <- unique(format(sim_data$timestamp, "%b"))
-  month_indices <- match(months_covered, names(.monthly_heating_weight))
+  month_names <- names(.monthly_dj)
+  month_indices <- match(months_covered, month_names)
   month_indices <- month_indices[!is.na(month_indices)]
+  unmeasured_indices <- setdiff(seq_len(12), month_indices)
 
-  # Weight of measured period vs full year
-  heat_measured <- sum(.monthly_heating_weight[month_indices])
-  heat_total <- sum(.monthly_heating_weight)
+  # DJ weights
+  dj_measured <- sum(.monthly_dj[month_indices])
+  dj_total <- sum(.monthly_dj)
+
+  # PV weights (unchanged — irradiation-based)
   pv_measured <- sum(.monthly_pv_weight[month_indices])
   pv_total_weight <- sum(.monthly_pv_weight)
-
-  # Scaling factors
-  heat_scale <- heat_total / heat_measured
   pv_scale <- pv_total_weight / pv_measured
 
-  # Financial projection: scale by heating demand (main cost driver)
-  facture_baseline_an <- round(kpis$facture_baseline * heat_scale)
-  facture_opti_an <- round(kpis$facture_opti * heat_scale)
-  gain_eur_an <- facture_baseline_an - facture_opti_an
+  # --- Load monthly COP and spread profiles from historical data ---
+  profiles <- .compute_monthly_profiles(cop_nominal, t_ref, data_dir)
+  cop_m <- profiles$cop      # COP by month (12 values)
+  spread_m <- profiles$spread # price spread by month (12 values)
+
+  # --- Measured-period averages (DJ-weighted) ---
+  cop_measured_avg <- weighted.mean(cop_m[month_indices],
+                                    .monthly_dj[month_indices])
+  spread_measured_avg <- weighted.mean(spread_m[month_indices],
+                                       .monthly_dj[month_indices])
+
+  # --- Baseline projection with COP correction ---
+  # Electricity cost per DJ is proportional to 1/COP: higher COP = less kWh
+  # For each unmeasured month: contribution = DJ_m * (COP_measured / COP_m)
+  # relative to measured where cost_per_DJ already embeds measured COP
+  if (length(unmeasured_indices) > 0) {
+    # Effective DJ for unmeasured months (COP-corrected)
+    dj_unmeasured_eff <- sum(
+      .monthly_dj[unmeasured_indices] * cop_measured_avg / cop_m[unmeasured_indices]
+    )
+  } else {
+    dj_unmeasured_eff <- 0
+  }
+  baseline_scale <- (dj_measured + dj_unmeasured_eff) / dj_measured
+
+  facture_baseline_an <- round(kpis$facture_baseline * baseline_scale)
+
+  # --- Gain projection with COP + spread correction ---
+  # ToU gain per month proportional to: DJ_m / COP_m * spread_m
+  # (volume to shift × price differential)
+  gain_weight_measured <- sum(
+    .monthly_dj[month_indices] / cop_m[month_indices] * spread_m[month_indices]
+  )
+
+  if (length(unmeasured_indices) > 0) {
+    gain_weight_unmeasured <- sum(
+      .monthly_dj[unmeasured_indices] / cop_m[unmeasured_indices] *
+        spread_m[unmeasured_indices]
+    )
+  } else {
+    gain_weight_unmeasured <- 0
+  }
+  gain_scale <- (gain_weight_measured + gain_weight_unmeasured) /
+    gain_weight_measured
+
+  gain_measured <- kpis$facture_baseline - kpis$facture_opti
+  gain_eur_an <- round(gain_measured * gain_scale)
+  facture_opti_an <- facture_baseline_an - gain_eur_an
+
   gain_pct_an <- if (facture_baseline_an > 0) {
     round(gain_eur_an / facture_baseline_an * 100)
   } else 0
 
-  # PV projection: scale by solar irradiation
+  # PV projection: scale by solar irradiation (unchanged)
   pv_total_an <- round(kpis$pv_total * pv_scale)
 
-  # Self-consumption: in summer more PV but less demand → ratio changes
-  # Rough estimate: weighted average of measured AC and a summer estimate
-  # In summer, PAC demand is low so AC drops (less load to absorb PV)
-  heat_summer <- heat_total - heat_measured
-  ac_summer_estimate <- max(20, kpis$ac_opti * 0.5)  # lower in summer
+  # Self-consumption: in summer more PV but less demand -> ratio changes
+  heat_summer <- 1 - sum(.monthly_heating_weight[month_indices])
+  ac_summer_estimate <- max(20, kpis$ac_opti * 0.5)
   ac_opti_an <- round(
-    (kpis$ac_opti * heat_measured + ac_summer_estimate * heat_summer) /
-      heat_total, 1
+    (kpis$ac_opti * sum(.monthly_heating_weight[month_indices]) +
+       ac_summer_estimate * heat_summer), 1
   )
 
-  # CO2 projection
+  # CO2 projection (COP-corrected like baseline)
   co2_saved_an_kg <- if (!is.null(kpis$co2_saved_kg)) {
-    round(kpis$co2_saved_kg * heat_scale)
+    round(kpis$co2_saved_kg * baseline_scale)
   } else 0
 
   list(
     measured_months = months_covered,
     n_months_measured = length(month_indices),
-    heat_coverage_pct = round(heat_measured / heat_total * 100),
+    heat_coverage_pct = round(dj_measured / dj_total * 100),
     facture_baseline_an = facture_baseline_an,
     facture_opti_an = facture_opti_an,
     gain_eur_an = gain_eur_an,
