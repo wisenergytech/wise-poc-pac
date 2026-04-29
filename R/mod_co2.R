@@ -82,22 +82,22 @@ mod_co2_server <- function(id, sidebar) {
           "Emissions CO2", "kg", cl$opti,
           baseline_val = k$co2_baseline_kg, opti_val = k$co2_opti_kg, gain_invert = TRUE,
           gain_val = round(k$co2_opti_kg - k$co2_baseline_kg, 1), gain_unit = "kg",
-          tooltip = "Emissions CO2 liees au soutirage reseau."),
+          tooltip = "Emissions CO2 totales liees au soutirage reseau sur la periode."),
+        kpi_card(sprintf("%.0f", k$co2_intensity_opti),
+          "Intensite carbone", "gCO2/kWh", cl$opti,
+          baseline_val = k$co2_intensity_baseline, opti_val = k$co2_intensity_opti, gain_invert = TRUE,
+          gain_val = round(k$co2_intensity_opti - k$co2_intensity_baseline, 1), gain_unit = "gCO2/kWh",
+          tooltip = "Intensite carbone ponderee par la consommation. En decalant la PAC vers les heures solaires (moins carbonees), l'intensite moyenne baisse."),
         kpi_card(sprintf("%.0f", k$co2_equiv_car_km),
           "Equiv. voiture", "km", cl$opti,
-          tooltip = "Kilometres de voiture equivalents au CO2 evite.")
-      )
-      wip_badge <- shiny::tags$div(
-        style = sprintf("flex:1;display:flex;align-items:center;justify-content:center;padding:12px;border-radius:8px;border:1px dashed %s;color:%s;font-size:.85rem;text-align:center;",
-          cl$text_muted, cl$text_muted),
-        shiny::tags$span(
-          shiny::icon("flask"), " Intensite carbone : work in progress"
-        )
+          tooltip = "Kilometres de voiture equivalents au CO2 evite (120 gCO2/km, WLTP)."),
+        kpi_card(sprintf("%.0f", k$co2_equiv_trees_year),
+          "Equiv. arbres", "/an", cl$opti,
+          tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite (25 kg CO2/arbre/an, FAO).")
       )
       do.call(shiny::tags$div, c(
         list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
-        lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k)),
-        list(shiny::tags$div(style = "flex:1;", wip_badge))
+        lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k))
       ))
     })
 
@@ -115,25 +115,10 @@ mod_co2_server <- function(id, sidebar) {
         paste0("gCO2 (", agg$label, ")"), agg_level = agg$level)
     })
 
-    # ---- Cumulative (baseline vs opti, same pattern as facture cumulee) ----
+    # ---- Cumulative (baseline vs opti) ----
     output$plot_co2_cumul <- plotly::renderPlotly({
       shiny::req(sim_co2(), co2_impact_r())
-      impact <- co2_impact_r()
-      d <- data.frame(
-        timestamp    = sim_co2()$timestamp,
-        cum_baseline = cumsum(ifelse(is.na(impact$co2_baseline_g), 0, impact$co2_baseline_g)) / 1000,
-        cum_opti     = cumsum(ifelse(is.na(impact$co2_opti_g), 0, impact$co2_opti_g)) / 1000
-      )
-      # Downsample to hourly
-      d <- d %>%
-        dplyr::mutate(.h = lubridate::floor_date(timestamp, "hour")) %>%
-        dplyr::group_by(.h) %>%
-        dplyr::slice_tail(n = 1) %>%
-        dplyr::ungroup() %>%
-        dplyr::select(timestamp, cum_baseline, cum_opti)
-      plot_cumulative(d, ylab = "Emissions CO2 cumulees (kg)", unit = "kg",
-        baseline_label = "CO2 baseline", opti_label = "CO2 optimise",
-        delta_label = "CO2 evite")
+      plot_co2_cumul(sim_co2(), co2_impact_r())
     })
 
     # ---- Heatmap ----

@@ -62,6 +62,35 @@ prix_to_color <- function(prix, alpha = 0.15) {
   sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
 }
 
+#' Cumulative CO2 emissions chart (baseline vs optimised)
+#'
+#' Computes cumulative CO2 from impact data and renders a cumulative
+#' comparison chart. Used by both mod_co2 and presentation export.
+#'
+#' @param sim_data Simulation dataframe with \code{timestamp} column
+#' @param co2_impact Result from \code{compute_co2_impact()}, with
+#'   \code{co2_baseline_g} and \code{co2_opti_g} columns
+#' @return A plotly object
+#' @noRd
+plot_co2_cumul <- function(sim_data, co2_impact) {
+  d <- data.frame(
+    timestamp = sim_data$timestamp,
+    cum_baseline = cumsum(ifelse(is.na(co2_impact$co2_baseline_g), 0,
+                                 co2_impact$co2_baseline_g)) / 1000,
+    cum_opti = cumsum(ifelse(is.na(co2_impact$co2_opti_g), 0,
+                              co2_impact$co2_opti_g)) / 1000
+  )
+  d <- d %>%
+    dplyr::mutate(.h = lubridate::floor_date(timestamp, "hour")) %>%
+    dplyr::group_by(.h) %>%
+    dplyr::slice_tail(n = 1) %>%
+    dplyr::ungroup() %>%
+    dplyr::select(timestamp, cum_baseline, cum_opti)
+  plot_cumulative(d, ylab = "Emissions CO2 cumulees (kg)", unit = "kg",
+    baseline_label = "Baseline", opti_label = "Optimise",
+    delta_label = "CO2 evite")
+}
+
 #' Line chart: hourly PAC profile with price gradient background
 #'
 #' @param profil_data Data frame with columns: hour, pac_moy_kw, scenario

@@ -175,20 +175,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     )
     co2_15min <- interpolate_co2_15min(co2_result$df, sim_data$timestamp)
     impact <- compute_co2_impact(sim_data, co2_15min)
-    d <- data.frame(
-      timestamp = sim_data$timestamp,
-      cum_baseline = cumsum(ifelse(is.na(impact$co2_baseline_g), 0, impact$co2_baseline_g)) / 1000,
-      cum_opti = cumsum(ifelse(is.na(impact$co2_opti_g), 0, impact$co2_opti_g)) / 1000
-    )
-    d <- d %>%
-      dplyr::mutate(.h = lubridate::floor_date(timestamp, "hour")) %>%
-      dplyr::group_by(.h) %>%
-      dplyr::slice_tail(n = 1) %>%
-      dplyr::ungroup() %>%
-      dplyr::select(timestamp, cum_baseline, cum_opti)
-    plot_cumulative(d, ylab = "Emissions CO2 cumulees (kg)", unit = "kg",
-      baseline_label = "Baseline", opti_label = "Optimise",
-      delta_label = "CO2 evite")
+    plot_co2_cumul(sim_data, impact)
   }, error = function(e) NULL)
 
   # Copy template + assets to a temp dir for rendering

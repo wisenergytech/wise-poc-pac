@@ -45,6 +45,35 @@ IPCC_EMISSION_FACTORS <- c(
 CO2_CAR_KM_FACTOR  <- 120   # gCO2/km, EU WLTP 2024
 CO2_TREE_KG_YEAR   <- 25    # kg CO2/arbre/an, FAO
 
+# ---------------------------------------------------------------------------
+# Nettoyage des valeurs aberrantes (0 gCO2/kWh = donnee manquante Elia)
+# Interpolation lineaire des zeros, fallback sur mediane aux extremites.
+# ---------------------------------------------------------------------------
+clean_co2_zeros <- function(df) {
+  if (is.null(df) || nrow(df) == 0) return(df)
+  zeros <- df$co2_g_per_kwh == 0 | is.na(df$co2_g_per_kwh)
+  n_zeros <- sum(zeros)
+  if (n_zeros == 0) return(df)
+
+  message(sprintf("[CO2] Interpolation de %d valeurs a 0 (donnees manquantes Elia)", n_zeros))
+  valid_idx <- which(!zeros)
+  if (length(valid_idx) < 2) {
+    # Not enough valid data to interpolate — use fallback profile
+    h_utc <- as.integer(format(df$datetime, "%H"))
+    df$co2_g_per_kwh[zeros] <- FALLBACK_CO2_PROFILE[h_utc[zeros] + 1]
+    return(df)
+  }
+
+  df$co2_g_per_kwh[zeros] <- approx(
+    x = as.numeric(df$datetime[valid_idx]),
+    y = df$co2_g_per_kwh[valid_idx],
+    xout = as.numeric(df$datetime[zeros]),
+    rule = 2
+  )$y
+
+  df
+}
+
 ELIA_BASE_URL <- "https://opendata.elia.be/api/explore/v2.1/catalog/datasets"
 ELIA_PAGE_SIZE <- 100
 ELIA_TIMEOUT <- 12
@@ -120,6 +149,7 @@ fetch_co2_intensity <- function(start_date, end_date) {
       requested <- as.numeric(difftime(end_date, start_date, units = "days"))
       if (coverage >= requested * 0.9) {
         src_type <- if (!is.null(attr(local, "source_type"))) attr(local, "source_type") else "csv"
+        local_filtered <- clean_co2_zeros(local_filtered)
         message(sprintf("[CO2] %s : %d points", if (src_type == "rda") ".rda" else "CSV local", nrow(local_filtered)))
         return(list(df = local_filtered, source = "local"))
       }
@@ -129,6 +159,7 @@ fetch_co2_intensity <- function(start_date, end_date) {
   # 1. Historique consumption-based (ODS192)
   df <- fetch_elia_co2_dataset("ods192", start_date, end_date)
   if (!is.null(df) && nrow(df) > 0) {
+    df <- clean_co2_zeros(df)
     message(sprintf("[CO2 Elia] ODS192 : %d enregistrements", nrow(df)))
     return(list(df = df, source = "api_historical"))
   }
@@ -136,6 +167,7 @@ fetch_co2_intensity <- function(start_date, end_date) {
   # 2. Temps reel consumption-based (ODS191)
   df <- fetch_elia_co2_dataset("ods191", start_date, end_date)
   if (!is.null(df) && nrow(df) > 0) {
+    df <- clean_co2_zeros(df)
     message(sprintf("[CO2 Elia] ODS191 : %d enregistrements", nrow(df)))
     return(list(df = df, source = "api_realtime"))
   }
@@ -143,6 +175,7 @@ fetch_co2_intensity <- function(start_date, end_date) {
   # 3. Production-based depuis mix de generation (ODS201)
   df <- fetch_co2_from_generation(start_date, end_date)
   if (!is.null(df) && nrow(df) > 0) {
+    df <- clean_co2_zeros(df)
     message(sprintf("[CO2 Elia] ODS201 (calcule) : %d enregistrements", nrow(df)))
     return(list(df = df, source = "api_generation_mix"))
   }
