@@ -135,7 +135,7 @@ test_that("compute returns all expected KPI fields", {
     "facture_baseline", "facture_opti", "gain_eur", "gain_pct",
     "cout_soutirage_baseline", "cout_soutirage_opti",
     "rev_injection_baseline", "rev_injection_opti",
-    "gain_eur_per_day", "gain_eur_per_year",
+    "gain_eur_per_day",
     # Comfort
     "conformite_baseline", "conformite_opti",
     # Period

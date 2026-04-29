@@ -14,8 +14,8 @@ params:
   co2_evite_20ans_t: 717
   # Technical
   pac_kw: 60
-  pv_kwc: 64
-  volume_ballon_l: 32000
+  pv_kwc: 42
+  volume_ballon_l: 2500
   t_min: 45
   t_max: 55
   cop_median_hiver: 2.5
@@ -36,7 +36,6 @@ params:
   gain_eur: 1054
   gain_pct: 33
   gain_eur_per_day: 6.60
-  gain_eur_per_year: 2420
   # Energy KPIs
   soutirage_baseline_kwh: 14223
   soutirage_opti_kwh: 10587
@@ -64,6 +63,11 @@ params:
   proj_pv_total_an: 36000
   proj_ac_opti_an: 60
   proj_co2_saved_an_kg: 546
+  # BELIX pilotage KPIs
+  belix_pct_temps_offpeak: 62.5
+  belix_pct_pac_offpeak: 58.9
+  belix_ecart_pp: -3.6
+  belix_verdict: "thermostat"
 format:
   revealjs:
     embed-resources: true
@@ -92,6 +96,9 @@ bg_b64 <- img_to_b64("images/background.png")
 logo_destore_b64 <- img_to_b64("images/destore-logo.png")
 logo_karno_b64 <- img_to_b64("images/karno-logo.png")
 logo_wise_b64 <- img_to_b64("images/wise-logo.png")
+photo_team_b64 <- if (file.exists("images/photo_team_wise.jpg")) {
+  img_to_b64("images/photo_team_wise.jpg", mime = "image/jpeg")
+} else NULL
 
 # Load pre-computed chart data (saved by render_presentation)
 tranche_file <- "tranche_data.rds"
@@ -289,14 +296,9 @@ Le site dispose de deux sous-systemes (GSHP 40 kW on/off + ASHP 20 kW modulante)
 
 **2. Aucun pilotage tarifaire dans la baseline**
 
-Le site est sous **contrat BELIX** (heures pleines 7-11h + 17-22h, heures creuses le reste). Mais la PAC est-elle pilotee sur ce tarif ? **Non** :
+Le site est sous **contrat BELIX** (heures creuses 22-7h + 11-17h, heures pleines le reste). Mais la PAC est-elle pilotee sur ce tarif ? **Non** : les heures creuses representent **`r params$belix_pct_temps_offpeak`% de la journee**, mais la PAC n'y consomme que **`r params$belix_pct_pac_offpeak`% de son energie**. Une PAC pilotee concentrerait sa consommation en heures creuses (80-90%), pas moins que la proportion du temps.
 
-|  | % du temps | % conso PAC |
-|---|:---:|:---:|
-| Heures pleines (7-11h + 17-22h) | 37.5% | 41.1% |
-| Heures creuses | 62.5% | 58.9% |
-
-La PAC consomme **plus** en heures cheres qu'en proportion du temps (+3.6 pts). C'est un **thermostat pur** — il chauffe quand le ballon refroidit, sans tenir compte du prix. L'opportunite de pilotage est donc **intacte**.
+C'est un **thermostat pur** — il chauffe quand le ballon refroidit, sans tenir compte du prix. L'opportunite de pilotage est donc **intacte**.
 
 ::: notes
 Le leger exces en heures pleines s'explique par les pics naturels du matin (~7h, relance apres nuit + ECS douches) et du soir (17-21h, ECS cuisine/douches), qui tombent pile dans les plages peak du BELIX. C'est le rythme de vie des occupants, pas un pilotage. Le creux en milieu de journee (11-16h) vient du PV qui couvre une partie des besoins, pas d'un pilotage tarifaire.
@@ -326,12 +328,12 @@ L'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Le COP
 
 **Simulation** : `r params$n_days` jours | contrat `r params$type_contrat` | PAC `r params$pac_kw` kW | PV `r params$pv_kwc` kWc | Ballon `r fmt(params$volume_ballon_l)` L [`r params$t_min`-`r params$t_max` C]
 
-|  | Baseline (thermostat) | Optimise (EMS Wise) | Gain |
+|  | Baseline (thermostat) | Optimise (Wise Brain) | Gain |
 |--|----------------------:|--------------------:|-----:|
 | Cout soutirage | `r fmt(params$cout_soutirage_baseline)` EUR | `r fmt(params$cout_soutirage_opti)` EUR | `r fmt(params$cout_soutirage_baseline - params$cout_soutirage_opti)` EUR |
 | Revenu injection | `r fmt(params$rev_injection_baseline)` EUR | `r fmt(params$rev_injection_opti)` EUR | `r fmt(params$rev_injection_opti - params$rev_injection_baseline)` EUR |
 | **Facture nette** | **`r fmt(params$facture_baseline)` EUR** | **`r fmt(params$facture_opti)` EUR** | **-`r fmt(params$gain_eur)` EUR (-`r params$gain_pct`%)** |
-| **Extrapole /an** | **`r fmt(round(params$facture_baseline / params$n_days * 365))` EUR** | **`r fmt(round(params$facture_opti / params$n_days * 365))` EUR** | **-`r fmt(params$gain_eur_per_year)` EUR/an** |
+| **Extrapole /an** | **`r fmt(params$proj_facture_baseline_an)` EUR** | **`r fmt(params$proj_facture_opti_an)` EUR** | **-`r fmt(params$proj_gain_eur_an)` EUR/an** |
 
 **`r fmt(params$gain_eur_per_day, 2)` EUR d'economie par jour**, juste en pilotant intelligemment la PAC.
 
@@ -391,7 +393,7 @@ if (has_tranche) {
 }
 ```
 
-L'EMS **deplace** la consommation PAC de la nuit et des heures de pointe vers la **tranche solaire** (10h-16h), ou le PV produit et les prix sont bas.
+Le Wise Brain **deplace** la consommation PAC de la nuit et des heures de pointe vers la **tranche solaire** (10h-16h), ou le PV produit et les prix sont bas.
 
 ::: notes
 Le graphique montre la redistribution de la consommation PAC entre les 4 tranches horaires. Le prix spot moyen est annote sur chaque barre baseline. L'optimiseur concentre la consommation sur les heures solaires, quand le PV et les prix bas convergent.
@@ -465,7 +467,7 @@ if (has_profil) {
 }
 ```
 
-Le **profil horaire** confirme : la baseline (orange) tourne la nuit et le soir — les heures les plus cheres (fond rouge). L'EMS (cyan) concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
+Le **profil horaire** confirme : la baseline (orange) tourne la nuit et le soir — les heures les plus cheres (fond rouge). Le Wise Brain (cyan) concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
 
 ::: notes
 Le fond colore indique le prix spot moyen par heure : vert = bon marche, rouge = cher. La courbe pointillee grise montre le prix moyen sur l'axe de droite. La baseline montre deux pics (nuit + soir) typiques d'un thermostat. L'optimise montre un pic unique en milieu de journee, aligne avec la production solaire.
@@ -473,7 +475,7 @@ Le fond colore indique le prix spot moyen par heure : vert = bon marche, rouge =
 
 ## Energie et flexibilite
 
-| Metrique | Baseline | Optimise (EMS) | Delta |
+| Metrique | Baseline | Optimise (Wise Brain) | Delta |
 |----------|--------:|---------:|------:|
 | Soutirage reseau | `r fmt(params$soutirage_baseline_kwh)` kWh | `r fmt(params$soutirage_opti_kwh)` kWh | `r fmt(params$soutirage_baseline_kwh - params$soutirage_opti_kwh)` kWh (-`r pct_delta(params$soutirage_baseline_kwh, params$soutirage_opti_kwh)`%) |
 | Injection reseau | `r fmt(params$injection_baseline_kwh)` kWh | `r fmt(params$injection_opti_kwh)` kWh | `r fmt(params$injection_baseline_kwh - params$injection_opti_kwh)` kWh (-`r pct_delta(params$injection_baseline_kwh, params$injection_opti_kwh)`%) |
@@ -481,7 +483,9 @@ Le fond colore indique le prix spot moyen par heure : vert = bon marche, rouge =
 | Autosuffisance | `r fmt1(params$as_baseline)`% | `r fmt1(params$as_opti)`% | +`r round(params$as_opti - params$as_baseline)` points |
 | Conso PAC electrique | `r fmt(params$conso_pac_baseline_kwh)` kWh | `r fmt(params$conso_pac_opti_kwh)` kWh | `r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh (-`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%) |
 
-La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. L'EMS ne reduit pas la consommation, il la **decale** vers les heures solaires et les prix bas.
+La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. Le Wise Brain ne reduit pas la consommation, il la **decale** vers les heures solaires et les prix bas.
+
+**Note** : la conso PAC baisse de `r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`% en optimise — c'est un effet secondaire du COP plus eleve en journee, mais c'est **challengeable** et conservatif ([voir FAQ](#faq-conso-pac)).
 
 ::: notes
 L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%. Le soutirage reseau diminue car on consomme davantage de PV localement.
@@ -489,7 +493,7 @@ L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac
 
 ## Projection annuelle (estimation)
 
-Nos `r params$n_days` jours de mesures couvrent **`r params$proj_heat_coverage_pct`% de la demande thermique annuelle** (nov-avr = saison de chauffe). Projection sur 12 mois, ponderee par le profil climatique belge :
+Nos `r params$n_days` jours de mesures couvrent **`r params$proj_heat_coverage_pct`% de la demande thermique annuelle**^[Calcule a partir des degres-jours de chauffage (DJ 16.5 C, normales Synergrid 30 ans). Les mois mesures totalisent `r params$proj_heat_coverage_pct`% des DJ annuels. L'extrapolation suppose que le cout est proportionnel a la demande thermique — ce qui ne tient pas compte des variations saisonnieres de prix spot ou de COP.] (nov-avr = saison de chauffe). Projection sur 12 mois, ponderee par le profil climatique belge :
 
 | KPI | Mesure (`r params$n_days` j) | Projection annuelle |
 |-----|---:|---:|
@@ -509,7 +513,7 @@ La projection utilise les degres-jours de chauffage (HDD) mensuels typiques pour
 # Et ensuite ?
 ## Le message cle
 
-> "La PAC du projet K-0001 a Profondeville represente `r params$pct_pac_conso`% de la consommation electrique et tourne surtout la nuit quand l'energie est chere. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec les donnees mesurees sur site."
+> "La PAC du projet K-0001 a Profondeville represente `r params$pct_pac_conso`% de la consommation electrique et tourne surtout la nuit quand l'energie est chere. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$proj_gain_eur_an)` EUR/an**, avec les donnees mesurees sur site."
 
 ## Prochaines etapes
 
@@ -517,19 +521,31 @@ Les axes d'amelioration sont nombreux — les prochaines implementations seront 
 
 - **Peak shaving** : ecreter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en sequencant le demarrage des deux PAC ?
 - **Curtailment** : limiter l'injection PV en periode de prix negatifs pour maximiser l'autoconsommation ?
-- **Distinction GSHP / ASHP** : piloter les deux PAC independamment (on/off vs modulante) — necessite un sous-comptage individuel ?
+- **Distinction GSHP / ASHP** : piloter les deux PAC independamment (on/off vs modulante). Un sous-comptage individuel existe deja mais n'est pas encore exploite — reste a definir comment cette distinction s'implemente en termes d'optimisation sous contraintes (variables de decision separees, contraintes de demarrage sequentiel, etc.)
 - **Comparaison contrats** : simuler le gain additionnel d'un passage BELIX → dynamique ?
 
 ::: notes
 Aujourd'hui l'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Avec un sous-comptage separe GSHP/ASHP, on pourrait planifier les cycles GSHP sur les heures bon marche tout en modulant l'ASHP en temps reel.
 :::
 
+## Merci !
+
+```{r photo-team, echo=FALSE, results='asis'}
+if (!is.null(photo_team_b64)) {
+  cat(sprintf('<div style="text-align:center;margin:20px 0;"><img src="%s" alt="Team Wise" style="max-height:400px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.3);" /></div>', photo_team_b64))
+}
+```
+
+Merci pour votre attention.
+
+**Des questions ?**
+
 # FAQ
 ## Pourquoi dit-on qu'il n'y a pas de pilotage BELIX ?
 
 Si la PAC etait pilotee sur le tarif BELIX, elle **eviterait les heures pleines** et concentrerait sa consommation en heures creuses. Le % de conso en heures pleines serait nettement inferieur au % de temps correspondant.
 
-Or les donnees montrent l'inverse : **41.1% de la conso en heures pleines** pour 37.5% du temps. La PAC consomme legerement **plus** quand c'est cher.
+Or les donnees montrent l'inverse : **`r round(100 - params$belix_pct_pac_offpeak, 1)`% de la conso en heures pleines** pour `r round(100 - params$belix_pct_temps_offpeak, 1)`% du temps. La PAC consomme legerement **plus** quand c'est cher.
 
 **Pourquoi ce leger exces ?** Le profil horaire l'explique :
 
@@ -543,20 +559,20 @@ C'est le **rythme de vie des occupants**, pas un pilotage. La PAC s'en fiche du 
 A l'inverse, un pilotage BELIX aurait bloque la PAC en heures pleines (7-11h, 17-22h) et surchauffe le ballon juste avant. Or la PAC tourne tout autant a 18h (peak, cher) qu'a 1h (off-peak, pas cher). La baseline est neutre/agnostique au contrat, ce qui permet de simuler valablement un passage en contrat dynamique.
 :::
 
-## Pourquoi la PAC consomme-t-elle moins en optimise ?
+## Pourquoi la PAC consomme-t-elle moins en optimise ? {#faq-conso-pac}
 
-La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la conso PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : l'EMS produit la **meme chaleur** avec **moins d'electricite** :
+La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la conso PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : le Wise Brain produit la **meme chaleur** avec **moins d'electricite** :
 
 | Mecanisme | Explication | Impact |
 |-----------|-------------|--------|
-| **COP plus eleve** | L'EMS deplace la PAC vers les heures diurnes ou il fait plus chaud. COP `r params$cop_median_misaison` a 15 C vs `r params$cop_median_hiver` a 0 C = plus de chaleur par kWh | Principal |
+| **COP plus eleve** | Le Wise Brain deplace la PAC vers les heures diurnes ou il fait plus chaud. COP `r params$cop_median_misaison` a 15 C vs `r params$cop_median_hiver` a 0 C = plus de chaleur par kWh | Principal |
 | **Moins de pertes thermiques** | Le ballon est maintenu plus proche de sa temperature minimale en moyenne | Secondaire |
 | **Modulation continue** | Puissance [0-100%] au lieu du tout-ou-rien du thermostat | Mineur |
 
-**En resume** : l'EMS ne chauffe pas moins, il chauffe **plus intelligemment**.
+**En resume** : le Wise Brain ne chauffe pas moins, il chauffe **plus intelligemment**.
 
 ::: notes
-La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). L'EMS pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
+La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). Le Wise Brain pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
 :::
 
 ## Pourquoi le PV affiche ~`r params$pv_kwc` kWc alors que l'installation fait 42 kWc ? {#faq-pv}

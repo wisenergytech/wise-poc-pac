@@ -78,9 +78,9 @@ project_annual_kpis <- function(kpis, sim_data) {
   # Rough estimate: weighted average of measured AC and a summer estimate
   # In summer, PAC demand is low so AC drops (less load to absorb PV)
   heat_summer <- heat_total - heat_measured
-  ac_summer_estimate <- max(20, kpis$ac_opti * 100 * 0.5)  # lower in summer
+  ac_summer_estimate <- max(20, kpis$ac_opti * 0.5)  # lower in summer
   ac_opti_an <- round(
-    (kpis$ac_opti * 100 * heat_measured + ac_summer_estimate * heat_summer) /
+    (kpis$ac_opti * heat_measured + ac_summer_estimate * heat_summer) /
       heat_total, 1
   )
 

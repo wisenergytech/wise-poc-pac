@@ -36,7 +36,7 @@
 #'   \item{rev_injection_baseline / rev_injection_opti}{Injection revenue
 #'     (EUR).}
 #'   \item{gain_eur / gain_pct}{Savings vs baseline (EUR and \%).}
-#'   \item{gain_eur_per_day / gain_eur_per_year}{Annualised savings.}
+#'   \item{gain_eur_per_day}{Daily savings (gain_eur / n_days).}
 #' }
 #'
 #' ## CO2 KPIs (optional, requires co2_15min)
@@ -208,7 +208,6 @@ KPICalculator <- R6::R6Class("KPICalculator",
           rev_injection_baseline = rev_injection_baseline,
           rev_injection_opti = rev_injection_opti,
           gain_eur_per_day = if (n_days > 0) gain_eur / n_days else 0,
-          gain_eur_per_year = if (n_days > 0) gain_eur / n_days * 365 else 0,
           # PAC price intelligence
           prix_kwh_pac_baseline = prix_kwh_pac_baseline,
           prix_kwh_pac_opti = prix_kwh_pac_opti,
@@ -373,6 +372,52 @@ KPICalculator <- R6::R6Class("KPICalculator",
       result$tranche <- factor(result$tranche,
         levels = c("Nuit (22h-6h)", "Transition", "Solaire (10h-16h)", "Pointe soir (17h-21h)"))
       result
+    },
+
+    #' @description Analyse BELIX pilotage: compare PAC off-peak consumption share
+    #'   with off-peak time share to detect tariff-based control.
+    #' @param data Dataframe with timestamp and PAC consumption columns
+    #' @param params Parameter list with belix_peak_hours, p_pac_kw, dt_h
+    #' @return Named list: pct_temps_offpeak, pct_pac_offpeak, ecart_pp, verdict
+    get_belix_pilotage = function(data, params) {
+      # Determine peak hours from params
+      peak_hours <- params$belix_peak_hours %||% list(c(7, 11), c(17, 22))
+      h <- as.integer(format(data$timestamp, "%H", tz = "Europe/Brussels"))
+
+      is_peak <- Reduce(`|`, lapply(peak_hours, function(rng) h >= rng[1] & h < rng[2]))
+
+      # % of time in off-peak
+      pct_temps_offpeak <- round(100 * sum(!is_peak) / length(is_peak), 1)
+
+      # PAC consumption
+      pac_kwh <- if ("pac_kwh" %in% names(data)) {
+        data$pac_kwh
+      } else {
+        pmax(0, data$offtake_kwh + data$pv_kwh - data$intake_kwh - data$conso_hors_pac)
+      }
+
+      pac_total <- sum(pac_kwh, na.rm = TRUE)
+      pac_offpeak <- sum(pac_kwh[!is_peak], na.rm = TRUE)
+      pct_pac_offpeak <- if (pac_total > 0) round(100 * pac_offpeak / pac_total, 1) else NA_real_
+
+      ecart_pp <- round(pct_pac_offpeak - pct_temps_offpeak, 1)
+
+      verdict <- if (is.na(ecart_pp)) {
+        "inconnu"
+      } else if (abs(ecart_pp) < 3) {
+        "thermostat"
+      } else if (ecart_pp > 3) {
+        "pilotage"
+      } else {
+        "anti-pilotage"
+      }
+
+      list(
+        pct_temps_offpeak = pct_temps_offpeak,
+        pct_pac_offpeak = pct_pac_offpeak,
+        ecart_pp = ecart_pp,
+        verdict = verdict
+      )
     },
 
     #' @description Calculate Pearson correlation between PAC consumption and price.

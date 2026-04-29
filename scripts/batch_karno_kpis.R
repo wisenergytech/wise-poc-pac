@@ -134,7 +134,7 @@ cat(sprintf("  Facture nette (EUR):  %8.0f     %8.0f     %+8.0f     -%.0f%%\n",
   kpis$facture_opti - kpis$facture_baseline, kpis$gain_pct))
 
 cat(sprintf("  Gain EUR/jour      :  %8.1f\n", kpis$gain_eur_per_day))
-cat(sprintf("  Gain EUR/an        :  %8.0f\n", kpis$gain_eur_per_year))
+cat(sprintf("  Gain EUR (brut)    :  %8.0f\n", kpis$gain_eur))
 
 cat(sprintf("\n"))
 cat(sprintf("  Cout soutirage     :  %8.0f     %8.0f     %+8.0f\n",

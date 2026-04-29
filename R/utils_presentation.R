@@ -26,6 +26,13 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   # Annual projections (seasonal extrapolation)
   proj <- project_annual_kpis(kpis, sim_data)
 
+  # Pre-compute helpers (needed for BELIX analysis and chart data)
+  kpi_calc <- KPICalculator$new()
+  p_list <- if (inherits(params, "SimulationParams")) params$as_list() else params
+
+  # BELIX pilotage analysis
+  belix <- kpi_calc$get_belix_pilotage(sim_data, p_list)
+
   # Build params list for Quarto
   qparams <- list(
     # Site (static defaults — could be made configurable)
@@ -36,7 +43,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     conso_chauffage_mwh_an = 198,
     co2_evite_20ans_t = 717,
     # Technical (from simulation params)
-    pac_kw = params$p_pac_kw %||% 60,
+    pac_kw = params$p_pac_th_kw %||% 60,
     pv_kwc = params$pv_kwc %||% 64,
     volume_ballon_l = params$volume_ballon_l %||% 32000,
     t_min = params$t_min %||% 45,
@@ -59,7 +66,6 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     gain_eur = round(kpis$gain_eur),
     gain_pct = round(abs(kpis$gain_pct)),
     gain_eur_per_day = round(kpis$gain_eur_per_day, 2),
-    gain_eur_per_year = round(kpis$gain_eur_per_year),
     # Energy KPIs
     soutirage_baseline_kwh = round(kpis$soutirage_baseline),
     soutirage_opti_kwh = round(kpis$soutirage_opti),
@@ -86,7 +92,12 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     proj_gain_pct_an = proj$gain_pct_an,
     proj_pv_total_an = proj$pv_total_an,
     proj_ac_opti_an = proj$ac_opti_an,
-    proj_co2_saved_an_kg = proj$co2_saved_an_kg
+    proj_co2_saved_an_kg = proj$co2_saved_an_kg,
+    # BELIX pilotage KPIs
+    belix_pct_temps_offpeak = belix$pct_temps_offpeak,
+    belix_pct_pac_offpeak = belix$pct_pac_offpeak,
+    belix_ecart_pp = belix$ecart_pp,
+    belix_verdict = belix$verdict
   )
 
   # Locate the .qmd template
@@ -94,10 +105,6 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   if (qmd_path == "") {
     qmd_path <- file.path("inst", "presentations", "presentation.qmd")
   }
-
-  # Pre-compute chart data for the .qmd plotly charts
-  kpi_calc <- KPICalculator$new()
-  p_list <- if (inherits(params, "SimulationParams")) params$as_list() else params
 
   # --- PAC par tranche horaire ---
   tranche_baseline <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "baseline")

@@ -14,6 +14,22 @@ mod_pac_ui <- function(id) {
         shiny::tags$div(class = "d-flex align-items-center gap-2",
           shiny::tags$strong("Work in progress"),
           shiny::tags$span(class = "text-muted", "— Analyse PAC en cours de developpement")))),
+    bslib::layout_columns(col_widths = c(4, 4, 4),
+      bslib::value_box(
+        title = "Heures creuses BELIX",
+        value = shiny::uiOutput(ns("vb_belix_temps")),
+        showcase = bslib::bs_icon("clock"),
+        theme = "secondary"),
+      bslib::value_box(
+        title = "Conso PAC en heures creuses",
+        value = shiny::uiOutput(ns("vb_belix_pac")),
+        showcase = bslib::bs_icon("lightning-charge"),
+        theme = "secondary"),
+      bslib::value_box(
+        title = "Verdict pilotage",
+        value = shiny::uiOutput(ns("vb_belix_verdict")),
+        showcase = bslib::bs_icon("thermometer-half"),
+        theme = "secondary")),
     bslib::layout_columns(col_widths = 12,
       bslib::card(full_screen = TRUE,
         card_header_tip("Profil horaire moyen de la PAC",
@@ -87,6 +103,37 @@ mod_pac_server <- function(id, sidebar) {
       b <- round(69 - 1 * t)
       sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
     }
+
+    # ---- BELIX pilotage value boxes ----
+    belix_data <- shiny::reactive({
+      shiny::req(sim_filtered())
+      sp <- get_sim_params()
+      kpi_calc <- KPICalculator$new()
+      kpi_calc$get_belix_pilotage(sp$sim, sp$params)
+    })
+
+    output$vb_belix_temps <- shiny::renderUI({
+      b <- belix_data()
+      shiny::tags$span(paste0(b$pct_temps_offpeak, "%"))
+    })
+
+    output$vb_belix_pac <- shiny::renderUI({
+      b <- belix_data()
+      shiny::tags$span(paste0(b$pct_pac_offpeak, "%"))
+    })
+
+    output$vb_belix_verdict <- shiny::renderUI({
+      b <- belix_data()
+      label <- switch(b$verdict,
+        thermostat = "Thermostat pur",
+        pilotage = "Pilotage detecte",
+        `anti-pilotage` = "Anti-pilotage",
+        "Inconnu")
+      shiny::tags$span(
+        label,
+        shiny::tags$small(class = "text-muted d-block",
+          paste0("Ecart: ", b$ecart_pp, " pp")))
+    })
 
     # ---- Hourly profile chart with price gradient background ----
     output$plot_profil_horaire <- plotly::renderPlotly({
