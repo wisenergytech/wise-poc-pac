@@ -83,21 +83,21 @@ mod_co2_server <- function(id, sidebar) {
           baseline_val = k$co2_baseline_kg, opti_val = k$co2_opti_kg, gain_invert = TRUE,
           gain_val = round(k$co2_opti_kg - k$co2_baseline_kg, 1), gain_unit = "kg",
           tooltip = "Emissions CO2 liees au soutirage reseau."),
-        kpi_card(sprintf("%.0f", k$co2_intensity_opti),
-          "Intensite carbone", "gCO2/kWh", cl$opti,
-          baseline_val = k$co2_intensity_baseline, opti_val = k$co2_intensity_opti, gain_invert = TRUE,
-          gain_val = round(k$co2_intensity_opti - k$co2_intensity_baseline), gain_unit = "gCO2/kWh",
-          tooltip = "Intensite carbone moyenne ponderee par la consommation."),
         kpi_card(sprintf("%.0f", k$co2_equiv_car_km),
           "Equiv. voiture", "km", cl$opti,
-          tooltip = "Kilometres de voiture equivalents au CO2 evite."),
-        kpi_card(sprintf("%.1f", k$co2_equiv_trees_year),
-          "Equiv. arbres", "/an", cl$pv,
-          tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite en 1 an.")
+          tooltip = "Kilometres de voiture equivalents au CO2 evite.")
+      )
+      wip_badge <- shiny::tags$div(
+        style = sprintf("flex:1;display:flex;align-items:center;justify-content:center;padding:12px;border-radius:8px;border:1px dashed %s;color:%s;font-size:.85rem;text-align:center;",
+          cl$text_muted, cl$text_muted),
+        shiny::tags$span(
+          shiny::icon("flask"), " Intensite carbone : work in progress"
+        )
       )
       do.call(shiny::tags$div, c(
         list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
-        lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k))
+        lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k)),
+        list(shiny::tags$div(style = "flex:1;", wip_badge))
       ))
     })
 

@@ -231,7 +231,7 @@ Pour optimiser, il faut croiser **3 flux terrain** au pas de 5 min :
 |------|--------|-----------------|
 | **Consommation PAC** | Controleur Komfor (BigQuery) | Electricite consommee + temperature du ballon |
 | **Echanges reseau** | Compteur ORES (BigQuery) | Soutirage et injection (import/export) |
-| **Production PV** | Profil Elia (API) | Estimation regionale mise a l'echelle (~`r params$pv_kwc` kWc) |
+| **Production PV** | Profil Elia (API) | Estimation regionale mise a l'echelle (~`r params$pv_kwc` kWc) ([voir FAQ](#faq-pv)) |
 
 Ce croisement est possible **depuis novembre 2025** — on peut donc simuler l'optimisation jusqu'a aujourd'hui.
 
@@ -468,7 +468,7 @@ L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac
 # Et ensuite ?
 ## Le message cle
 
-> "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
+> "La PAC du projet K-0001 a Profondeville represente `r params$pct_pac_conso`% de la consommation electrique et tourne surtout la nuit quand l'energie est chere. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec les donnees mesurees sur site."
 
 ## Prochaines etapes
 
@@ -518,7 +518,7 @@ La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_
 La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). L'EMS pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
 :::
 
-## Pourquoi le PV affiche ~`r params$pv_kwc` kWc alors que l'installation fait 42 kWc ?
+## Pourquoi le PV affiche ~`r params$pv_kwc` kWc alors que l'installation fait 42 kWc ? {#faq-pv}
 
 Les donnees de production PV mesurees (FusionSolar) presentent des problemes de **desynchronisation et de couverture partielle** qui les rendent inexploitables pour la simulation. On utilise donc le **profil regional Elia** (province de Namur, quart-horaire) mis a l'echelle.
 
