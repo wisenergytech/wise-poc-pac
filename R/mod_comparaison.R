@@ -487,6 +487,28 @@ mod_comparaison_server <- function(id, sidebar) {
 
       barmode <- if (n_bars >= 2) "group" else if (n_bars == 1) "overlay" else "group"
 
+      # Correlation annotation when PAC and price are both selected
+      pac_vars <- c("pac_kwh", "sim_pac_on")
+      prix_vars <- c("ext_prix", "prix_offtake")
+      sel_pac <- intersect(vars, pac_vars)
+      sel_prix <- intersect(vars, prix_vars)
+      annotations <- list()
+      if (length(sel_pac) > 0 && length(sel_prix) > 0) {
+        v_pac <- df_agg[[sel_pac[1]]]
+        v_prix <- df_agg[[sel_prix[1]]]
+        valid <- !is.na(v_pac) & !is.na(v_prix)
+        if (sum(valid) >= 10) {
+          r <- round(stats::cor(v_pac[valid], v_prix[valid]), 3)
+          r_label <- sprintf("corr(PAC, prix) = %s", r)
+          annotations <- list(list(
+            x = 0.01, y = 0.99, xref = "paper", yref = "paper",
+            text = r_label, showarrow = FALSE, xanchor = "left", yanchor = "top",
+            font = list(size = 11, color = cl$text_muted, family = "JetBrains Mono"),
+            bgcolor = "rgba(255,255,255,0.7)", borderpad = 4
+          ))
+        }
+      }
+
       p %>%
         pl_layout(agg_level = agg_level, n_points = nrow(df_agg)) %>%
         plotly::layout(
@@ -498,7 +520,8 @@ mod_comparaison_server <- function(id, sidebar) {
             tickfont = list(size = 10, color = col2),
             titlefont = list(color = col2)),
           hovermode = "x unified",
-          barmode = barmode
+          barmode = barmode,
+          annotations = annotations
         )
     })
   })

@@ -90,7 +90,8 @@ mod_status_bar_server <- function(id, sidebar) {
         dim_parts <- c(dim_parts, sprintf("PV=<b>%s kWc</b> (ref=%s)", p$pv_kwc, p$pv_kwc_ref))
       }
       dim_parts <- c(dim_parts,
-        sprintf("PAC=<b>%s kW</b> COP=%s", p$p_pac_kw, p$cop_nominal),
+        sprintf("PAC=<b>%s kW<sub>th</sub></b> (%s kW<sub>e</sub>) COP=%s",
+          p$p_pac_th_kw %||% round(p$p_pac_kw * p$cop_nominal), p$p_pac_kw, p$cop_nominal),
         sprintf("Ballon=<b>%s L</b> [%s..%s]&deg;C consigne=%s",
           p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne))
 

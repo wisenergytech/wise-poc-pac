@@ -16,9 +16,14 @@ mod_finances_ui <- function(id) {
         bslib::card_body(plotly::plotlyOutput(ns("plot_cout_cumule"), height = "320px")))),
     bslib::layout_columns(col_widths = c(6, 6),
       bslib::card(full_screen = TRUE,
+        card_header_tip("Conso PAC par tranche horaire",
+          "Repartition de la consommation PAC par tranche horaire (nuit, solaire, pointe soir, transition). Compare baseline vs optimise. Le prix spot moyen est annote par tranche."),
+        bslib::card_body(plotly::plotlyOutput(ns("plot_pac_tranches"), height = "300px"))),
+      bslib::card(full_screen = TRUE,
         card_header_tip("Decomposition de l'economie",
           "Cascade partant de la facture reelle (sans optimisation) jusqu'a la facture optimisee. Chaque barre intermediaire montre une composante de l'economie : reduction du soutirage, perte d'injection, et arbitrage horaire."),
-        bslib::card_body(plotly::plotlyOutput(ns("plot_waterfall"), height = "300px"))),
+        bslib::card_body(plotly::plotlyOutput(ns("plot_waterfall"), height = "300px")))),
+    bslib::layout_columns(col_widths = 12,
       bslib::card(full_screen = TRUE,
         card_header_tip("Bilan mensuel",
           "Recapitulatif mois par mois : production PV, factures baseline et optimisee, economie en EUR et en EUR/jour."),
@@ -41,6 +46,14 @@ mod_finances_server <- function(id, sidebar) {
       shiny::req(sidebar$kpis_r())
       k <- sidebar$kpis_r()
 
+      # Format PAC price in c€/kWh
+      prix_pac_bl <- if (!is.null(k$prix_kwh_pac_baseline) && !is.na(k$prix_kwh_pac_baseline)) {
+        round(k$prix_kwh_pac_baseline * 100, 1)
+      } else NA
+      prix_pac_op <- if (!is.null(k$prix_kwh_pac_opti) && !is.na(k$prix_kwh_pac_opti)) {
+        round(k$prix_kwh_pac_opti * 100, 1)
+      } else NA
+
       kpis <- list(
         kpi_card(paste0(round(k$facture_opti), " EUR"),
           "Facture nette", "", cl$opti,
@@ -56,8 +69,17 @@ mod_finances_server <- function(id, sidebar) {
           "Revenu injection", "", cl$pv,
           baseline_val = k$rev_injection_baseline, opti_val = k$rev_injection_opti,
           gain_val = round(k$rev_injection_opti - k$rev_injection_baseline), gain_unit = "EUR",
-          tooltip = "Revenu de l'electricite injectee dans le reseau.")
+          tooltip = "Revenu de l'electricite injectee dans le reseau."),
+        if (!is.na(prix_pac_op)) {
+          kpi_card(paste0(prix_pac_op, " c/kWh"),
+            "Prix moyen kWh PAC", "", cl$pac,
+            baseline_val = prix_pac_bl, opti_val = prix_pac_op, gain_invert = TRUE,
+            gain_val = if (!is.na(prix_pac_bl)) round(prix_pac_op - prix_pac_bl, 1) else NULL,
+            gain_unit = "c/kWh",
+            tooltip = "Prix moyen pondere du kWh consomme par la PAC. Baseline: PAC sans pilotage. Optimise: PAC pilotee par l'EMS.")
+        }
       )
+      kpis <- Filter(Negate(is.null), kpis)
       do.call(shiny::tags$div, c(
         list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
         lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k))
@@ -71,6 +93,57 @@ mod_finances_server <- function(id, sidebar) {
       plot_cumulative(d, ylab = "Facture nette cumulee (EUR)", unit = "EUR",
         baseline_label = "Facture baseline", opti_label = "Facture optimisee",
         delta_label = "Economie cumulee")
+    })
+
+    # ---- PAC par tranche horaire ----
+    output$plot_pac_tranches <- plotly::renderPlotly({
+      shiny::req(sim_filtered())
+      sim <- sim_filtered()
+      p_r <- sidebar$params_r()
+      params <- if (inherits(p_r, "SimulationParams")) p_r$as_list() else p_r
+
+      kpi <- KPICalculator$new()
+      bl <- kpi$get_pac_par_tranche(sim, params, "baseline")
+      op <- kpi$get_pac_par_tranche(sim, params, "optimized")
+
+      bl$scenario <- "Baseline"
+      op$scenario <- "Optimise"
+      df <- rbind(bl, op)
+
+      bl_rgba <- paste0("rgba(",
+        paste(grDevices::col2rgb(cl$reel), collapse = ","), ",",
+        cl$scenarios$baseline$bar_opacity, ")")
+      op_rgba <- paste0("rgba(",
+        paste(grDevices::col2rgb(cl$opti), collapse = ","), ",",
+        cl$scenarios$optimise$bar_opacity, ")")
+
+      p <- plotly::plot_ly() %>%
+        plotly::add_bars(
+          data = bl, x = ~tranche, y = ~kwh, name = "Baseline",
+          text = ~paste0(pct, "%"), textposition = "outside",
+          textfont = list(size = 10, family = "JetBrains Mono"),
+          marker = list(color = bl_rgba),
+          hovertemplate = "<b>%{x}</b><br>Baseline: %{y:.0f} kWh (%{text})<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>",
+          customdata = ~prix_moyen) %>%
+        plotly::add_bars(
+          data = op, x = ~tranche, y = ~kwh, name = "Optimise",
+          text = ~paste0(pct, "%"), textposition = "outside",
+          textfont = list(size = 10, family = "JetBrains Mono"),
+          marker = list(color = op_rgba),
+          hovertemplate = "<b>%{x}</b><br>Optimise: %{y:.0f} kWh (%{text})<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>",
+          customdata = ~prix_moyen)
+
+      # Add price annotations on baseline bars
+      for (i in seq_len(nrow(bl))) {
+        p <- p %>% plotly::add_annotations(
+          x = bl$tranche[i], y = bl$kwh[i] + max(bl$kwh) * 0.12,
+          text = paste0(round(bl$prix_moyen[i]), " EUR/MWh"),
+          showarrow = FALSE, font = list(size = 9, color = cl$text_muted))
+      }
+
+      p %>%
+        plotly::layout(barmode = "group", bargap = 0.15) %>%
+        pl_layout(ylab = "kWh")
     })
 
     # ---- Waterfall ----

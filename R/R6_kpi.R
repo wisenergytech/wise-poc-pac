@@ -127,6 +127,12 @@ KPICalculator <- R6::R6Class("KPICalculator",
       rev_injection_baseline <- self$get_rev_injection(baseline_data, type = "baseline")
       rev_injection_opti <- self$get_rev_injection(sim_data, type = "optimized")
 
+      # --- PAC price & correlation ---
+      prix_kwh_pac_baseline <- self$get_prix_moyen_pac(baseline_data, params, "baseline")
+      prix_kwh_pac_opti <- self$get_prix_moyen_pac(sim_data, params, "optimized")
+      cor_pac_prix_baseline <- self$get_correlation_pac_prix(baseline_data, params, "baseline")
+      cor_pac_prix_opti <- self$get_correlation_pac_prix(sim_data, params, "optimized")
+
       # --- Conformity ---
       conformite_baseline <- self$get_conformite(
         baseline_data$t_ballon, params$t_min, params$t_max
@@ -195,6 +201,11 @@ KPICalculator <- R6::R6Class("KPICalculator",
           rev_injection_opti = rev_injection_opti,
           gain_eur_per_day = if (n_days > 0) gain_eur / n_days else 0,
           gain_eur_per_year = if (n_days > 0) gain_eur / n_days * 365 else 0,
+          # PAC price intelligence
+          prix_kwh_pac_baseline = prix_kwh_pac_baseline,
+          prix_kwh_pac_opti = prix_kwh_pac_opti,
+          cor_pac_prix_baseline = cor_pac_prix_baseline,
+          cor_pac_prix_opti = cor_pac_prix_opti,
           # Comfort
           conformite_baseline = conformite_baseline,
           conformite_opti = conformite_opti,
@@ -282,6 +293,87 @@ KPICalculator <- R6::R6Class("KPICalculator",
       conso_totale <- offt + autoconso
       if (conso_totale <= 0) return(0)
       round(autoconso / conso_totale * 100, 1)
+    },
+
+    #' @description Calculate weighted average price of PAC electricity (EUR/kWh).
+    #' @param data Dataframe with PAC consumption and price columns
+    #' @param params Parameter list with p_pac_kw and dt_h
+    #' @param type "baseline" or "optimized"
+    #' @return Weighted average price in EUR/kWh
+    get_prix_moyen_pac = function(data, params, type = "baseline") {
+      if (type == "optimized") {
+        pac_qt <- params$p_pac_kw * params$dt_h
+        pac_kwh <- data$sim_pac_on * pac_qt
+      } else {
+        pac_kwh <- if ("pac_kwh" %in% names(data)) {
+          data$pac_kwh
+        } else {
+          pmax(0, data$offtake_kwh + data$pv_kwh - data$intake_kwh - data$conso_hors_pac)
+        }
+      }
+      total <- sum(pac_kwh, na.rm = TRUE)
+      if (total <= 0) return(NA_real_)
+      sum(pac_kwh * data$prix_offtake, na.rm = TRUE) / total
+    },
+
+    #' @description Calculate PAC consumption breakdown by time-of-day slot.
+    #' @param data Dataframe with timestamp, PAC consumption and price columns
+    #' @param params Parameter list with p_pac_kw and dt_h
+    #' @param type "baseline" or "optimized"
+    #' @return Dataframe with columns: tranche, kwh, pct, prix_moyen
+    get_pac_par_tranche = function(data, params, type = "baseline") {
+      if (type == "optimized") {
+        pac_qt <- params$p_pac_kw * params$dt_h
+        pac_kwh <- data$sim_pac_on * pac_qt
+      } else {
+        pac_kwh <- if ("pac_kwh" %in% names(data)) {
+          data$pac_kwh
+        } else {
+          pmax(0, data$offtake_kwh + data$pv_kwh - data$intake_kwh - data$conso_hors_pac)
+        }
+      }
+      h <- as.integer(format(data$timestamp, "%H"))
+      tranche <- dplyr::case_when(
+        h >= 22 | h < 6  ~ "Nuit (22h-6h)",
+        h >= 10 & h < 16 ~ "Solaire (10h-16h)",
+        h >= 17 & h < 21 ~ "Pointe soir (17h-21h)",
+        TRUE             ~ "Transition"
+      )
+      df <- data.frame(tranche = tranche, pac_kwh = pac_kwh,
+                        prix = data$prix_offtake, stringsAsFactors = FALSE)
+      result <- df %>%
+        dplyr::group_by(tranche) %>%
+        dplyr::summarise(
+          kwh = sum(pac_kwh, na.rm = TRUE),
+          prix_moyen = mean(prix, na.rm = TRUE) * 1000,
+          .groups = "drop"
+        )
+      total <- sum(result$kwh, na.rm = TRUE)
+      result$pct <- if (total > 0) round(result$kwh / total * 100, 1) else 0
+      result$tranche <- factor(result$tranche,
+        levels = c("Nuit (22h-6h)", "Transition", "Solaire (10h-16h)", "Pointe soir (17h-21h)"))
+      result
+    },
+
+    #' @description Calculate Pearson correlation between PAC consumption and price.
+    #' @param data Dataframe with PAC consumption and price columns
+    #' @param params Parameter list with p_pac_kw and dt_h
+    #' @param type "baseline" or "optimized"
+    #' @return Correlation coefficient (-1 to 1)
+    get_correlation_pac_prix = function(data, params, type = "baseline") {
+      if (type == "optimized") {
+        pac_qt <- params$p_pac_kw * params$dt_h
+        pac_kwh <- data$sim_pac_on * pac_qt
+      } else {
+        pac_kwh <- if ("pac_kwh" %in% names(data)) {
+          data$pac_kwh
+        } else {
+          pmax(0, data$offtake_kwh + data$pv_kwh - data$intake_kwh - data$conso_hors_pac)
+        }
+      }
+      valid <- !is.na(pac_kwh) & !is.na(data$prix_offtake)
+      if (sum(valid) < 10) return(NA_real_)
+      round(stats::cor(pac_kwh[valid], data$prix_offtake[valid]), 3)
     },
 
     #' @description Calculate thermal comfort conformity.

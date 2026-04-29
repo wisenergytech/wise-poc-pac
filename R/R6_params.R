@@ -17,6 +17,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
     t_consigne = NULL,
     t_tolerance = NULL,
     p_pac_kw = NULL,
+    p_pac_th_kw = NULL,
     cop_nominal = NULL,
     t_ref_cop = NULL,
     dt_h = NULL,
@@ -67,7 +68,8 @@ SimulationParams <- R6::R6Class("SimulationParams",
     #' @description Create a new SimulationParams object.
     #' @param t_consigne Target tank temperature (degrees C, default 50)
     #' @param t_tolerance Temperature tolerance band (degrees C, default 5)
-    #' @param p_pac_kw Heat pump electrical power (kW, default 60)
+    #' @param p_pac_kw Heat pump electrical power (kW). If NULL, derived from p_pac_th_kw / cop_nominal.
+    #' @param p_pac_th_kw Heat pump thermal power (kW, default 60). This is the manufacturer-rated output.
     #' @param cop_nominal Nominal COP at reference temperature (default 3.5)
     #' @param t_ref_cop Reference external temperature for COP (default 7)
     #' @param volume_ballon_l Tank volume in liters (NULL = auto-size based on PAC power)
@@ -100,7 +102,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
     #' @param qp_w_smooth QP smoothing weight (default 0.01)
     initialize = function(
       t_consigne = 50, t_tolerance = 5,
-      p_pac_kw = 60, cop_nominal = 3.5, t_ref_cop = 7,
+      p_pac_kw = NULL, p_pac_th_kw = 60, cop_nominal = 3.5, t_ref_cop = 7,
       volume_ballon_l = NULL,
       type_contrat = "dynamique",
       prix_fixe_offtake = 0.30, prix_fixe_injection = 0.03,
@@ -123,8 +125,15 @@ SimulationParams <- R6::R6Class("SimulationParams",
     ) {
       self$t_consigne <- t_consigne
       self$t_tolerance <- t_tolerance
-      self$p_pac_kw <- p_pac_kw
       self$cop_nominal <- cop_nominal
+      # Derive electrical from thermal, or vice versa
+      if (!is.null(p_pac_kw)) {
+        self$p_pac_kw <- p_pac_kw
+        self$p_pac_th_kw <- p_pac_kw * cop_nominal
+      } else {
+        self$p_pac_th_kw <- p_pac_th_kw
+        self$p_pac_kw <- p_pac_th_kw / cop_nominal
+      }
       self$t_ref_cop <- t_ref_cop
       self$dt_h <- dt_h
 
@@ -178,6 +187,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
         t_min = self$t_min,
         t_max = self$t_max,
         p_pac_kw = self$p_pac_kw,
+        p_pac_th_kw = self$p_pac_th_kw,
         cop_nominal = self$cop_nominal,
         t_ref_cop = self$t_ref_cop,
         volume_ballon_l = self$volume_ballon_l,

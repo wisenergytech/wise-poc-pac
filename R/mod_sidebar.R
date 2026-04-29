@@ -49,8 +49,8 @@ mod_sidebar_ui <- function(id) {
 
     # ---- PAC ----
     shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques electriques de votre PAC. Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
-      shiny::numericInput(ns("p_pac_kw"), "Puissance (kW)", 60, min = 0.5, max = 100, step = 0.5),
+      shiny::tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques de votre PAC. La puissance thermique est celle indiquee par le constructeur (sortie chaleur). Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
+      shiny::numericInput(ns("p_pac_th_kw"), "Puissance thermique (kW)", 60, min = 1, max = 500, step = 1),
       shiny::uiOutput(ns("pac_csv_hint")),
       shiny::numericInput(ns("cop_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "COP = Coefficient de Performance. Un COP de 3.5 signifie que 1 kWh electrique produit 3.5 kWh de chaleur.")),
@@ -65,7 +65,7 @@ mod_sidebar_ui <- function(id) {
           shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
             shiny::HTML(paste0(
               "Dimensionne le ballon pour stocker <b>2h de chaleur PAC</b> dans la plage de tolerance. ",
-              "Formule : V = P<sub>PAC</sub> &times; COP &times; 2h / (tolerance &times; 2 &times; 0.001163). ",
+              "Formule : V = P<sub>th</sub> &times; 2h / (tolerance &times; 2 &times; 0.001163). ",
               "Plus le ballon est gros, plus l'optimiseur peut decaler la consommation vers les heures creuses ou le surplus PV. ",
               "Un ballon trop petit (ratio stockage/puissance faible) limite fortement les economies possibles."))))),
       shiny::conditionalPanel(sprintf("!input['%s'] || output['%s']", ns("volume_auto"), ns("csv_measured")),
@@ -81,7 +81,7 @@ mod_sidebar_ui <- function(id) {
           shiny::selectInput(ns("building_type"), NULL,
             choices = c("Standard (RT2012)" = "standard"), selected = "standard"))
       } else {
-        shiny::conditionalPanel(sprintf("input['%s'] > 10 && !output['%s']", ns("p_pac_kw"), ns("csv_measured")),
+        shiny::conditionalPanel(sprintf("input['%s'] > 35 && !output['%s']", ns("p_pac_th_kw"), ns("csv_measured")),
           shiny::selectInput(ns("building_type"), shiny::tags$span("Type de batiment", tip("Influence le coefficient de deperdition thermique (G) pour le chauffage d'ambiance. Passif = tres bien isole, Standard = construction recente, Ancien = peu isole.")),
             choices = c("Passif (G faible)" = "passif", "Standard (RT2012)" = "standard", "Ancien (peu isole)" = "ancien"),
             selected = "standard"))
@@ -267,10 +267,16 @@ mod_sidebar_server <- function(id, sim_state) {
     ac_bounds <- shiny::reactiveVal(NULL)
     ac_bounds_stale <- shiny::reactiveVal(FALSE)
 
+    # Derive electrical power from thermal input: p_elec = p_th / COP
+    p_pac_kw_eff <- shiny::reactive({
+      shiny::req(input$p_pac_th_kw, input$cop_nominal)
+      round(input$p_pac_th_kw / input$cop_nominal, 2)
+    })
+
     # Track params that affect bounds — mark stale when they change
     shiny::observe({
       # Touch all inputs that affect ac_bounds
-      input$p_pac_kw; input$cop_nominal; input$t_consigne; input$t_tolerance
+      input$p_pac_th_kw; input$cop_nominal; input$t_consigne; input$t_tolerance
       input$pv_data_source; input$date_range; input$type_contrat
       volume_ballon_eff(); pv_kwc_eff()
       # Only mark stale if bounds were previously calibrated
@@ -286,7 +292,7 @@ mod_sidebar_server <- function(id, sim_state) {
         t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
         t_min = input$t_consigne - input$t_tolerance,
         t_max = input$t_consigne + input$t_tolerance,
-        p_pac_kw = input$p_pac_kw, cop_nominal = input$cop_nominal, t_ref_cop = 7,
+        p_pac_kw = p_pac_kw_eff(), cop_nominal = input$cop_nominal, t_ref_cop = 7,
         volume_ballon_l = vol, capacite_kwh_par_degre = vol * 0.001163,
         dt_h = 0.25, pv_kwc = kwc,
         pv_kwc_ref = if (input$data_source == "csv") input$pv_kwc_ref else kwc,
@@ -411,7 +417,7 @@ mod_sidebar_server <- function(id, sim_state) {
     # ---- Volume ballon auto/manual ----
     volume_ballon_eff <- shiny::reactive({
       if (isTRUE(input$volume_auto)) {
-        calculate_ballon_volume_auto(input$p_pac_kw, input$cop_nominal, input$t_tolerance)
+        calculate_ballon_volume_auto(p_pac_kw_eff(), input$cop_nominal, input$t_tolerance)
       } else {
         input$volume_ballon_manual
       }
@@ -419,7 +425,7 @@ mod_sidebar_server <- function(id, sim_state) {
 
     output$volume_auto_display <- shiny::renderUI({
       vol <- volume_ballon_eff()
-      p_kw <- input$p_pac_kw; cop <- input$cop_nominal; tol <- input$t_tolerance
+      p_kw <- p_pac_kw_eff(); cop <- input$cop_nominal; tol <- input$t_tolerance
       delta_t <- 2 * tol
       cap_kwh <- vol * 0.001163 * delta_t
       cap_elec <- round(cap_kwh / cop, 1)
@@ -434,7 +440,7 @@ mod_sidebar_server <- function(id, sim_state) {
     # ---- PV auto ----
     pv_kwc_eff <- shiny::reactive({
       if (isTRUE(input$pv_auto)) {
-        calculate_pv_auto(input$p_pac_kw, volume_ballon_eff(),
+        calculate_pv_auto(p_pac_kw_eff(), volume_ballon_eff(),
                           input$cop_nominal, input$t_consigne)
       } else {
         input$pv_kwc_manual
@@ -443,7 +449,7 @@ mod_sidebar_server <- function(id, sim_state) {
 
     output$pv_auto_display <- shiny::renderUI({
       kwc <- pv_kwc_eff()
-      p_pac <- input$p_pac_kw
+      p_pac <- p_pac_kw_eff()
       vol <- volume_ballon_eff()
       cop <- input$cop_nominal
       shiny::req(p_pac, cop)
@@ -465,13 +471,14 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- params_r ----
     params_r <- shiny::reactive({
-      shiny::req(input$t_consigne, input$t_tolerance, input$p_pac_kw,
+      shiny::req(input$t_consigne, input$t_tolerance, input$p_pac_th_kw,
                  input$cop_nominal, input$type_contrat)
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
       list(t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
         t_min = input$t_consigne - input$t_tolerance, t_max = input$t_consigne + input$t_tolerance,
-        p_pac_kw = input$p_pac_kw, cop_nominal = input$cop_nominal, t_ref_cop = 7,
+        p_pac_kw = p_pac_kw_eff(), p_pac_th_kw = input$p_pac_th_kw,
+        cop_nominal = input$cop_nominal, t_ref_cop = 7,
         volume_ballon_l = vol,
         capacite_kwh_par_degre = vol * 0.001163,
         horizon_qt = 16, seuil_surplus_pct = 0.3, dt_h = 0.25,
@@ -644,7 +651,7 @@ mod_sidebar_server <- function(id, sim_state) {
         }
         df <- gen$generate_demo(
           date_start = input$date_range[1], date_end = input$date_range[2],
-          p_pac_kw = input$p_pac_kw, volume_ballon_l = volume_ballon_eff(),
+          p_pac_kw = p_pac_kw_eff(), volume_ballon_l = volume_ballon_eff(),
           pv_kwc = pv_kwc_eff(),
           ecs_kwh_jour = input$ecs_kwh_jour,
           building_type = if (!is.null(input$building_type)) input$building_type else "standard",
@@ -695,11 +702,13 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
       }
 
-      # Pre-fill PAC power from max observed consumption
+      # Pre-fill PAC thermal power from max observed electrical consumption × COP
       if (has_pac) {
-        est_pac_kw <- round(max(df$pac_kwh, na.rm = TRUE) / 0.25 * 2) / 2
-        est_pac_kw <- max(0.5, min(100, est_pac_kw))
-        shiny::updateNumericInput(session, "p_pac_kw", value = est_pac_kw)
+        cop_est <- input$cop_nominal %||% 3.5
+        est_pac_elec_kw <- max(df$pac_kwh, na.rm = TRUE) / 0.25
+        est_pac_th_kw <- round(est_pac_elec_kw * cop_est)
+        est_pac_th_kw <- max(1, min(500, est_pac_th_kw))
+        shiny::updateNumericInput(session, "p_pac_th_kw", value = est_pac_th_kw)
       }
 
       # Pre-fill ballon volume from heating rate
@@ -744,7 +753,7 @@ mod_sidebar_server <- function(id, sim_state) {
     output$pac_csv_hint <- shiny::renderUI({
       if (!csv_measured_eligible()) return(NULL)
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-6px;margin-bottom:4px;", cl$success),
-        shiny::HTML("Estim\u00e9 depuis le CSV : max(pac_kwh) / 0.25h. <b>V\u00e9rifiez.</b>"))
+        shiny::HTML("Estim\u00e9 depuis le CSV : max(pac_kwh) / 0.25h &times; COP. <b>V\u00e9rifiez avec la fiche constructeur.</b>"))
     })
 
     output$volume_csv_hint <- shiny::renderUI({
