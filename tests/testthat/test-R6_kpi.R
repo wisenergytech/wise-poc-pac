@@ -130,7 +130,7 @@ test_that("compute returns all expected KPI fields", {
     # Energy
     "pv_total", "ac_baseline", "ac_opti", "as_baseline", "as_opti",
     "soutirage_baseline", "soutirage_opti", "injection_baseline", "injection_opti",
-    "conso_pac_baseline", "conso_pac_opti",
+    "conso_pac_baseline", "conso_pac_opti", "part_pac_baseline", "part_pac_opti",
     # Financial
     "facture_baseline", "facture_opti", "gain_eur", "gain_pct",
     "cout_soutirage_baseline", "cout_soutirage_opti",

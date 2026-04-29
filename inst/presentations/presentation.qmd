@@ -198,16 +198,29 @@ Le profil de consommation actuel n'est pas aligne avec la production PV. Le dema
 # L'opportunite
 ## Le marche de l'energie pousse au pilotage intelligent
 
+Le marche de l'electricite belge connait une transformation profonde :
+
+- **Volatilite croissante** : les prix spot varient de < 0 a > 300 EUR/MWh au sein d'une meme journee
+- **Prix negatifs structurels** : au printemps/ete, la surproduction solaire fait regulierement plonger les prix, surtout les week-ends
+- **Contrats dynamiques** : seuls les consommateurs en contrat indexe sur le spot peuvent capter ces opportunites
+- **Flexibilite = valeur** : un reseau de chaleur avec stockage thermique est idealement place pour **absorber les heures gratuites** et eviter les heures cheres
+
+::: notes
+La transition energetique belge (nucleaire + renouvelable croissant) amplifie la volatilite. Les prix negatifs etaient rares il y a 5 ans, ils deviennent la norme au printemps.
+:::
+
+## Illustration : le record du 26 avril 2026
+
 Dimanche 26 avril 2026, le prix spot belge a chute a **-479,27 EUR/MWh** — un record historique. Cause : surproduction solaire massive et faible demande le week-end.
 
-- Les prix negatifs deviennent **structurels** au printemps/ete, surtout les week-ends
-- Seuls les consommateurs en **contrat dynamique** en profitent reellement
-- Un reseau de chaleur avec stockage thermique est idealement place pour **absorber ces heures gratuites (voire remunerees)**
+- Ce record depasse meme l'Allemagne (-414 EUR/MWh) le meme jour
+- Une PAC avec stockage thermique aurait pu etre **remuneree** pour chauffer
+- Ce type d'episode se repete de plus en plus souvent
 
 Sources : [RTBF](https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-le-marche-de-gros-le-consommateur-y-gagne-t-il-11716042), [La Libre](https://www.lalibre.be/economie/mes-finances/2026/04/26/le-prix-de-lelectricite-est-passe-nettement-sous-la-barre-de-zero-dimanche-BZ34KKMI2ZEKJMRJ4DRKVJH6OY/), [Xemex](https://www.xemex.eu/en/dynamic-energy-prices-in-belgium-turning-risk-into-value/) (avril 2026)
 
 ::: notes
-Ce record de -479 EUR/MWh depasse meme l'Allemagne (-414 EUR/MWh) le meme jour.
+-479 EUR/MWh signifie que le producteur paie le consommateur pour absorber son electricite. Avec un ballon tampon de 32 000 L et une PAC de 60 kW, on aurait pu stocker de la chaleur pendant ces heures et etre remunere pour le faire.
 :::
 
 ## Quelles strategies de flexibilite ?

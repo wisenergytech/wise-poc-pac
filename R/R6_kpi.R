@@ -190,6 +190,14 @@ KPICalculator <- R6::R6Class("KPICalculator",
           injection_opti = injection_opti,
           conso_pac_baseline = conso_pac_baseline,
           conso_pac_opti = conso_pac_opti,
+          part_pac_baseline = {
+            ct <- soutirage_baseline + pv_total - injection_baseline
+            if (ct > 0) round(conso_pac_baseline / ct * 100, 1) else 0
+          },
+          part_pac_opti = {
+            ct <- soutirage_opti + pv_total - injection_opti
+            if (ct > 0) round(conso_pac_opti / ct * 100, 1) else 0
+          },
           # Financial
           facture_baseline = facture_baseline,
           facture_opti = facture_opti,

@@ -79,7 +79,12 @@ mod_energie_server <- function(id, sidebar) {
           "Conso PAC", "kWh", cl$pac,
           baseline_val = k$conso_pac_baseline, opti_val = k$conso_pac_opti, gain_invert = TRUE,
           gain_val = round(k$conso_pac_opti - k$conso_pac_baseline), gain_unit = "kWh",
-          tooltip = "Consommation electrique de la PAC.")
+          tooltip = "Consommation electrique de la PAC."),
+        kpi_card(paste0(k$part_pac_opti, "%"),
+          "Part PAC", "", cl$pac,
+          baseline_val = k$part_pac_baseline, opti_val = k$part_pac_opti,
+          gain_val = round(k$part_pac_opti - k$part_pac_baseline, 1), gain_unit = "pts",
+          tooltip = "Part de la PAC dans la consommation totale.", is_percentage = TRUE)
       )
 
       if (!is.null(k$batt_cycles)) {
