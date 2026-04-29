@@ -433,7 +433,7 @@ Le fond colore indique le prix spot moyen par heure : vert = bon marche, rouge =
 
 La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. Le Wise Brain ne reduit pas la consommation, il la **decale** vers les heures solaires et les prix bas.
 
-**Note** : la conso PAC baisse de `r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`% en optimise — c'est un effet secondaire du COP plus eleve en journee, mais c'est **challengeable** et conservatif ([voir FAQ](#faq-conso-pac)).
+**Note** : la conso PAC baisse de `r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`% en optimise — c'est un effet secondaire du COP plus eleve en journee. Ce chiffre repose sur un modele de COP idealise et une modulation continue — il est **discutable** ([voir FAQ](#faq-conso-pac)).
 
 ::: notes
 L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%. Le soutirage reseau diminue car on consomme davantage de PV localement.
