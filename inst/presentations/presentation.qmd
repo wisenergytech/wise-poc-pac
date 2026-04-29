@@ -124,12 +124,11 @@ cat(sprintf('
 
 ## Sommaire
 
-1. **Le site** — `r params$site_name`, installation
-2. **Les constats** — Ce que les donnees mesurees revelent
-3. **L'opportunite** — Marche de l'energie et flexibilite
-4. **Notre approche** — Donnees, algorithme ToU
-5. **Les resultats** — Economies et impact
-6. **Et ensuite ?** — Prochaines etapes
+1. **Le site** — `r params$site_name`, installation et constats
+2. **L'opportunite** — Marche de l'energie et strategies de flexibilite
+3. **Notre approche** — Donnees, algorithme ToU
+4. **Les resultats** — Economies et impact
+5. **Et ensuite ?** — Prochaines etapes
 
 # Le site
 ## Le projet en bref
@@ -193,6 +192,27 @@ Sources : [RTBF](https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-l
 
 ::: notes
 Ce record de -479 EUR/MWh depasse meme l'Allemagne (-414 EUR/MWh) le meme jour.
+:::
+
+## Quelles strategies de flexibilite ?
+
+| Strategie | Gain annuel estime | Risque confort | Principe |
+|---|---:|:---:|---|
+| **ToU shifting** | **1 500 -- 4 000 EUR** | Faible | Decaler la PAC vers les heures creuses / prix bas |
+| Peak shaving | 500 -- 2 000 EUR | Faible | Ecreter les pics de puissance (tarif capacitaire) |
+| Curtailment | 200 -- 800 EUR | Moyen | Couper la PAC pendant les prix extremes |
+| **ToU + Peak** | **2 000 -- 5 500 EUR** | Faible | Combinaison des deux premiers leviers |
+
+Le **Time-of-Use** est le levier le plus rentable pour ce site :
+
+- Le ballon tampon de `r fmt(params$volume_ballon_l)` L offre l'inertie necessaire pour pre-chauffer sans perte de confort
+- Les gains augmentent encore en passant du **BELIX au contrat dynamique** (spreads de prix plus grands)
+- Le curtailment vient "gratuitement" des qu'on implemente le ToU
+
+**Focus de cette presentation : ToU shifting.**
+
+::: notes
+Ordres de grandeur pour une PAC collective de 60 kW, 20 logements. Le peak shaving serait un bon second axe si on a acces au tarif capacitaire applicable. Le curtailment seul ne justifie pas un investissement en pilotage.
 :::
 
 # Notre approche
@@ -345,6 +365,22 @@ L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac
 ## Le message cle
 
 > "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
+
+## FAQ : pourquoi la PAC consomme-t-elle moins en optimise ?
+
+La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la consommation electrique de la PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : l'EMS produit la **meme quantite de chaleur** avec **moins d'electricite**. Trois mecanismes l'expliquent :
+
+| Mecanisme | Explication | Impact |
+|-----------|-------------|--------|
+| **COP plus eleve** | L'EMS deplace la PAC vers les heures diurnes ou il fait plus chaud. Un COP de `r params$cop_median_misaison` a 15 C vs `r params$cop_median_hiver` a 0 C = plus de chaleur par kWh | Principal |
+| **Moins de pertes thermiques** | Le ballon est maintenu plus proche de sa temperature minimale en moyenne. Un ballon a 30 C perd moins de chaleur qu'un ballon a 35 C | Secondaire |
+| **Modulation continue** | L'optimiseur module la puissance [0-100%] au lieu du tout-ou-rien du thermostat. Pas de depassement, chauffage juste ce qu'il faut | Mineur |
+
+**En resume** : l'EMS ne chauffe pas moins, il chauffe **plus intelligemment** — au bon moment, quand le rendement est meilleur.
+
+::: notes
+La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). L'EMS pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
+:::
 
 ## Prochaines implementations
 

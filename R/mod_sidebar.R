@@ -19,7 +19,7 @@ mod_sidebar_ui <- function(id) {
     shiny::tags$div(style = "padding:8px 0 16px 0;text-align:center;",
       shiny::tags$img(src = "www/logo-wise.svg", style = "width:120px;margin-bottom:8px;"),
       shiny::tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.1rem;font-weight:700;color:%s;letter-spacing:.1em", cl$accent), shiny::HTML("&#9889; PAC OPTIMIZER")),
-      shiny::tags$div(style = sprintf("font-size:.65rem;color:%s;margin-top:2px;letter-spacing:.15em;text-transform:uppercase", cl$text_muted), "Pilotage predictif")),
+      shiny::tags$div(style = sprintf("font-size:.65rem;color:%s;margin-top:2px;letter-spacing:.15em;text-transform:uppercase", cl$text_muted), paste("Proof of Concept \u2014", format(Sys.Date(), "%d/%m/%Y")))),
 
     # ---- Data source ----
     shiny::tags$div(class = "sidebar-section",
