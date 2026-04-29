@@ -55,6 +55,15 @@ params:
   co2_pct_reduction: 33
   co2_equiv_car_km: 8043
   co2_equiv_trees_year: 39
+  # Annual projections
+  proj_heat_coverage_pct: 77
+  proj_facture_baseline_an: 4149
+  proj_facture_opti_an: 2781
+  proj_gain_eur_an: 1369
+  proj_gain_pct_an: 33
+  proj_pv_total_an: 36000
+  proj_ac_opti_an: 60
+  proj_co2_saved_an_kg: 546
 format:
   revealjs:
     embed-resources: true
@@ -463,6 +472,25 @@ La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. L'EMS ne re
 
 ::: notes
 L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%. Le soutirage reseau diminue car on consomme davantage de PV localement.
+:::
+
+## Projection annuelle (estimation)
+
+Nos `r params$n_days` jours de mesures couvrent **`r params$proj_heat_coverage_pct`% de la demande thermique annuelle** (nov-avr = saison de chauffe). Projection sur 12 mois, ponderee par le profil climatique belge :
+
+| KPI | Mesure (`r params$n_days` j) | Projection annuelle |
+|-----|---:|---:|
+| **Facture baseline** | `r fmt(params$facture_baseline)` EUR | ~`r fmt(params$proj_facture_baseline_an)` EUR |
+| **Facture optimisee** | `r fmt(params$facture_opti)` EUR | ~`r fmt(params$proj_facture_opti_an)` EUR |
+| **Economie** | `r fmt(params$gain_eur)` EUR (-`r params$gain_pct`%) | **~`r fmt(params$proj_gain_eur_an)` EUR (-`r params$proj_gain_pct_an`%)** |
+| Production PV | `r fmt(round(params$soutirage_baseline_kwh + params$injection_baseline_kwh))` kWh | ~`r fmt(params$proj_pv_total_an)` kWh |
+| Autoconsommation opti | `r fmt1(params$ac_opti)`% | ~`r fmt1(params$proj_ac_opti_an)`% |
+| CO2 evite | `r fmt(params$co2_saved_kg)` kg | ~`r fmt(params$proj_co2_saved_an_kg)` kg |
+
+**Attention** : estimation a la grosse louche. Les mois d'ete ont peu de chauffage mais beaucoup de PV — le gain ToU est plus faible, mais l'autoconsommation "gratuite" augmente.
+
+::: notes
+La projection utilise les degres-jours de chauffage (HDD) mensuels typiques pour Namur comme poids de saisonnalite. Les mois d'ete (juin-aout) representent ~4% de la demande thermique annuelle. La production PV est ponderee par l'irradiation solaire mensuelle. L'autoconsommation projetee est plus basse car en ete le ratio PV/demande est eleve (beaucoup de PV, peu de charge a absorber).
 :::
 
 # Et ensuite ?

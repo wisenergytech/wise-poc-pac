@@ -23,6 +23,9 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   pac_conso <- kpis$conso_pac_baseline
   pct_pac <- if (total_conso > 0) round(pac_conso / total_conso * 100) else 55
 
+  # Annual projections (seasonal extrapolation)
+  proj <- project_annual_kpis(kpis, sim_data)
+
   # Build params list for Quarto
   qparams <- list(
     # Site (static defaults — could be made configurable)
@@ -76,7 +79,16 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     co2_saved_kg = round(kpis$co2_saved_kg %||% 0),
     co2_pct_reduction = round(kpis$co2_pct_reduction %||% 0),
     co2_equiv_car_km = round(kpis$co2_equiv_car_km %||% 0),
-    co2_equiv_trees_year = round(kpis$co2_equiv_trees_year %||% 0)
+    co2_equiv_trees_year = round(kpis$co2_equiv_trees_year %||% 0),
+    # Annual projections
+    proj_heat_coverage_pct = proj$heat_coverage_pct,
+    proj_facture_baseline_an = proj$facture_baseline_an,
+    proj_facture_opti_an = proj$facture_opti_an,
+    proj_gain_eur_an = proj$gain_eur_an,
+    proj_gain_pct_an = proj$gain_pct_an,
+    proj_pv_total_an = proj$pv_total_an,
+    proj_ac_opti_an = proj$ac_opti_an,
+    proj_co2_saved_an_kg = proj$co2_saved_an_kg
   )
 
   # Locate the .qmd template

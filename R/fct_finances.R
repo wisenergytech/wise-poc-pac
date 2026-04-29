@@ -5,6 +5,104 @@
 # No Shiny dependency — usable in scripts, reports, and tests.
 # =============================================================================
 
+# Monthly weights for Belgian climate (normalized to sum = 1.0)
+#
+# Heating degree-days: Synergrid normales 30 ans (1996-2025), DJ 16.5 C
+# Source: https://www.synergrid.be/fr/centre-de-documentation/statistiques-et-donnees/degres-jours
+# Raw DJ: Jan=396, Feb=335, Mar=290, Apr=185, May=95, Jun=28, Jul=10, Aug=9, Sep=51, Oct=148, Nov=272, Dec=367
+# Total = 2186
+.monthly_heating_weight <- c(
+  Jan = 396, Feb = 335, Mar = 290, Apr = 185, May = 95, Jun = 28,
+  Jul = 10, Aug = 9, Sep = 51, Oct = 148, Nov = 272, Dec = 367
+) / 2186
+
+# Solar irradiation: PVGIS-SARAH3, Namur (50.47N, 4.87E), horizontal plane
+# Source: https://re.jrc.ec.europa.eu/api/v5_3/MRcalc (year 2020)
+# Raw kWh/m2/month: Jan=27.73, Feb=39.75, Mar=93.83, Apr=158.79, May=195.32, Jun=162.61,
+#   Jul=159.46, Aug=146.77, Sep=112.31, Oct=48.98, Nov=36.10, Dec=20.34
+# Total = 1201.99
+.monthly_pv_weight <- c(
+  Jan = 27.73, Feb = 39.75, Mar = 93.83, Apr = 158.79, May = 195.32, Jun = 162.61,
+  Jul = 159.46, Aug = 146.77, Sep = 112.31, Oct = 48.98, Nov = 36.10, Dec = 20.34
+) / 1201.99
+
+#' Project KPIs to a full year using seasonal weights
+#'
+#' Takes KPIs computed over a partial year (e.g. Nov-Apr) and projects them
+#' to a full 12-month cycle using typical Belgian heating demand and PV
+#' production monthly profiles. This is a rough estimate ("grosse louche").
+#'
+#' @param kpis Named list from KPICalculator$compute()
+#' @param sim_data Simulation dataframe with \code{timestamp} column
+#' @return Named list with projected annual KPIs:
+#'   \describe{
+#'     \item{measured_months}{Character vector of months covered}
+#'     \item{n_months_measured}{Number of months with data}
+#'     \item{facture_baseline_an}{Projected annual baseline bill (EUR)}
+#'     \item{facture_opti_an}{Projected annual optimised bill (EUR)}
+#'     \item{gain_eur_an}{Projected annual savings (EUR)}
+#'     \item{gain_pct_an}{Projected annual savings (\%)}
+#'     \item{pv_total_an}{Projected annual PV production (kWh)}
+#'     \item{ac_opti_an}{Projected annual self-consumption (\%)}
+#'     \item{co2_saved_an_kg}{Projected annual CO2 savings (kg)}
+#'   }
+#' @export
+project_annual_kpis <- function(kpis, sim_data) {
+  # Identify which months are covered by simulation data
+  months_covered <- unique(format(sim_data$timestamp, "%b"))
+  month_indices <- match(months_covered, names(.monthly_heating_weight))
+  month_indices <- month_indices[!is.na(month_indices)]
+
+  # Weight of measured period vs full year
+  heat_measured <- sum(.monthly_heating_weight[month_indices])
+  heat_total <- sum(.monthly_heating_weight)
+  pv_measured <- sum(.monthly_pv_weight[month_indices])
+  pv_total_weight <- sum(.monthly_pv_weight)
+
+  # Scaling factors
+  heat_scale <- heat_total / heat_measured
+  pv_scale <- pv_total_weight / pv_measured
+
+  # Financial projection: scale by heating demand (main cost driver)
+  facture_baseline_an <- round(kpis$facture_baseline * heat_scale)
+  facture_opti_an <- round(kpis$facture_opti * heat_scale)
+  gain_eur_an <- facture_baseline_an - facture_opti_an
+  gain_pct_an <- if (facture_baseline_an > 0) {
+    round(gain_eur_an / facture_baseline_an * 100)
+  } else 0
+
+  # PV projection: scale by solar irradiation
+  pv_total_an <- round(kpis$pv_total * pv_scale)
+
+  # Self-consumption: in summer more PV but less demand → ratio changes
+  # Rough estimate: weighted average of measured AC and a summer estimate
+  # In summer, PAC demand is low so AC drops (less load to absorb PV)
+  heat_summer <- heat_total - heat_measured
+  ac_summer_estimate <- max(20, kpis$ac_opti * 100 * 0.5)  # lower in summer
+  ac_opti_an <- round(
+    (kpis$ac_opti * 100 * heat_measured + ac_summer_estimate * heat_summer) /
+      heat_total, 1
+  )
+
+  # CO2 projection
+  co2_saved_an_kg <- if (!is.null(kpis$co2_saved_kg)) {
+    round(kpis$co2_saved_kg * heat_scale)
+  } else 0
+
+  list(
+    measured_months = months_covered,
+    n_months_measured = length(month_indices),
+    heat_coverage_pct = round(heat_measured / heat_total * 100),
+    facture_baseline_an = facture_baseline_an,
+    facture_opti_an = facture_opti_an,
+    gain_eur_an = gain_eur_an,
+    gain_pct_an = gain_pct_an,
+    pv_total_an = pv_total_an,
+    ac_opti_an = ac_opti_an,
+    co2_saved_an_kg = co2_saved_an_kg
+  )
+}
+
 #' Compute cumulative bill time-series
 #'
 #' Calculates per-timestep net bill (offtake cost minus injection revenue)
