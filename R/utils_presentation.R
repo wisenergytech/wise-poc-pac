@@ -84,6 +84,8 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     co2_baseline_kg = round(kpis$co2_baseline_kg %||% 0),
     co2_saved_kg = round(kpis$co2_saved_kg %||% 0),
     co2_pct_reduction = round(kpis$co2_pct_reduction %||% 0),
+    co2_intensity_baseline = round(kpis$co2_intensity_baseline %||% 0),
+    co2_intensity_opti = round(kpis$co2_intensity_opti %||% 0),
     co2_equiv_car_km = round(kpis$co2_equiv_car_km %||% 0),
     co2_equiv_trees_year = round(kpis$co2_equiv_trees_year %||% 0),
     # Annual projections

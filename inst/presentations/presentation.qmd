@@ -53,6 +53,8 @@ params:
   co2_baseline_kg: 1274
   co2_saved_kg: 420
   co2_pct_reduction: 33
+  co2_intensity_baseline: 194
+  co2_intensity_opti: 170
   co2_equiv_car_km: 8043
   co2_equiv_trees_year: 39
   # Annual projections
@@ -497,10 +499,12 @@ La projection tient compte de la saisonnalité : en ete le COP est plus élevé 
 if (has_co2) p_co2_cumul
 ```
 
-En decalant la PAC vers les heures solaires, le Wise Brain réduit aussi l'empreinte carbone : **-`r fmt(params$co2_saved_kg)` kg CO2** sur `r params$n_days` jours (-`r params$co2_pct_reduction`%). Les heures bon marché sont aussi les heures ou le mix électrique est le plus décarboné (solaire + nucléaire).
+En decalant la PAC vers les heures solaires, le Wise Brain réduit l'empreinte carbone : **-`r fmt(params$co2_saved_kg)` kg CO2** sur `r params$n_days` jours (-`r params$co2_pct_reduction`%). L'intensité carbone pondérée passe de **`r params$co2_intensity_baseline`** à **`r params$co2_intensity_opti` gCO2/kWh** — on consomme une électricité structurellement plus propre.
+
+Équivalent : **`r fmt(params$co2_equiv_car_km)` km** en voiture évités, ou **`r params$co2_equiv_trees_year` arbres** plantés par an.
 
 ::: notes
-L'écart entre les deux courbes représente le CO2 évité à chaque instant. Les émissions sont calculées à partir de l'intensité carbone du réseau belge (données Elia, quart-horaire). Équivalent : `r fmt(params$co2_equiv_car_km)` km en voiture évités, ou `r params$co2_equiv_trees_year` arbres plantés par an.
+L'écart entre les deux courbes représente le CO2 évité à chaque instant. Les émissions sont calculées à partir de l'intensité carbone du réseau belge (données Elia, quart-horaire). L'intensité carbone pondérée mesure les gCO2 par kWh effectivement consommé — c'est plus parlant que le total en kg car cela isole l'effet du déplacement temporel de celui du volume.
 :::
 
 # Et ensuite ?
@@ -602,19 +606,20 @@ Le facteur est calcule au 95e percentile du ratio (injection_nette / pv_estimé)
 
 L'intensité carbone du réseau électrique belge **varie chaque heure** selon le mix de production. On utilise les données d'**Elia Open Data** :
 
-| Source | Méthodologie | Periode couverte |
-|--------|-------------|-----------------|
-| **ODS192** | Consumption-based (imports inclus) | Fev 2026 → aujourd'hui |
-| **ODS201** | Production-based (mix generation + facteurs IPCC) | Jan → fev 2026 (backfill) |
+| Source | Méthodologie | Usage |
+|--------|-------------|-------|
+| **ODS192** | Consumption-based (imports inclus) | Source principale |
+| **ODS201** | Production-based (mix generation + facteurs IPCC) | Backfill des trous ODS192 |
 
 Les heures solaires diurnes sont à la fois **moins chères** et **moins carbonées**. En decalant la PAC vers ces heures, on réduit simultanément la facture et l'empreinte carbone.
 
 | KPI CO2 | Baseline | Optimisé | Delta |
 |---------|--------:|--------:|------:|
 | Émissions totales | `r fmt(params$co2_baseline_kg)` kg | `r fmt(params$co2_baseline_kg - params$co2_saved_kg)` kg | -`r fmt(params$co2_saved_kg)` kg (-`r params$co2_pct_reduction`%) |
+| Intensité carbone | `r params$co2_intensity_baseline` gCO2/kWh | `r params$co2_intensity_opti` gCO2/kWh | -`r params$co2_intensity_baseline - params$co2_intensity_opti` gCO2/kWh |
 | Équivalent voiture | — | — | `r fmt(params$co2_equiv_car_km)` km évités |
 | Équivalent arbres | — | — | `r params$co2_equiv_trees_year` arbres/an |
 
 ::: notes
-La méthodologie consumption-based (ODS192) inclut les émissions liées aux imports d'électricité. Pour janvier-fevrier 2026, on utilise la methode production-based (ODS201, facteurs IPCC AR5) car les données consumption-based ne sont pas encore disponibles pour cette période.
+La méthodologie consumption-based (ODS192) inclut les émissions liées aux imports d'électricité. ODS201 (production-based, facteurs IPCC AR5) est utilisé en backfill pour les heures ou ODS192 renvoie des données manquantes (zéros). L'intensité carbone pondérée est le ratio emissions/consommation — elle isole l'effet du déplacement temporel indépendamment du volume consommé.
 :::
