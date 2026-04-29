@@ -250,6 +250,29 @@ L'optimiseur combine le tout pour repondre a : **"Quand aurait-il fallu faire to
 Le COP varie avec la temperature exterieure (de ~`r params$cop_median_hiver` en hiver a ~`r params$cop_median_misaison` en mi-saison), ce qui impacte directement le cout reel de production thermique.
 :::
 
+## Hypotheses de la simulation
+
+Deux simplifications retenues pour ce PoC :
+
+**1. Une seule PAC de `r params$pac_kw` kW thermique**
+
+Le site dispose de deux sous-systemes (GSHP 40 kW on/off + ASHP 20 kW modulante). Pour cette simulation, on les traite comme **une seule unite modulante de `r params$pac_kw` kW** — ce qui surestime legerement la flexibilite reelle mais donne un bon ordre de grandeur.
+
+**2. Aucun pilotage tarifaire dans la baseline**
+
+Le site est sous **contrat BELIX** (heures pleines 7-11h + 17-22h, heures creuses le reste). Mais la PAC est-elle pilotee sur ce tarif ? **Non** :
+
+|  | % du temps | % conso PAC |
+|---|:---:|:---:|
+| Heures pleines (7-11h + 17-22h) | 37.5% | 41.1% |
+| Heures creuses | 62.5% | 58.9% |
+
+La PAC consomme **plus** en heures cheres qu'en proportion du temps (+3.6 pts). C'est un **thermostat pur** — il chauffe quand le ballon refroidit, sans tenir compte du prix. L'opportunite de pilotage est donc **intacte**.
+
+::: notes
+Le leger exces en heures pleines s'explique par les pics naturels du matin (~7h, relance apres nuit + ECS douches) et du soir (17-21h, ECS cuisine/douches), qui tombent pile dans les plages peak du BELIX. C'est le rythme de vie des occupants, pas un pilotage. Le creux en milieu de journee (11-16h) vient du PV qui couvre une partie des besoins, pas d'un pilotage tarifaire.
+:::
+
 ## L'optimiseur ToU : pre-chauffer quand c'est pas cher
 
 **Idee** : deplacer la consommation PAC des heures cheres vers les heures bon marche, grace a l'inertie thermique du ballon tampon.
@@ -365,6 +388,24 @@ L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac
 ## Le message cle
 
 > "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
+
+## FAQ : pourquoi dit-on qu'il n'y a pas de pilotage BELIX ?
+
+Le raisonnement est simple : si la PAC etait pilotee sur le tarif BELIX, elle **eviterait les heures pleines** et concentrerait sa consommation en heures creuses. Le % de conso en heures pleines serait nettement inferieur au % de temps correspondant.
+
+Or les donnees montrent l'inverse : **41.1% de la conso en heures pleines** pour 37.5% du temps. La PAC consomme legerement **plus** quand c'est cher.
+
+**Pourquoi ce leger exces ?** Le profil horaire l'explique :
+
+- **Matin (~7h)** : relance apres la nuit + ECS douches → tombe en **heure pleine**
+- **Soir (17-21h)** : ECS cuisine/douches → tombe en **heure pleine**
+- **Milieu de journee (11-16h)** : creux naturel → le PV couvre une partie des besoins
+
+C'est le **rythme de vie des occupants**, pas un pilotage. La PAC s'en fiche du prix — elle chauffe quand le ballon refroidit, un point c'est tout.
+
+::: notes
+A l'inverse, un pilotage BELIX aurait bloque la PAC en heures pleines (7-11h, 17-22h) et surchauffe le ballon juste avant. Or la PAC tourne tout autant a 18h (peak, cher) qu'a 1h (off-peak, pas cher). La baseline est neutre/agnostique au contrat, ce qui permet de simuler valablement un passage en contrat dynamique.
+:::
 
 ## FAQ : pourquoi la PAC consomme-t-elle moins en optimise ?
 

@@ -45,6 +45,8 @@ app_ui <- function(request) {
             mod_energie_ui("energie")),
           bslib::nav_panel(title = "Finances", icon = shiny::icon("euro-sign"),
             mod_finances_ui("finances")),
+          bslib::nav_panel(title = "PAC", icon = shiny::icon("temperature-arrow-up"),
+            mod_pac_ui("pac")),
           bslib::nav_panel(title = "Impact CO2", icon = shiny::icon("leaf"),
             mod_co2_ui("co2")),
           # bslib::nav_panel(title = "Dimensionnement", icon = shiny::icon("solar-panel"),

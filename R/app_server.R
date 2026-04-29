@@ -60,6 +60,7 @@ init_app_modules <- function(input, output, session) {
   # ---- Tab modules ----
   mod_energie_server("energie", sidebar)
   mod_finances_server("finances", sidebar)
+  mod_pac_server("pac", sidebar)
   mod_co2_server("co2", sidebar)
   mod_dimensionnement_server("dimensionnement", sidebar)
   mod_comparaison_server("comparaison", sidebar)
