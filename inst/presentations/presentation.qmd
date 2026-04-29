@@ -88,6 +88,14 @@ logo_wise_b64 <- img_to_b64("images/wise-logo.png")
 tranche_file <- "tranche_data.rds"
 has_tranche <- file.exists(tranche_file)
 if (has_tranche) tranche_data <- readRDS(tranche_file)
+
+profil_file <- "profil_data.rds"
+has_profil <- file.exists(profil_file)
+if (has_profil) {
+  profil_raw <- readRDS(profil_file)
+  profil_data <- profil_raw$profil
+  profil_prix <- profil_raw$prix
+}
 ```
 
 ```{r logos-and-background, echo=FALSE, results='asis'}
@@ -367,6 +375,80 @@ L'EMS **deplace** la consommation PAC de la nuit et des heures de pointe vers la
 Le graphique montre la redistribution de la consommation PAC entre les 4 tranches horaires. Le prix spot moyen est annote sur chaque barre baseline. L'optimiseur concentre la consommation sur les heures solaires, quand le PV et les prix bas convergent.
 :::
 
+## Le glissement en action (suite)
+
+```{r plot-profil-horaire, echo=FALSE, fig.width=14, fig.height=5}
+if (has_profil) {
+  bl <- profil_data[profil_data$scenario == "Baseline", ]
+  op <- profil_data[profil_data$scenario == "Optimise", ]
+  hp <- profil_prix
+
+  # Price-to-color: green (cheap) to red (expensive)
+  prix_to_color <- function(prix, alpha = 0.12) {
+    rng <- range(prix, na.rm = TRUE)
+    span <- max(rng[2] - rng[1], 0.001)
+    t <- (prix - rng[1]) / span
+    r <- round(34 + 205 * t)
+    g <- round(139 - 71 * t)
+    b <- round(69 - 1 * t)
+    sprintf("rgba(%d,%d,%d,%.2f)", r, g, b, alpha)
+  }
+
+  # Background shapes colored by price
+  colors <- prix_to_color(hp$prix_moy, alpha = 0.12)
+  shapes <- lapply(seq_len(nrow(hp)), function(i) {
+    list(type = "rect", xref = "x", yref = "paper",
+      x0 = hp$hour[i] - 0.5, x1 = hp$hour[i] + 0.5,
+      y0 = 0, y1 = 1,
+      fillcolor = colors[i], line = list(width = 0))
+  })
+
+  bl_color <- "rgba(249,115,22,0.9)"
+  op_color <- "rgba(6,182,212,0.9)"
+
+  plotly::plot_ly() |>
+    plotly::add_trace(
+      data = bl, x = ~hour, y = ~pac_moy_kw, name = "Baseline",
+      type = "scatter", mode = "lines+markers",
+      line = list(color = bl_color, width = 2.5),
+      marker = list(color = bl_color, size = 5),
+      hovertemplate = "<b>%{x}h</b><br>Baseline: %{y:.1f} kW<extra></extra>") |>
+    plotly::add_trace(
+      data = op, x = ~hour, y = ~pac_moy_kw, name = "Optimise",
+      type = "scatter", mode = "lines+markers",
+      line = list(color = op_color, width = 2.5),
+      marker = list(color = op_color, size = 5),
+      hovertemplate = "<b>%{x}h</b><br>Optimise: %{y:.1f} kW<extra></extra>") |>
+    plotly::add_trace(
+      data = hp, x = ~hour, y = ~(prix_moy * 1000), name = "Prix moyen",
+      type = "scatter", mode = "lines",
+      line = list(color = "#94a3b8", width = 1, dash = "dot"),
+      yaxis = "y2",
+      hovertemplate = "<b>%{x}h</b><br>Prix: %{y:.0f} EUR/MWh<extra></extra>") |>
+    plotly::layout(
+      shapes = shapes,
+      paper_bgcolor = "rgba(0,0,0,0)",
+      plot_bgcolor = "rgba(0,0,0,0)",
+      font = list(color = "#e2e8f0", family = "Raleway, sans-serif", size = 13),
+      xaxis = list(dtick = 1, tick0 = 0, title = "Heure",
+        gridcolor = "rgba(0,0,0,0)"),
+      yaxis = list(title = "Puissance PAC moyenne (kW)",
+        gridcolor = "rgba(148,163,184,0.15)"),
+      yaxis2 = list(overlaying = "y", side = "right",
+        title = list(text = "EUR/MWh", standoff = 5),
+        showgrid = FALSE,
+        tickfont = list(size = 9, color = "#94a3b8")),
+      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15)
+    )
+}
+```
+
+Le **profil horaire** confirme : la baseline (orange) tourne la nuit et le soir — les heures les plus cheres (fond rouge). L'EMS (cyan) concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
+
+::: notes
+Le fond colore indique le prix spot moyen par heure : vert = bon marche, rouge = cher. La courbe pointillee grise montre le prix moyen sur l'axe de droite. La baseline montre deux pics (nuit + soir) typiques d'un thermostat. L'optimise montre un pic unique en milieu de journee, aligne avec la production solaire.
+:::
+
 ## Energie et flexibilite
 
 | Metrique | Baseline | Optimise (EMS) | Delta |
@@ -388,9 +470,23 @@ L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac
 
 > "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
 
-## FAQ : pourquoi dit-on qu'il n'y a pas de pilotage BELIX ?
+## Prochaines etapes
 
-Le raisonnement est simple : si la PAC etait pilotee sur le tarif BELIX, elle **eviterait les heures pleines** et concentrerait sa consommation en heures creuses. Le % de conso en heures pleines serait nettement inferieur au % de temps correspondant.
+Les axes d'amelioration sont nombreux — les prochaines implementations seront surtout nourries de **vos retours et echanges** :
+
+- **Peak shaving** : ecreter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en sequencant le demarrage des deux PAC ?
+- **Curtailment** : limiter l'injection PV en periode de prix negatifs pour maximiser l'autoconsommation ?
+- **Distinction GSHP / ASHP** : piloter les deux PAC independamment (on/off vs modulante) — necessite un sous-comptage individuel ?
+- **Comparaison contrats** : simuler le gain additionnel d'un passage BELIX → dynamique ?
+
+::: notes
+Aujourd'hui l'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Avec un sous-comptage separe GSHP/ASHP, on pourrait planifier les cycles GSHP sur les heures bon marche tout en modulant l'ASHP en temps reel.
+:::
+
+# FAQ
+## Pourquoi dit-on qu'il n'y a pas de pilotage BELIX ?
+
+Si la PAC etait pilotee sur le tarif BELIX, elle **eviterait les heures pleines** et concentrerait sa consommation en heures creuses. Le % de conso en heures pleines serait nettement inferieur au % de temps correspondant.
 
 Or les donnees montrent l'inverse : **41.1% de la conso en heures pleines** pour 37.5% du temps. La PAC consomme legerement **plus** quand c'est cher.
 
@@ -406,34 +502,52 @@ C'est le **rythme de vie des occupants**, pas un pilotage. La PAC s'en fiche du 
 A l'inverse, un pilotage BELIX aurait bloque la PAC en heures pleines (7-11h, 17-22h) et surchauffe le ballon juste avant. Or la PAC tourne tout autant a 18h (peak, cher) qu'a 1h (off-peak, pas cher). La baseline est neutre/agnostique au contrat, ce qui permet de simuler valablement un passage en contrat dynamique.
 :::
 
-## FAQ : pourquoi la PAC consomme-t-elle moins en optimise ?
+## Pourquoi la PAC consomme-t-elle moins en optimise ?
 
-La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la consommation electrique de la PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : l'EMS produit la **meme quantite de chaleur** avec **moins d'electricite**. Trois mecanismes l'expliquent :
+La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la conso PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : l'EMS produit la **meme chaleur** avec **moins d'electricite** :
 
 | Mecanisme | Explication | Impact |
 |-----------|-------------|--------|
-| **COP plus eleve** | L'EMS deplace la PAC vers les heures diurnes ou il fait plus chaud. Un COP de `r params$cop_median_misaison` a 15 C vs `r params$cop_median_hiver` a 0 C = plus de chaleur par kWh | Principal |
-| **Moins de pertes thermiques** | Le ballon est maintenu plus proche de sa temperature minimale en moyenne. Un ballon a 30 C perd moins de chaleur qu'un ballon a 35 C | Secondaire |
-| **Modulation continue** | L'optimiseur module la puissance [0-100%] au lieu du tout-ou-rien du thermostat. Pas de depassement, chauffage juste ce qu'il faut | Mineur |
+| **COP plus eleve** | L'EMS deplace la PAC vers les heures diurnes ou il fait plus chaud. COP `r params$cop_median_misaison` a 15 C vs `r params$cop_median_hiver` a 0 C = plus de chaleur par kWh | Principal |
+| **Moins de pertes thermiques** | Le ballon est maintenu plus proche de sa temperature minimale en moyenne | Secondaire |
+| **Modulation continue** | Puissance [0-100%] au lieu du tout-ou-rien du thermostat | Mineur |
 
-**En resume** : l'EMS ne chauffe pas moins, il chauffe **plus intelligemment** — au bon moment, quand le rendement est meilleur.
+**En resume** : l'EMS ne chauffe pas moins, il chauffe **plus intelligemment**.
 
 ::: notes
 La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). L'EMS pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
 :::
 
-## FAQ : comment mesure-t-on l'impact CO2 ?
+## Pourquoi le PV affiche ~`r params$pv_kwc` kWc alors que l'installation fait 42 kWc ?
 
-L'intensite carbone du reseau electrique belge **varie chaque heure** selon le mix de production (nucleaire, gaz, eolien, solaire, imports). On utilise les donnees d'**Elia Open Data** :
+Les donnees de production PV mesurees (FusionSolar) presentent des problemes de **desynchronisation et de couverture partielle** qui les rendent inexploitables pour la simulation. On utilise donc le **profil regional Elia** (province de Namur, quart-horaire) mis a l'echelle.
+
+Le probleme : Elia donne une **moyenne regionale** qui inclut des installations mal orientees, ombragees ou anciennes. L'installation Profondeville performe mieux que cette moyenne.
+
+| Approche | kWc | Incoherences bilan | Probleme |
+|----------|----:|-------------------:|----------|
+| kWc reel brut | 42 | ~5.6% | PV sous-estime → injection inexpliquee |
+| kWc calibre | ~65 | <1% | Surestime la capacite declaree |
+| **kWc reel + facteur local** | **42 x 1.36** | **~1%** | **Aucun** |
+
+**Notre approche** : on declare les **42 kWc reels**, puis on calcule un **facteur de performance local** (1.36) a partir du bilan energetique mesure. Ce facteur corrige le profil Elia pour qu'il colle aux flux reels du compteur ORES, sans gonfler artificiellement la puissance crete.
+
+Concretement : l'installation Profondeville produit **~36% de plus** que la moyenne namuroise a puissance crete egale — probablement grace a une meilleure orientation et inclinaison des panneaux.
+
+::: notes
+Le facteur est calcule au 95e percentile du ratio (injection_nette / pv_estime) sur les heures d'injection. On utilise le 95e percentile plutot que le maximum pour eviter le surajustement sur des outliers (ex: erreurs de comptage ponctuelles). Ce facteur est applique automatiquement dans le pipeline de donnees quand l'utilisateur declare un kWc different de la valeur estimee par rescaling.
+:::
+
+## Comment mesure-t-on l'impact CO2 ?
+
+L'intensite carbone du reseau electrique belge **varie chaque heure** selon le mix de production. On utilise les donnees d'**Elia Open Data** :
 
 | Source | Methodologie | Periode couverte |
 |--------|-------------|-----------------|
 | **ODS192** | Consumption-based (imports inclus) | Fev 2026 → aujourd'hui |
 | **ODS201** | Production-based (mix generation + facteurs IPCC) | Jan → fev 2026 (backfill) |
 
-**Comment ca marche ?** Pour chaque quart d'heure de simulation, on multiplie le soutirage reseau (kWh) par l'intensite carbone du reseau a cet instant (gCO2eq/kWh). C'est la methode **GHG Protocol Scope 2** (market-based).
-
-**Pourquoi l'EMS reduit les emissions ?** Le meme mecanisme que pour les prix : les heures solaires diurnes sont a la fois **moins cheres** et **moins carbonees** (solaire + nucleaire dominent le mix). En decalant la PAC vers ces heures, on reduit simultanement la facture et l'empreinte carbone.
+Les heures solaires diurnes sont a la fois **moins cheres** et **moins carbonees**. En decalant la PAC vers ces heures, on reduit simultanement la facture et l'empreinte carbone.
 
 | KPI CO2 | Baseline | Optimise | Delta |
 |---------|--------:|--------:|------:|
@@ -442,15 +556,5 @@ L'intensite carbone du reseau electrique belge **varie chaque heure** selon le m
 | Equivalent arbres | — | — | `r params$co2_equiv_trees_year` arbres/an |
 
 ::: notes
-La methodologie consumption-based (ODS192) inclut les emissions liees aux imports d'electricite, ce qui donne une image plus fidele de l'impact reel. Pour janvier-fevrier 2026, on utilise la methode production-based (ODS201, facteurs IPCC AR5) car les donnees consumption-based ne sont pas encore disponibles pour cette periode. Les deux methodes donnent des ordres de grandeur comparables pour la Belgique.
-:::
-
-## Prochaines implementations
-
-- **Peak shaving** : ecreter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en sequencant le demarrage des deux PAC
-- **Curtailment** : limiter l'injection PV en periode de prix negatifs pour maximiser l'autoconsommation
-- **Distinction GSHP / ASHP** : piloter les deux PAC independamment (on/off vs modulante) — necessite un sous-comptage individuel
-
-::: notes
-Aujourd'hui l'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Avec un sous-comptage separe GSHP/ASHP, on pourrait planifier les cycles GSHP sur les heures bon marche tout en modulant l'ASHP en temps reel.
+La methodologie consumption-based (ODS192) inclut les emissions liees aux imports d'electricite. Pour janvier-fevrier 2026, on utilise la methode production-based (ODS201, facteurs IPCC AR5) car les donnees consumption-based ne sont pas encore disponibles pour cette periode.
 :::

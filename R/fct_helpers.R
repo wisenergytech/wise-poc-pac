@@ -121,3 +121,34 @@ estimate_pv_kwc <- function(df) {
   est_kwc <- p_peak / cf
   max(1, min(200, round(est_kwc * 2) / 2))
 }
+
+#' Compute local PV performance correction factor
+#'
+#' When PV data comes from a regional profile (e.g. Elia) scaled to a
+#' declared kWc, it may underestimate actual site production due to better
+#' local conditions (orientation, tilt, microclimate). This function
+#' computes a correction factor from the energy balance: at timesteps
+#' where injection > 0, the real PV must have been at least
+#' feedin + consumption - offtake.
+#'
+#' @param pv_kwh Numeric vector, PV production (already scaled to declared kWc)
+#' @param offtake_kwh Numeric vector, grid offtake (from meter)
+#' @param feedin_kwh Numeric vector, grid injection (from meter)
+#' @return A single numeric correction factor (>= 1). Multiply pv_kwh by
+#'   this factor to obtain corrected production.
+#' @export
+compute_pv_local_factor <- function(pv_kwh, offtake_kwh, feedin_kwh) {
+  # Minimum PV needed for energy balance: pv >= feedin - offtake
+  pv_min_needed <- pmax(0, feedin_kwh - offtake_kwh, na.rm = TRUE)
+
+  # Only consider timesteps where both PV and deficit are positive
+  mask <- pv_kwh > 0.01 & pv_min_needed > 0.01
+  if (sum(mask, na.rm = TRUE) < 10) return(1)
+
+  # Factor needed per timestep
+  factors <- pv_min_needed[mask] / pv_kwh[mask]
+
+  # Use 95th percentile to cover most cases without overfitting outliers
+  factor <- as.numeric(stats::quantile(factors, 0.95, na.rm = TRUE))
+  max(1, factor)
+}

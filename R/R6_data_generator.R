@@ -281,6 +281,17 @@ DataGenerator <- R6::R6Class("DataGenerator",
         cop_reel = calc_cop(t_ext, params$cop_nominal, params$t_ref_cop)
       )
 
+      # Apply local performance correction when PV is from regional profile
+      # and user declared a different kWc than the estimated reference
+      if (ratio_pv != 1 && has_pac_kwh && "intake_kwh" %in% names(df)) {
+        local_factor <- compute_pv_local_factor(df$pv_kwh, df$offtake_kwh, df$intake_kwh)
+        if (local_factor > 1) {
+          df$pv_kwh <- df$pv_kwh * local_factor
+          message(sprintf("[prepare_df] Correction profil PV local: facteur=%.3f (%.1f kWc effectifs)",
+            local_factor, params$pv_kwc * local_factor))
+        }
+      }
+
       # Compute delta_t_mesure from t_ballon whenever available (used for ECS estimation later)
       if (has_t_ballon) {
         df <- df %>% dplyr::mutate(delta_t_mesure = t_ballon - dplyr::lag(t_ballon))

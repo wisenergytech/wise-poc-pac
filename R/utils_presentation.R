@@ -85,14 +85,47 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     qmd_path <- file.path("inst", "presentations", "presentation.qmd")
   }
 
-  # Pre-compute PAC tranche chart data for the .qmd plotly chart
+  # Pre-compute chart data for the .qmd plotly charts
   kpi_calc <- KPICalculator$new()
   p_list <- if (inherits(params, "SimulationParams")) params$as_list() else params
+
+  # --- PAC par tranche horaire ---
   tranche_baseline <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "baseline")
   tranche_opti <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "optimized")
   tranche_baseline$scenario <- "Baseline"
   tranche_opti$scenario <- "Optimise"
   tranche_data <- rbind(tranche_baseline, tranche_opti)
+
+  # --- Profil horaire moyen (puissance PAC + prix) ---
+  get_pac_kwh_vec <- function(sim, params, type) {
+    if (type == "optimized") {
+      sim$sim_pac_on * params$p_pac_kw * params$dt_h
+    } else if ("pac_kwh" %in% names(sim)) {
+      sim$pac_kwh
+    } else {
+      pmax(0, sim$offtake_kwh + sim$pv_kwh - sim$intake_kwh - sim$conso_hors_pac)
+    }
+  }
+  compute_profile <- function(sim, params, type) {
+    pac_kwh <- get_pac_kwh_vec(sim, params, type)
+    h <- as.integer(format(sim$timestamp, "%H", tz = "Europe/Brussels"))
+    dplyr::tibble(hour = h, pac_kwh = pac_kwh) %>%
+      dplyr::group_by(hour) %>%
+      dplyr::summarise(
+        pac_moy_kw = mean(pac_kwh, na.rm = TRUE) / params$dt_h,
+        .groups = "drop"
+      )
+  }
+  profil_bl <- compute_profile(sim_data, p_list, "baseline")
+  profil_bl$scenario <- "Baseline"
+  profil_op <- compute_profile(sim_data, p_list, "optimized")
+  profil_op$scenario <- "Optimise"
+  profil_data <- rbind(profil_bl, profil_op)
+
+  h_vec <- as.integer(format(sim_data$timestamp, "%H", tz = "Europe/Brussels"))
+  profil_prix <- dplyr::tibble(hour = h_vec, prix = sim_data$prix_offtake) %>%
+    dplyr::group_by(hour) %>%
+    dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
 
   # Copy template + assets to a temp dir for rendering
   tmp_dir <- tempfile("presentation_")
@@ -102,6 +135,8 @@ render_presentation <- function(kpis, params, sim_data, output_file,
 
   # Save pre-computed chart data for the .qmd
   saveRDS(tranche_data, file.path(tmp_dir, "tranche_data.rds"))
+  saveRDS(list(profil = profil_data, prix = profil_prix),
+          file.path(tmp_dir, "profil_data.rds"))
 
   tmp_qmd <- file.path(tmp_dir, "presentation.qmd")
 

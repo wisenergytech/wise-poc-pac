@@ -901,13 +901,21 @@ mod_sidebar_server <- function(id, sim_state) {
         if ("feedin_kwh" %in% names(df)) "feedin_kwh" else NULL
       if (is.null(feedin_col) || !"pv_kwh" %in% names(df)) return(NULL)
 
-      # Re-scale PV with custom kWc
+      # Re-scale PV with custom kWc + local performance correction
       ratio <- custom_kwc / ref_kwc
       pv_rescaled <- df$pv_kwh * ratio
-      conso_est <- df[["offtake_kwh"]] + pv_rescaled - df[[feedin_col]]
+      local_factor <- compute_pv_local_factor(pv_rescaled, df[["offtake_kwh"]], df[[feedin_col]])
+      pv_corrected <- pv_rescaled * local_factor
+
+      conso_est <- df[["offtake_kwh"]] + pv_corrected - df[[feedin_col]]
       n_bad <- sum(conso_est < -0.01, na.rm = TRUE)
       n_pts <- nrow(df)
       pct <- round(100 * n_bad / n_pts, 1)
+
+      factor_line <- if (local_factor > 1) {
+        sprintf("<br><span style='color:%s;'>Facteur perf. local : <b>%.2f</b> (%.1f kWc effectifs)</span>",
+          cl$text_muted, local_factor, custom_kwc * local_factor)
+      } else ""
 
       if (n_bad > 0) {
         col <- if (pct > 5) "#ef4444" else "#f59e0b"
@@ -915,15 +923,15 @@ mod_sidebar_server <- function(id, sim_state) {
           style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:6px 10px;margin:4px 0;font-size:.7rem;line-height:1.3;",
             cl$bg_card, col),
           shiny::HTML(sprintf(
-            "&#9888; <span style='color:%s;'>Bilan incoh\u00e9rent sur <b>%d</b> pas de temps (<b>%.1f%%</b>)</span><br><span style='color:%s;'>offtake + pv &lt; injection</span>",
-            col, n_bad, pct, cl$text_muted)))
+            "&#9888; <span style='color:%s;'>Bilan incoh\u00e9rent sur <b>%d</b> pas de temps (<b>%.1f%%</b>)</span>%s<br><span style='color:%s;'>offtake + pv &lt; injection</span>",
+            col, n_bad, pct, factor_line, cl$text_muted)))
       } else {
         shiny::tags$div(
           style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:6px 10px;margin:4px 0;font-size:.7rem;line-height:1.3;",
             cl$bg_card, cl$success),
           shiny::HTML(sprintf(
-            "&#9989; <span style='color:%s;'>Bilan \u00e9nerg\u00e9tique coh\u00e9rent</span>",
-            cl$success)))
+            "&#9989; <span style='color:%s;'>Bilan \u00e9nerg\u00e9tique coh\u00e9rent</span>%s",
+            cl$success, factor_line)))
       }
     })
 
