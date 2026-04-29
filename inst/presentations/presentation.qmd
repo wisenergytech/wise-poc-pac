@@ -423,6 +423,29 @@ La simulation montre une **reduction de ~`r pct_delta(params$conso_pac_baseline_
 La reduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les temperatures sont basses (COP faible). L'EMS pre-chauffe en journee quand les temperatures sont plus elevees (COP eleve), produisant autant de chaleur avec moins d'electricite.
 :::
 
+## FAQ : comment mesure-t-on l'impact CO2 ?
+
+L'intensite carbone du reseau electrique belge **varie chaque heure** selon le mix de production (nucleaire, gaz, eolien, solaire, imports). On utilise les donnees d'**Elia Open Data** :
+
+| Source | Methodologie | Periode couverte |
+|--------|-------------|-----------------|
+| **ODS192** | Consumption-based (imports inclus) | Fev 2026 → aujourd'hui |
+| **ODS201** | Production-based (mix generation + facteurs IPCC) | Jan → fev 2026 (backfill) |
+
+**Comment ca marche ?** Pour chaque quart d'heure de simulation, on multiplie le soutirage reseau (kWh) par l'intensite carbone du reseau a cet instant (gCO2eq/kWh). C'est la methode **GHG Protocol Scope 2** (market-based).
+
+**Pourquoi l'EMS reduit les emissions ?** Le meme mecanisme que pour les prix : les heures solaires diurnes sont a la fois **moins cheres** et **moins carbonees** (solaire + nucleaire dominent le mix). En decalant la PAC vers ces heures, on reduit simultanement la facture et l'empreinte carbone.
+
+| KPI CO2 | Baseline | Optimise | Delta |
+|---------|--------:|--------:|------:|
+| Emissions totales | `r fmt(params$co2_baseline_kg)` kg | `r fmt(params$co2_baseline_kg - params$co2_saved_kg)` kg | -`r fmt(params$co2_saved_kg)` kg (-`r params$co2_pct_reduction`%) |
+| Equivalent voiture | — | — | `r fmt(params$co2_equiv_car_km)` km evites |
+| Equivalent arbres | — | — | `r params$co2_equiv_trees_year` arbres/an |
+
+::: notes
+La methodologie consumption-based (ODS192) inclut les emissions liees aux imports d'electricite, ce qui donne une image plus fidele de l'impact reel. Pour janvier-fevrier 2026, on utilise la methode production-based (ODS201, facteurs IPCC AR5) car les donnees consumption-based ne sont pas encore disponibles pour cette periode. Les deux methodes donnent des ordres de grandeur comparables pour la Belgique.
+:::
+
 ## Prochaines implementations
 
 - **Peak shaving** : ecreter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en sequencant le demarrage des deux PAC
