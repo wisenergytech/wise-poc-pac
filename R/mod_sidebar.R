@@ -858,32 +858,17 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::HTML("Estim\u00e9 depuis le CSV : m\u00e9diane de pac&times;COP / (&Delta;T&times;0.001163) sur les cr\u00e9neaux de chauffe. <b>V\u00e9rifiez.</b>"))
     })
 
-    # ---- PV kWc + AC banner (CSV mode) ----
+    # ---- PV kWc banner (CSV mode) ----
     output$pv_kwc_ref_banner <- shiny::renderUI({
       shiny::req(input$data_source == "csv", input$pv_kwc_ref)
       kwc <- input$pv_kwc_ref
-
-      # Compute measured AC if possible
-      df <- tryCatch(raw_data(), error = function(e) NULL)
-      ac_line <- ""
-      if (!is.null(df) && "pv_kwh" %in% names(df)) {
-        pv_tot <- sum(df$pv_kwh, na.rm = TRUE)
-        feedin_col <- if ("feedin_kwh" %in% names(df)) "feedin_kwh" else
-          if ("intake_kwh" %in% names(df)) "intake_kwh" else NULL
-        if (!is.null(feedin_col) && pv_tot > 0) {
-          inj_tot <- sum(df[[feedin_col]], na.rm = TRUE)
-          ac_pct <- round((1 - inj_tot / pv_tot) * 100, 1)
-          ac_line <- sprintf("<br>AC mesur\u00e9e : <b>%.1f%%</b>", ac_pct)
-        }
-      }
-
       shiny::tags$div(
         style = sprintf(
           "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0 4px 0;font-size:.75rem;line-height:1.4;",
           cl$bg_card, cl$accent),
         shiny::HTML(sprintf(
-          "PV recommand\u00e9 (rescaling) : <b style='color:%s;'>%s kWc</b>%s<br><span style='font-size:.65rem;color:%s;'>D\u00e9duit du bilan \u00e9nerg\u00e9tique du CSV</span>",
-          cl$accent, kwc, ac_line, cl$text_muted)))
+          "PV recommand\u00e9 (rescaling) : <b style='color:%s;'>%s kWc</b><br><span style='font-size:.65rem;color:%s;'>D\u00e9duit du bilan \u00e9nerg\u00e9tique du CSV</span>",
+          cl$accent, kwc, cl$text_muted)))
     })
 
     # ---- Custom PV kWc input (CSV mode) ----
@@ -942,21 +927,10 @@ mod_sidebar_server <- function(id, sim_state) {
       }
     })
 
-    # Update pv_kwc_ref when custom value is activated
+    # Sync pv_kwc_manual with custom value (pv_kwc_ref stays at estimated)
     shiny::observe({
       if (isTRUE(input$pv_kwc_custom_active) && isTRUE(input$pv_kwc_custom > 0)) {
-        shiny::updateNumericInput(session, "pv_kwc_ref", value = input$pv_kwc_custom)
-      }
-    })
-
-    # Restore estimated pv_kwc_ref when custom is deactivated
-    shiny::observe({
-      if (!isTRUE(input$pv_kwc_custom_active)) {
-        df <- tryCatch(raw_data(), error = function(e) NULL)
-        if (!is.null(df) && "pv_kwh" %in% names(df)) {
-          est_kwc <- estimate_pv_kwc(df)
-          shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
-        }
+        shiny::updateSliderInput(session, "pv_kwc_manual", value = input$pv_kwc_custom)
       }
     })
 
@@ -976,7 +950,7 @@ mod_sidebar_server <- function(id, sim_state) {
       if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
         shiny::updateCheckboxInput(session, "pv_auto", value = FALSE)
         shiny::updateCheckboxInput(session, "volume_auto", value = FALSE)
-        if (!is.null(input$pv_kwc_ref)) {
+        if (!isTRUE(input$pv_kwc_custom_active) && !is.null(input$pv_kwc_ref)) {
           shiny::updateSliderInput(session, "pv_kwc_manual", value = input$pv_kwc_ref)
         }
       }
