@@ -85,11 +85,23 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     qmd_path <- file.path("inst", "presentations", "presentation.qmd")
   }
 
+  # Pre-compute PAC tranche chart data for the .qmd plotly chart
+  kpi_calc <- KPICalculator$new()
+  p_list <- if (inherits(params, "SimulationParams")) params$as_list() else params
+  tranche_baseline <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "baseline")
+  tranche_opti <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "optimized")
+  tranche_baseline$scenario <- "Baseline"
+  tranche_opti$scenario <- "Optimise"
+  tranche_data <- rbind(tranche_baseline, tranche_opti)
+
   # Copy template + assets to a temp dir for rendering
   tmp_dir <- tempfile("presentation_")
   dir.create(tmp_dir)
   src_dir <- dirname(qmd_path)
   file.copy(list.files(src_dir, full.names = TRUE), tmp_dir, recursive = TRUE)
+
+  # Save pre-computed chart data for the .qmd
+  saveRDS(tranche_data, file.path(tmp_dir, "tranche_data.rds"))
 
   tmp_qmd <- file.path(tmp_dir, "presentation.qmd")
 

@@ -97,17 +97,14 @@ mod_sidebar_ui <- function(id) {
             selected = "standard"))
       }),
 
-    # ---- Tarification ----
+    # ---- Contrat actuel ----
     shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Tarification", tip("Le type de contrat change fondamentalement la strategie optimale. En dynamique, le prix varie chaque heure selon le marche Belpex.")),
-      shiny::radioButtons(ns("type_contrat"), "Contrat", choices = c("Dynamique (spot)" = "dynamique", "Index\u00e9 BELIX" = "belix", "Fixe" = "fixe"), selected = "dynamique", inline = TRUE),
+      shiny::tags$div(class = "section-title", "Contrat actuel", tip("Le contrat d'electricite actuellement en place. Determine les prix de la baseline (facture sans optimisation).")),
+      shiny::radioButtons(ns("type_contrat"), NULL, choices = c("Index\u00e9 BELIX" = "belix", "Dynamique (spot)" = "dynamique", "Fixe" = "fixe"), selected = "belix", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='fixe'", ns("type_contrat")),
         shiny::numericInput(ns("prix_fixe_offtake"), "Prix soutirage (EUR/kWh)", 0.30, min = 0, max = 1, step = 0.01),
-        shiny::numericInput(ns("prix_fixe_injection"), "Prix injection (EUR/kWh)", 0.03, min = -0.05, max = 0.5, step = 0.005),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Prix constants sur toute la periode. En contrat fixe, le mode 'cout' perd son avantage car il n'y a pas de variation de prix a exploiter.")),
+        shiny::numericInput(ns("prix_fixe_injection"), "Prix injection (EUR/kWh)", 0.03, min = -0.05, max = 0.5, step = 0.005)),
       shiny::conditionalPanel(sprintf("input['%s']=='belix'", ns("type_contrat")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.4;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("Prix = BELIX mensuel + M + R + T.<br>BELIX = moyenne mensuelle des prix spot Belpex (peak 8h-20h / off-peak 20h-8h).")),
         shiny::numericInput(ns("belix_m"), "M - Marge fournisseur (EUR/MWh)", 65.15, min = 0, max = 200, step = 0.01),
         shiny::numericInput(ns("belix_r"), "R - Frais reseau (EUR/MWh)", 112.10, min = 0, max = 300, step = 0.01),
         shiny::numericInput(ns("belix_t"), "T - Taxes (EUR/MWh)", 16.29, min = 0, max = 100, step = 0.01),
@@ -120,10 +117,26 @@ mod_sidebar_ui <- function(id) {
             shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
               shiny::HTML("Les heures non couvertes sont creuses.<br>Defaut Profondeville : pleines 7h-11h et 17h-22h."))))),
       shiny::conditionalPanel(sprintf("input['%s']=='dynamique'", ns("type_contrat")),
-        shiny::numericInput(ns("taxe_transport"), "Taxes reseau (EUR/kWh)", 0.15, min = 0, max = 0.5, step = 0.01),
-        shiny::numericInput(ns("coeff_injection"), "Coeff. injection / spot", 1.0, min = 0, max = 1.5, step = 0.05),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          "Soutirage = spot + taxes. Injection = spot x coeff. Les prix negatifs signifient que vous PAYEZ pour injecter (surplus renouvelable sur le reseau)."))),
+        shiny::numericInput(ns("taxe_transport"), "Taxes reseau (EUR/kWh)", 0.19, min = 0, max = 0.5, step = 0.01),
+        shiny::numericInput(ns("coeff_injection"), "Coeff. injection / spot", 1.0, min = 0, max = 1.5, step = 0.05))),
+
+    # ---- Contrat cible (optimisation) ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "Optimiser sur", tip("Comparez votre contrat actuel avec un autre contrat. L'optimisation tournera sur les deux pour montrer les gains respectifs.")),
+      shiny::radioButtons(ns("switch_contrat"), NULL, choices = c("M\u00eame contrat" = "meme", "Autre contrat" = "autre"), selected = "autre", inline = TRUE),
+      shiny::conditionalPanel(sprintf("input['%s']=='autre'", ns("switch_contrat")),
+        shiny::radioButtons(ns("type_contrat_cible"), "Contrat cible", choices = c("Dynamique (spot)" = "dynamique", "Index\u00e9 BELIX" = "belix", "Fixe" = "fixe"), selected = "dynamique", inline = TRUE),
+        shiny::conditionalPanel(sprintf("input['%s']=='fixe'", ns("type_contrat_cible")),
+          shiny::numericInput(ns("prix_fixe_offtake_cible"), "Prix soutirage (EUR/kWh)", 0.30, min = 0, max = 1, step = 0.01),
+          shiny::numericInput(ns("prix_fixe_injection_cible"), "Prix injection (EUR/kWh)", 0.03, min = -0.05, max = 0.5, step = 0.005)),
+        shiny::conditionalPanel(sprintf("input['%s']=='belix'", ns("type_contrat_cible")),
+          shiny::numericInput(ns("belix_m_cible"), "M - Marge fournisseur (EUR/MWh)", 65.15, min = 0, max = 200, step = 0.01),
+          shiny::numericInput(ns("belix_r_cible"), "R - Frais reseau (EUR/MWh)", 112.10, min = 0, max = 300, step = 0.01),
+          shiny::numericInput(ns("belix_t_cible"), "T - Taxes (EUR/MWh)", 16.29, min = 0, max = 100, step = 0.01),
+          shiny::numericInput(ns("belix_injection_fixe_cible"), "Prix injection (EUR/kWh)", 0.03, min = -0.05, max = 0.5, step = 0.005)),
+        shiny::conditionalPanel(sprintf("input['%s']=='dynamique'", ns("type_contrat_cible")),
+          shiny::numericInput(ns("taxe_transport_cible"), "Taxes reseau (EUR/kWh)", 0.19, min = 0, max = 0.5, step = 0.01),
+          shiny::numericInput(ns("coeff_injection_cible"), "Coeff. injection / spot", 1.0, min = 0, max = 1.5, step = 0.05)))),
 
     # ---- PV ----
     shiny::tags$div(class = "sidebar-section",
@@ -561,6 +574,31 @@ mod_sidebar_server <- function(id, sim_state) {
         curtailment_active = if (!is.null(input$curtailment_active)) isTRUE(input$curtailment_active) else FALSE,
         curtail_kwh_per_qt = if (!is.null(input$curtailment_active) && isTRUE(input$curtailment_active)) input$curtail_kw * 0.25 else Inf,
         optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24)
+    })
+
+    # ---- params_cible_r (target contract for comparison) ----
+    params_cible_r <- shiny::reactive({
+      shiny::req(input$switch_contrat == "autre", input$type_contrat_cible)
+      p <- params_r()
+      p$type_contrat <- input$type_contrat_cible
+      p$taxe_transport_eur_kwh <- if (input$type_contrat_cible == "dynamique") {
+        if (!is.null(input$taxe_transport_cible)) input$taxe_transport_cible else 0.19
+      } else 0
+      p$coeff_injection <- if (input$type_contrat_cible == "dynamique") {
+        if (!is.null(input$coeff_injection_cible)) input$coeff_injection_cible else 1
+      } else 1
+      p$prix_fixe_offtake <- if (input$type_contrat_cible == "fixe") {
+        if (!is.null(input$prix_fixe_offtake_cible)) input$prix_fixe_offtake_cible else 0.30
+      } else 0.30
+      p$prix_fixe_injection <- if (input$type_contrat_cible == "fixe") {
+        if (!is.null(input$prix_fixe_injection_cible)) input$prix_fixe_injection_cible else 0.03
+      } else 0.03
+      p$belix_m_eur_mwh <- if (input$type_contrat_cible == "belix" && !is.null(input$belix_m_cible)) input$belix_m_cible else 65.15
+      p$belix_r_eur_mwh <- if (input$type_contrat_cible == "belix" && !is.null(input$belix_r_cible)) input$belix_r_cible else 112.10
+      p$belix_t_eur_mwh <- if (input$type_contrat_cible == "belix" && !is.null(input$belix_t_cible)) input$belix_t_cible else 16.29
+      p$belix_peak_hours <- list(c(7, 11), c(17, 22))
+      p$belix_injection_fixe <- if (input$type_contrat_cible == "belix" && !is.null(input$belix_injection_fixe_cible)) input$belix_injection_fixe_cible else 0.03
+      p
     })
 
     # ---- raw_data ----
@@ -1039,6 +1077,8 @@ mod_sidebar_server <- function(id, sim_state) {
         p$qp_w_smooth <- input$qp_w_smooth
       }
 
+      has_cible <- isTRUE(input$switch_contrat == "autre")
+
       res <- shiny::withProgress(message = "Preparation...", value = 0.1, {
         bl_detail <- if (baseline_mode_r == "measured") {
           "Baseline mesuree (donnees CSV)..."
@@ -1047,15 +1087,38 @@ mod_sidebar_server <- function(id, sim_state) {
         } else {
           "Baseline thermostat..."
         }
-        shiny::setProgress(0.2, detail = bl_detail)
-        shiny::setProgress(0.3, detail = sprintf("Optimisation %s en cours...", toupper(r6_mode)))
+        shiny::setProgress(0.15, detail = bl_detail)
+        shiny::setProgress(0.25, detail = sprintf("Optimisation %s (contrat actuel)...", toupper(r6_mode)))
 
         result <- run_simulation(df, p, mode = r6_mode,
                                  baseline_mode = baseline_mode_r)
 
+        # Run second simulation with target contract if requested
+        result_cible <- NULL
+        if (has_cible) {
+          p_cible <- params_cible_r()
+          p_cible$tou_active <- p$tou_active
+          p_cible$baseline_alpha <- p$baseline_alpha
+          if (approche == "optimiseur_lp") p_cible$optim_bloc_h <- p$optim_bloc_h
+          if (approche == "optimiseur_qp") {
+            p_cible$optim_bloc_h <- p$optim_bloc_h
+            p_cible$qp_w_comfort <- p$qp_w_comfort
+            p_cible$qp_w_smooth <- p$qp_w_smooth
+          }
+          shiny::setProgress(0.6, detail = sprintf("Optimisation %s (contrat cible)...", toupper(r6_mode)))
+          result_cible <- run_simulation(df, p_cible, mode = r6_mode,
+                                         baseline_mode = baseline_mode_r)
+        }
+
         shiny::setProgress(1, detail = "Termine!")
-        list(sim = result$sim, candidats = NULL, modes = NULL,
+        out <- list(sim = result$sim, candidats = NULL, modes = NULL,
              df = result$df, params = result$params, mode = result$mode)
+        if (!is.null(result_cible)) {
+          out$sim_cible <- result_cible$sim
+          out$df_cible <- result_cible$df
+          out$params_cible <- result_cible$params
+        }
+        out
       })
       sim_result(res)
     }, ignoreInit = TRUE)
@@ -1077,11 +1140,17 @@ mod_sidebar_server <- function(id, sim_state) {
       } else {
         "thermostat"
       }
-      contrat <- if (p$type_contrat == "fixe") {
-        sprintf("fixe %.3f/%.3f EUR/kWh", p$prix_fixe_offtake, p$prix_fixe_injection)
-      } else {
-        sprintf("spot (taxe=%.3f, coeff_inj=%.2f)", p$taxe_transport_eur_kwh, p$coeff_injection)
+      fmt_contrat <- function(pp) {
+        if (pp$type_contrat == "fixe") {
+          sprintf("fixe %.3f/%.3f EUR/kWh", pp$prix_fixe_offtake, pp$prix_fixe_injection)
+        } else if (pp$type_contrat == "belix") {
+          mrt <- (pp$belix_m_eur_mwh + pp$belix_r_eur_mwh + pp$belix_t_eur_mwh) / 1000
+          sprintf("BELIX (M+R+T=%.4f EUR/kWh)", mrt)
+        } else {
+          sprintf("spot (taxe=%.3f, coeff_inj=%.2f)", pp$taxe_transport_eur_kwh, pp$coeff_injection)
+        }
       }
+      contrat <- fmt_contrat(p)
       batt <- if (p$batterie_active) sprintf("%skWh/%skW rend=%.2f SoC[%d-%d]%%",
         p$batt_kwh, p$batt_kw, p$batt_rendement, round(p$batt_soc_min * 100), round(p$batt_soc_max * 100)) else "off"
       message("==================== SIMULATION ====================")
@@ -1101,6 +1170,17 @@ mod_sidebar_server <- function(id, sim_state) {
         round(sum(sim$intake_kwh,na.rm=TRUE)), round(sum(sim$sim_intake,na.rm=TRUE))))
       message(sprintf("[RESULT] Cout reel=%.1f opti=%.1f EUR | GAIN=%.1f EUR (%.1f%%)",
         cr, co, cr-co, if (cr != 0) 100*(cr-co)/cr else 0))
+      # Log target contract results if available
+      if (!is.null(res$sim_cible)) {
+        sim_c <- res$sim_cible; p_c <- res$params_cible
+        k_c <- KPICalculator$new()$compute(sim_c, sim_c, p_c)
+        message(sprintf("[CIBLE]  Contrat=%s | Baseline=%.1f Opti=%.1f EUR | GAIN=%.1f EUR (%.1f%%)",
+          fmt_contrat(p_c), k_c$facture_baseline, k_c$facture_opti,
+          k_c$gain_eur, k_c$gain_pct))
+        gain_total <- cr - k_c$facture_opti
+        message(sprintf("[TOTAL]  Actuel baseline (%.1f) -> Cible opti (%.1f) = GAIN TOTAL %.1f EUR (%.1f%%)",
+          cr, k_c$facture_opti, gain_total, if (cr != 0) 100 * gain_total / cr else 0))
+      }
       message("====================================================")
       shiny::updateDateRangeInput(session, "date_range",
         start = as.Date(min(sim$timestamp)), end = as.Date(max(sim$timestamp)))
@@ -1120,6 +1200,23 @@ mod_sidebar_server <- function(id, sim_state) {
       shiny::req(sim_filtered())
       sim <- sim_filtered(); p <- params_r()
       KPICalculator$new()$compute(sim, sim, p)
+    })
+
+    # ---- Target contract: filtered sim + KPIs ----
+    sim_filtered_cible <- shiny::reactive({
+      shiny::req(sim_result(), input$date_range)
+      res <- sim_result()
+      if (is.null(res$sim_cible)) return(NULL)
+      d1 <- as.POSIXct(input$date_range[1], tz = "Europe/Brussels")
+      d2 <- as.POSIXct(input$date_range[2], tz = "Europe/Brussels") + lubridate::days(1)
+      res$sim_cible %>% dplyr::filter(timestamp >= d1, timestamp < d2)
+    })
+
+    kpis_cible_r <- shiny::reactive({
+      sim_c <- sim_filtered_cible()
+      if (is.null(sim_c)) return(NULL)
+      p_c <- sim_result()$params_cible
+      KPICalculator$new()$compute(sim_c, sim_c, p_c)
     })
 
     # ---- Automagic ----
@@ -1266,11 +1363,16 @@ mod_sidebar_server <- function(id, sim_state) {
     # Return reactives for consumption by other modules
     list(
       params_r = params_r,
+      params_cible_r = params_cible_r,
       raw_data = raw_data,
       sim_result = sim_result,
       sim_running = sim_running,
       sim_filtered = sim_filtered,
+      sim_filtered_cible = sim_filtered_cible,
       kpis_r = kpis_r,
+      kpis_cible_r = kpis_cible_r,
+      switch_contrat = shiny::reactive(input$switch_contrat),
+      type_contrat_cible = shiny::reactive(input$type_contrat_cible),
       volume_ballon_eff = volume_ballon_eff,
       pv_kwc_eff = pv_kwc_eff,
       automagic_results = automagic_results,

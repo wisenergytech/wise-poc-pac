@@ -295,25 +295,37 @@ KPICalculator <- R6::R6Class("KPICalculator",
       round(autoconso / conso_totale * 100, 1)
     },
 
-    #' @description Calculate weighted average price of PAC electricity (EUR/kWh).
+    #' @description Calculate effective average price of PAC electricity (EUR/kWh).
+    #' Accounts for PV self-consumption: kWh sourced from PV are valued at 0,
+    #' only grid-sourced kWh are valued at prix_offtake. PV is allocated
+    #' proportionally between PAC and other loads at each timestep.
     #' @param data Dataframe with PAC consumption and price columns
     #' @param params Parameter list with p_pac_kw and dt_h
     #' @param type "baseline" or "optimized"
-    #' @return Weighted average price in EUR/kWh
+    #' @return Effective average price in EUR/kWh
     get_prix_moyen_pac = function(data, params, type = "baseline") {
       if (type == "optimized") {
         pac_qt <- params$p_pac_kw * params$dt_h
         pac_kwh <- data$sim_pac_on * pac_qt
+        offtake <- data$sim_offtake
+        intake <- data$sim_intake
       } else {
         pac_kwh <- if ("pac_kwh" %in% names(data)) {
           data$pac_kwh
         } else {
           pmax(0, data$offtake_kwh + data$pv_kwh - data$intake_kwh - data$conso_hors_pac)
         }
+        offtake <- data$offtake_kwh
+        intake <- data$intake_kwh
       }
       total <- sum(pac_kwh, na.rm = TRUE)
       if (total <= 0) return(NA_real_)
-      sum(pac_kwh * data$prix_offtake, na.rm = TRUE) / total
+      # Grid share: fraction of total consumption sourced from the grid
+      pv_autoconso <- pmax(0, data$pv_kwh - intake)
+      total_conso <- offtake + pv_autoconso
+      grid_share <- ifelse(total_conso > 0, offtake / total_conso, 0)
+      # Effective cost: only grid-sourced PAC kWh are priced
+      sum(pac_kwh * grid_share * data$prix_offtake, na.rm = TRUE) / total
     },
 
     #' @description Calculate PAC consumption breakdown by time-of-day slot.

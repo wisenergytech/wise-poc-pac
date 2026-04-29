@@ -48,8 +48,6 @@ params:
   as_opti: 51.1
   conso_pac_baseline_kwh: 12015
   conso_pac_opti_kwh: 11364
-  conformite_baseline: 3.1
-  conformite_opti: 99.7
   pct_pac_conso: 55
   # CO2 KPIs
   co2_baseline_kg: 1274
@@ -85,6 +83,11 @@ bg_b64 <- img_to_b64("images/background.png")
 logo_destore_b64 <- img_to_b64("images/destore-logo.png")
 logo_karno_b64 <- img_to_b64("images/karno-logo.png")
 logo_wise_b64 <- img_to_b64("images/wise-logo.png")
+
+# Load pre-computed chart data (saved by render_presentation)
+tranche_file <- "tranche_data.rds"
+has_tranche <- file.exists(tranche_file)
+if (has_tranche) tranche_data <- readRDS(tranche_file)
 ```
 
 ```{r logos-and-background, echo=FALSE, results='asis'}
@@ -121,11 +124,12 @@ cat(sprintf('
 
 ## Sommaire
 
-1. **Le site** — `r params$site_name`, installation et constats
-2. **Le contexte** — Marche de l'energie et opportunite
-3. **Notre approche** — Donnees, algorithme et optimisation ToU
-4. **Les resultats** — Economies, flexibilite et impact
-5. **Et ensuite ?** — Prochaines etapes
+1. **Le site** — `r params$site_name`, installation
+2. **Les constats** — Ce que les donnees mesurees revelent
+3. **L'opportunite** — Marche de l'energie et flexibilite
+4. **Notre approche** — Donnees, algorithme ToU
+5. **Les resultats** — Economies et impact
+6. **Et ensuite ?** — Prochaines etapes
 
 # Le site
 ## Le projet en bref
@@ -156,23 +160,27 @@ La combinaison **PAC + PV + stockage thermique** offre plusieurs degres de liber
 La geothermie est la source principale. L'aerothermie assure le backup et l'equilibrage thermique. Le PV a ete ajoute en 2025, un an apres la mise en service du reseau de chaleur.
 :::
 
-## Constats : un decalage production / consommation
+# Les constats
+## Ce que les donnees mesurees revelent
 
-Aujourd'hui, la PAC tourne surtout **la nuit et tot le matin**, alors que le PV produit en **milieu de journee** (10h-14h).
+**`r params$n_days` jours** de donnees reelles (`r params$date_debut` -> `r params$date_fin`) :
 
-- **Decalage temporel important** entre production et consommation
-- Pic de puissance instantane : **`r params$pac_kw` kW** au demarrage simultane des deux PAC
-- Faible taux d'autoconsommation PV
-- COP median : **`r params$cop_median_hiver` a `r params$cop_median_misaison`** selon la saison
-- Prix BELPEX tres volatils : de < 50 a > 300 EUR/MWh
+| Metrique mesuree | Valeur | Ce que ca signifie |
+|---|---:|---|
+| **Autoconsommation PV** | `r fmt1(params$ac_baseline)`% | ~`r round(100 - params$ac_baseline)`% du PV est reinjecte (vendu a bas prix) |
+| **Autosuffisance** | `r fmt1(params$as_baseline)`% | ~`r round(100 - params$as_baseline)`% de l'electricite vient du reseau (achetee a prix fort) |
+| **Part PAC dans la conso** | `r params$pct_pac_conso`% | La PAC est le premier poste de consommation electrique |
+| **Facture nette** | `r fmt(params$facture_baseline)` EUR / `r params$n_days` j | Soit ~`r fmt(round(params$facture_baseline / params$n_days * 365))` EUR/an extrapole |
+
+**En resume** : la PAC tourne surtout **la nuit et le matin**, quand l'energie est chere et le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilite de stockage thermique **inexploitee**.
 
 Ce decalage est un probleme, mais aussi une **opportunite**.
 
 ::: notes
-Le profil de consommation actuel n'est pas aligne avec la production PV. Le demarrage simultane des deux PAC cree des pointes de puissance qui augmentent le cout du contrat reseau. La volatilite des prix spot et le faible taux d'autoconsommation representent a la fois un defi et une opportunite d'optimisation.
+Le profil de consommation actuel n'est pas aligne avec la production PV. Le demarrage simultane des deux PAC cree des pointes de puissance. La volatilite des prix spot et le faible taux d'autoconsommation representent a la fois un defi et une opportunite d'optimisation.
 :::
 
-# Le contexte
+# L'opportunite
 ## Le marche de l'energie pousse au pilotage intelligent
 
 Dimanche 26 avril 2026, le prix spot belge a chute a **-479,27 EUR/MWh** — un record historique. Cause : surproduction solaire massive et faible demande le week-end.
@@ -185,21 +193,6 @@ Sources : [RTBF](https://www.rtbf.be/article/prix-de-l-electricite-negatif-sur-l
 
 ::: notes
 Ce record de -479 EUR/MWh depasse meme l'Allemagne (-414 EUR/MWh) le meme jour.
-:::
-
-## Les leviers du Wise Brain
-
-Le Wise Brain peut exploiter plusieurs strategies :
-
-- **Autoconsommation PV** : maximiser l'usage local du solaire (sans signal de prix)
-- **Peak shaving** : ecreter les pointes de puissance pour reduire la puissance souscrite
-- **Curtailment** : limiter l'injection PV pour maximiser l'autoconsommation
-- **Time-of-Use (ToU)** : decaler la consommation vers les heures bon marche
-
-Dans cette presentation, on se concentre sur le levier **Time-of-Use** — celui avec le plus grand potentiel de gains sur ce site.
-
-::: notes
-Le ballon tampon est la cle de la flexibilite : il permet de decoupler le moment de production thermique du moment de consommation.
 :::
 
 # Notre approche
@@ -237,38 +230,29 @@ L'optimiseur combine le tout pour repondre a : **"Quand aurait-il fallu faire to
 Le COP varie avec la temperature exterieure (de ~`r params$cop_median_hiver` en hiver a ~`r params$cop_median_misaison` en mi-saison), ce qui impacte directement le cout reel de production thermique.
 :::
 
-## L'optimiseur ToU : principe
+## L'optimiseur ToU : pre-chauffer quand c'est pas cher
 
 **Idee** : deplacer la consommation PAC des heures cheres vers les heures bon marche, grace a l'inertie thermique du ballon tampon.
 
 On le **pre-chauffe** quand le prix est bas, et on **puise dedans** quand le prix est haut.
 
-L'optimiseur utilise la **programmation lineaire (LP)** : la PAC module sa charge en continu (0-100%) selon le prix spot, pour trouver le planning de fonctionnement le moins cher.
+L'optimiseur utilise la **programmation lineaire (LP)** :
 
-**Contrainte de confort** : la temperature du ballon reste dans la plage de consigne [`r params$t_min`-`r params$t_max` C] — les occupants ne doivent rien ressentir.
+- Decoupe la periode en **blocs de 24 h** avec chevauchement
+- Pour chaque bloc, minimise le **cout d'achat** sous contraintes thermiques
+- La temperature du ballon reste dans la plage [`r params$t_min`-`r params$t_max` C]
+- Integre le **COP variable** selon la temperature exterieure
 
-::: notes
-L'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Une variante MILP (on/off pur) existe pour les PAC sans inverter, mais le mode LP est utilise en production pour `r params$site_name`.
-:::
-
-## L'optimiseur ToU : fonctionnement
-
-1. Decoupe la periode en **blocs de 24 h** avec chevauchement (lookahead)
-2. Pour chaque bloc, resout un **programme lineaire (LP)** minimisant le cout sous contraintes thermiques
-3. Verifie a chaque pas que `t_ballon` reste entre `r params$t_min` et `r params$t_max` C
-4. Integre le **COP variable** (fonction de la temperature exterieure)
-5. **Chaine les blocs** : la temperature finale d'un bloc initialise le suivant
-
-**Garde-fou** : si la facture optimisee est pire que la baseline, l'optimiseur retombe sur le profil mesure.
+**Les occupants ne ressentent rien** — seul le planning de la PAC change.
 
 ::: notes
-Le COP varie avec la temperature exterieure : ~`r params$cop_median_hiver` par -3 C (hiver) a ~`r params$cop_median_misaison` par 17 C (mi-saison). La contrainte T_min est "molle" (soft constraint avec penalite) pour garantir que le solveur trouve toujours une solution.
+L'optimiseur traite la PAC comme une seule unite de `r params$pac_kw` kW. Le COP varie avec la temperature exterieure : ~`r params$cop_median_hiver` par -3 C (hiver) a ~`r params$cop_median_misaison` par 17 C (mi-saison). La contrainte T_min est "molle" (soft constraint avec penalite) pour garantir que le solveur trouve toujours une solution.
 :::
 
 # Les resultats
 ## Impact financier : -`r params$gain_pct`% sur la facture
 
-**Simulation** : mode `r params$mode_optim` | `r params$n_days` jours (`r params$date_debut` -> `r params$date_fin`) | contrat `r params$type_contrat` | PAC `r params$pac_kw` kW | PV `r params$pv_kwc` kWc | Ballon `r fmt(params$volume_ballon_l)` L [`r params$t_min`-`r params$t_max` C]
+**Simulation** : `r params$n_days` jours | contrat `r params$type_contrat` | PAC `r params$pac_kw` kW | PV `r params$pv_kwc` kWc | Ballon `r fmt(params$volume_ballon_l)` L [`r params$t_min`-`r params$t_max` C]
 
 |  | Baseline (thermostat) | Optimise (EMS Wise) | Gain |
 |--|----------------------:|--------------------:|-----:|
@@ -283,6 +267,64 @@ Le COP varie avec la temperature exterieure : ~`r params$cop_median_hiver` par -
 Ces chiffres sont calcules sur `r params$n_days` jours de donnees reelles mesurees sur site. L'extrapolation annuelle suppose un profil de consommation similaire sur les mois manquants.
 :::
 
+## Le glissement en action
+
+```{r plot-pac-tranches, echo=FALSE, fig.width=12, fig.height=5}
+if (has_tranche) {
+  bl <- tranche_data[tranche_data$scenario == "Baseline", ]
+  op <- tranche_data[tranche_data$scenario == "Optimise", ]
+
+  bl_color <- "rgba(249,115,22,0.75)"
+  op_color <- "rgba(6,182,212,0.75)"
+
+  p <- plotly::plot_ly() |>
+    plotly::add_bars(
+      data = bl, x = ~tranche, y = ~kwh, name = "Baseline",
+      text = ~paste0(pct, "%"), textposition = "outside",
+      textfont = list(size = 12, family = "JetBrains Mono"),
+      marker = list(color = bl_color),
+      hovertemplate = paste0(
+        "<b>%{x}</b><br>Baseline: %{y:.0f} kWh (%{text})",
+        "<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>"),
+      customdata = ~prix_moyen) |>
+    plotly::add_bars(
+      data = op, x = ~tranche, y = ~kwh, name = "Optimise",
+      text = ~paste0(pct, "%"), textposition = "outside",
+      textfont = list(size = 12, family = "JetBrains Mono"),
+      marker = list(color = op_color),
+      hovertemplate = paste0(
+        "<b>%{x}</b><br>Optimise: %{y:.0f} kWh (%{text})",
+        "<br>Prix moyen: %{customdata:.0f} EUR/MWh<extra></extra>"),
+      customdata = ~prix_moyen)
+
+  # Price annotations on baseline bars
+  for (i in seq_len(nrow(bl))) {
+    p <- p |> plotly::add_annotations(
+      x = bl$tranche[i], y = bl$kwh[i] + max(bl$kwh) * 0.15,
+      text = paste0(round(bl$prix_moyen[i]), " EUR/MWh"),
+      showarrow = FALSE,
+      font = list(size = 11, color = "#94a3b8"))
+  }
+
+  p |>
+    plotly::layout(
+      barmode = "group", bargap = 0.15,
+      paper_bgcolor = "rgba(0,0,0,0)",
+      plot_bgcolor = "rgba(0,0,0,0)",
+      font = list(color = "#e2e8f0", family = "Raleway, sans-serif", size = 13),
+      yaxis = list(title = "kWh", gridcolor = "rgba(148,163,184,0.15)"),
+      xaxis = list(title = "", gridcolor = "rgba(0,0,0,0)"),
+      legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.15)
+    )
+}
+```
+
+L'EMS **deplace** la consommation PAC de la nuit et des heures de pointe vers la **tranche solaire** (10h-16h), ou le PV produit et les prix sont bas.
+
+::: notes
+Le graphique montre la redistribution de la consommation PAC entre les 4 tranches horaires. Le prix spot moyen est annote sur chaque barre baseline. L'optimiseur concentre la consommation sur les heures solaires, quand le PV et les prix bas convergent.
+:::
+
 ## Energie et flexibilite
 
 | Metrique | Baseline | Optimise (EMS) | Delta |
@@ -292,39 +334,17 @@ Ces chiffres sont calcules sur `r params$n_days` jours de donnees reelles mesure
 | Autoconsommation PV | `r fmt1(params$ac_baseline)`% | `r fmt1(params$ac_opti)`% | +`r round(params$ac_opti - params$ac_baseline)` points |
 | Autosuffisance | `r fmt1(params$as_baseline)`% | `r fmt1(params$as_opti)`% | +`r round(params$as_opti - params$as_baseline)` points |
 | Conso PAC electrique | `r fmt(params$conso_pac_baseline_kwh)` kWh | `r fmt(params$conso_pac_opti_kwh)` kWh | `r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh (-`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%) |
-| Conformite thermique | `r fmt1(params$conformite_baseline)`% | `r fmt1(params$conformite_opti)`% | +`r round(params$conformite_opti - params$conformite_baseline)` points |
 
 La PAC = **`r params$pct_pac_conso`% de l'electricite du batiment**. L'EMS ne reduit pas la consommation, il la **decale** vers les heures solaires et les prix bas.
 
 ::: notes
-La conformite thermique passe de `r fmt1(params$conformite_baseline)`% a `r fmt1(params$conformite_opti)`% : le thermostat actuel maintient le ballon sous `r params$t_min` C la majorite du temps, alors que l'EMS le maintient dans la plage [`r params$t_min`-`r params$t_max` C]. L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%.
-:::
-
-## Impact CO2
-
-| | Valeur |
-|---|------:|
-| Emissions baseline | `r fmt(params$co2_baseline_kg)` kg CO2eq |
-| Reduction estimee | ~`r fmt(params$co2_saved_kg)` kg CO2eq (-`r params$co2_pct_reduction`%) |
-| Equiv. voiture | `r fmt(params$co2_equiv_car_km)` km evites/an |
-| Equiv. arbres | `r params$co2_equiv_trees_year` arbres plantes/an |
-
-Le decalage vers les heures solaires reduit aussi l'intensite carbone de la consommation.
-
-::: notes
-Les emissions CO2 sont calculees sur base du mix electrique belge (167 gCO2/kWh). La reduction provient principalement du decalage de consommation vers les heures solaires, ou l'intensite carbone du reseau est plus faible.
+L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%. Le soutirage reseau diminue car on consomme davantage de PV localement.
 :::
 
 # Et ensuite ?
 ## Le message cle
 
-> "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit et le soir quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
-
-**Bonus confort** : la temperature du ballon actuelle est en moyenne sous `r params$t_min` C. L'EMS la maintient dans la plage [`r params$t_min`-`r params$t_max` C] — le client gagne en confort **et** en economies.
-
-::: notes
-Argument double : non seulement la facture baisse de `r params$gain_pct`%, mais le confort thermique est aussi ameliore.
-:::
+> "Votre PAC represente `r params$pct_pac_conso`% de votre consommation electrique et tourne surtout la nuit quand l'energie est chere. Notre EMS la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Resultat : **-`r params$gain_pct`% sur la facture, -`r fmt(params$gain_eur_per_year)` EUR/an**, avec vos propres donnees mesurees."
 
 ## Prochaines implementations
 

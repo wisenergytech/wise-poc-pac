@@ -99,7 +99,32 @@ mod_status_bar_server <- function(id, sidebar) {
           p$volume_ballon_l, p$t_min, p$t_max, p$t_consigne))
 
       # ---- CFG line ----
-      cfg_parts <- c(sprintf("Contrat=<b>%s</b>", contrat))
+      switch_c <- tryCatch(sidebar$switch_contrat(), error = function(e) "meme")
+      contrat_cible_label <- if (!is.null(switch_c) && switch_c == "autre") {
+        tc <- tryCatch(sidebar$type_contrat_cible(), error = function(e) NULL)
+        if (!is.null(tc)) {
+          res_sb <- tryCatch(sidebar$sim_result(), error = function(e) NULL)
+          if (!is.null(res_sb) && !is.null(res_sb$params_cible)) {
+            pc <- res_sb$params_cible
+            if (pc$type_contrat == "belix") {
+              mrt_c <- (pc$belix_m_eur_mwh + pc$belix_r_eur_mwh + pc$belix_t_eur_mwh) / 1000
+              sprintf("BELIX (M+R+T=%.4f)", mrt_c)
+            } else if (pc$type_contrat == "fixe") {
+              sprintf("fixe %.3f", pc$prix_fixe_offtake)
+            } else {
+              sprintf("spot (taxe=%.3f)", pc$taxe_transport_eur_kwh)
+            }
+          } else {
+            c(dynamique = "spot", belix = "BELIX", fixe = "fixe")[tc]
+          }
+        }
+      }
+
+      cfg_parts <- if (!is.null(contrat_cible_label)) {
+        c(sprintf("Contrat=<b>%s</b> &rarr; <b>%s</b>", contrat, contrat_cible_label))
+      } else {
+        c(sprintf("Contrat=<b>%s</b>", contrat))
+      }
 
       # Optimisation strategies
       tou_on <- isTRUE(sidebar$tou_active())

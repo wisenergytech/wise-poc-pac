@@ -36,6 +36,12 @@ mod_co2_server <- function(id, sidebar) {
 
     sim_filtered <- sidebar$sim_filtered
 
+    # Use target contract sim when available (optimizer shifts PAC differently)
+    sim_co2 <- shiny::reactive({
+      sim_c <- sidebar$sim_filtered_cible()
+      if (!is.null(sim_c)) sim_c else sim_filtered()
+    })
+
     # ---- CO2 data (CSV local = instantane, fallback API si besoin) ----
     co2_data <- shiny::reactive({
       shiny::req(sim_filtered())
@@ -53,19 +59,21 @@ mod_co2_server <- function(id, sidebar) {
     })
 
     co2_15min_r <- shiny::reactive({
-      shiny::req(sim_filtered(), co2_data())
-      interpolate_co2_15min(co2_data()$df, sim_filtered()$timestamp)
+      shiny::req(sim_co2(), co2_data())
+      interpolate_co2_15min(co2_data()$df, sim_co2()$timestamp)
     })
 
     co2_impact_r <- shiny::reactive({
-      shiny::req(sim_filtered(), co2_15min_r())
-      compute_co2_impact(sim_filtered(), co2_15min_r())
+      shiny::req(sim_co2(), co2_15min_r())
+      compute_co2_impact(sim_co2(), co2_15min_r())
     })
 
     # ---- KPIs ----
     output$co2_kpi_row <- shiny::renderUI({
       shiny::req(co2_impact_r(), co2_15min_r(), sidebar$kpis_r())
-      sim <- sim_filtered(); p <- sidebar$params_r()
+      sim <- sim_co2()
+      res <- sidebar$sim_result()
+      p <- if (!is.null(res$params_cible)) res$params_cible else sidebar$params_r()
 
       k <- KPICalculator$new()$compute(sim, sim, p, co2_15min = co2_15min_r())
 
@@ -95,10 +103,10 @@ mod_co2_server <- function(id, sidebar) {
 
     # ---- Emissions overlay bar chart (auto-aggregated, same as energy tab) ----
     output$plot_co2_emissions <- plotly::renderPlotly({
-      shiny::req(sim_filtered(), co2_impact_r())
+      shiny::req(sim_co2(), co2_impact_r())
       impact <- co2_impact_r()
       d <- data.frame(
-        timestamp      = sim_filtered()$timestamp,
+        timestamp      = sim_co2()$timestamp,
         co2_baseline   = impact$co2_baseline_g,
         co2_opti       = impact$co2_opti_g
       )
@@ -109,10 +117,10 @@ mod_co2_server <- function(id, sidebar) {
 
     # ---- Cumulative (baseline vs opti, same pattern as facture cumulee) ----
     output$plot_co2_cumul <- plotly::renderPlotly({
-      shiny::req(sim_filtered(), co2_impact_r())
+      shiny::req(sim_co2(), co2_impact_r())
       impact <- co2_impact_r()
       d <- data.frame(
-        timestamp    = sim_filtered()$timestamp,
+        timestamp    = sim_co2()$timestamp,
         cum_baseline = cumsum(ifelse(is.na(impact$co2_baseline_g), 0, impact$co2_baseline_g)) / 1000,
         cum_opti     = cumsum(ifelse(is.na(impact$co2_opti_g), 0, impact$co2_opti_g)) / 1000
       )
@@ -130,8 +138,8 @@ mod_co2_server <- function(id, sidebar) {
 
     # ---- Heatmap ----
     output$plot_co2_heatmap <- plotly::renderPlotly({
-      shiny::req(sim_filtered(), co2_impact_r())
-      hm <- prepare_co2_heatmap(sim_filtered(), co2_impact_r())
+      shiny::req(sim_co2(), co2_impact_r())
+      hm <- prepare_co2_heatmap(sim_co2(), co2_impact_r())
 
       txt_mat <- matrix(
         paste0(rep(format(hm$jours, "%d %b"), each = length(hm$heures)), " ",

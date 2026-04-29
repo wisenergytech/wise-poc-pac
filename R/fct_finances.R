@@ -14,19 +14,29 @@
 #' @param sim Simulation dataframe with columns: \code{timestamp},
 #'   \code{offtake_kwh}, \code{intake_kwh}, \code{sim_offtake},
 #'   \code{sim_intake}, \code{prix_offtake}, \code{prix_injection}
+#' @param sim_opti Optional second simulation dataframe for cross-contract
+#'   comparison. When provided, baseline is taken from \code{sim} and
+#'   optimised from \code{sim_opti}.
 #' @return A dataframe with columns: \code{timestamp}, \code{cum_baseline},
 #'   \code{cum_opti}
 #' @export
-compute_cumulative_bill <- function(sim) {
-  d <- sim %>%
-    dplyr::mutate(
-      facture_reel_qt = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
-      facture_opti_qt = sim_offtake * prix_offtake - sim_intake * prix_injection
-    ) %>%
-    dplyr::mutate(
-      cum_baseline = cumsum(ifelse(is.na(facture_reel_qt), 0, facture_reel_qt)),
-      cum_opti = cumsum(ifelse(is.na(facture_opti_qt), 0, facture_opti_qt))
-    )
+compute_cumulative_bill <- function(sim, sim_opti = NULL) {
+  baseline_qt <- sim$offtake_kwh * sim$prix_offtake -
+    sim$intake_kwh * sim$prix_injection
+
+  if (!is.null(sim_opti)) {
+    opti_qt <- sim_opti$sim_offtake * sim_opti$prix_offtake -
+      sim_opti$sim_intake * sim_opti$prix_injection
+  } else {
+    opti_qt <- sim$sim_offtake * sim$prix_offtake -
+      sim$sim_intake * sim$prix_injection
+  }
+
+  d <- data.frame(
+    timestamp = sim$timestamp,
+    cum_baseline = cumsum(ifelse(is.na(baseline_qt), 0, baseline_qt)),
+    cum_opti = cumsum(ifelse(is.na(opti_qt), 0, opti_qt))
+  )
 
   # Downsample to hourly for plotting
   d %>%
@@ -97,31 +107,53 @@ compute_waterfall <- function(sim) {
 #'   \code{pv_kwh}, \code{offtake_kwh}, \code{intake_kwh},
 #'   \code{sim_offtake}, \code{sim_intake}, \code{prix_offtake},
 #'   \code{prix_injection}
+#' @param sim_opti Optional second simulation dataframe for cross-contract
+#'   comparison. When provided, baseline is taken from \code{sim} (current
+#'   contract) and optimised from \code{sim_opti} (target contract).
 #' @return A dataframe with columns: \code{Mois}, \code{PV},
-#'   \code{Facture baseline}, \code{Facture opti}, \code{Economie},
-#'   \code{EUR/j}
+#'   \code{Facture actuelle} or \code{Facture baseline},
+#'   \code{Facture optimisee} or \code{Facture opti},
+#'   \code{Economie}, \code{EUR/j}
 #' @export
-compute_monthly_summary <- function(sim) {
-  sim %>%
+compute_monthly_summary <- function(sim, sim_opti = NULL) {
+  cross <- !is.null(sim_opti)
+
+  baseline_qt <- sim$offtake_kwh * sim$prix_offtake -
+    sim$intake_kwh * sim$prix_injection
+
+  if (cross) {
+    opti_qt <- sim_opti$sim_offtake * sim_opti$prix_offtake -
+      sim_opti$sim_intake * sim_opti$prix_injection
+  } else {
+    opti_qt <- sim$sim_offtake * sim$prix_offtake -
+      sim$sim_intake * sim$prix_injection
+  }
+
+  df <- data.frame(
+    timestamp = sim$timestamp,
+    pv_kwh = sim$pv_kwh,
+    baseline_qt = baseline_qt,
+    opti_qt = opti_qt
+  )
+
+  col_bl <- if (cross) "Facture actuelle" else "Facture baseline"
+  col_op <- if (cross) "Facture optimisee" else "Facture opti"
+
+  df %>%
     dplyr::mutate(mois = lubridate::floor_date(timestamp, "month")) %>%
     dplyr::group_by(mois) %>%
     dplyr::summarise(
       PV = round(sum(pv_kwh, na.rm = TRUE)),
-      `Facture baseline` = round(sum(
-        offtake_kwh * prix_offtake - intake_kwh * prix_injection,
-        na.rm = TRUE
-      )),
-      `Facture opti` = round(sum(
-        sim_offtake * prix_offtake - sim_intake * prix_injection,
-        na.rm = TRUE
-      )),
+      bl = round(sum(baseline_qt, na.rm = TRUE)),
+      op = round(sum(opti_qt, na.rm = TRUE)),
       .groups = "drop"
     ) %>%
     dplyr::mutate(
       Mois = format(mois, "%b %Y"),
-      Economie = `Facture baseline` - `Facture opti`,
+      Economie = bl - op,
       `EUR/j` = round(Economie / lubridate::days_in_month(mois), 2)
     ) %>%
-    dplyr::select(Mois, PV, `Facture baseline`, `Facture opti`,
+    dplyr::rename(!!col_bl := bl, !!col_op := op) %>%
+    dplyr::select(Mois, PV, dplyr::all_of(col_bl), dplyr::all_of(col_op),
                   Economie, `EUR/j`)
 }

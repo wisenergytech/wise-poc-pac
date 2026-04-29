@@ -83,7 +83,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
     #' @param type_contrat Contract type: "dynamique", "fixe", or "belix" (default "dynamique")
     #' @param prix_fixe_offtake Fixed offtake price EUR/kWh (default 0.30)
     #' @param prix_fixe_injection Fixed injection price EUR/kWh (default 0.03)
-    #' @param taxe_transport_eur_kwh Transport tax EUR/kWh (default 0.15)
+    #' @param taxe_transport_eur_kwh Transport tax EUR/kWh (default 0.19)
     #' @param coeff_injection Injection coefficient (default 1.0)
     #' @param belix_m_eur_mwh BELIX supplier margin EUR/MWh (default 65.15)
     #' @param belix_r_eur_mwh BELIX network fees EUR/MWh (default 112.10)
@@ -118,7 +118,7 @@ SimulationParams <- R6::R6Class("SimulationParams",
       volume_ballon_l = NULL,
       type_contrat = "dynamique",
       prix_fixe_offtake = 0.30, prix_fixe_injection = 0.03,
-      taxe_transport_eur_kwh = 0.15, coeff_injection = 1.0,
+      taxe_transport_eur_kwh = 0.19, coeff_injection = 1.0,
       belix_m_eur_mwh = 65.15, belix_r_eur_mwh = 112.10,
       belix_t_eur_mwh = 16.29, belix_peak_hours = list(c(7, 11), c(17, 22)),
       belix_injection_fixe = 0.03,
