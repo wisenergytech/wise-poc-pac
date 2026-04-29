@@ -131,6 +131,8 @@ mod_sidebar_ui <- function(id) {
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_kwc_ref_banner"))),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
+        shiny::uiOutput(ns("pv_kwc_custom_ui"))),
+      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_whatif_toggle")))),
 
     # ---- Baseline ----
@@ -234,7 +236,8 @@ mod_sidebar_ui <- function(id) {
     shiny::conditionalPanel(sprintf("output['%s']", ns("has_sim_result")),
       ns = function(x) x,
       shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download")),
-      shiny::downloadButton(ns("download_rds"), "Exporter simulation (.rds)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-export"))),
+      shiny::downloadButton(ns("download_rds"), "Exporter simulation (.rds)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-export")),
+      shiny::downloadButton(ns("download_pptx"), "Exporter presentation (.pptx)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-powerpoint"))),
     shiny::fileInput(ns("import_rds"), NULL, accept = ".rds", buttonLabel = "Importer .rds", placeholder = "simulation.rds"),
     # Automagic button (masque temporairement)
     # shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
@@ -786,8 +789,82 @@ mod_sidebar_server <- function(id, sim_state) {
           "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0 4px 0;font-size:.75rem;line-height:1.4;",
           cl$bg_card, cl$accent),
         shiny::HTML(sprintf(
-          "PV estim\u00e9 : <b style='color:%s;'>%s kWc</b>%s<br><span style='font-size:.65rem;color:%s;'>D\u00e9duit du bilan \u00e9nerg\u00e9tique du CSV</span>",
+          "PV recommand\u00e9 (rescaling) : <b style='color:%s;'>%s kWc</b>%s<br><span style='font-size:.65rem;color:%s;'>D\u00e9duit du bilan \u00e9nerg\u00e9tique du CSV</span>",
           cl$accent, kwc, ac_line, cl$text_muted)))
+    })
+
+    # ---- Custom PV kWc input (CSV mode) ----
+    output$pv_kwc_custom_ui <- shiny::renderUI({
+      shiny::req(input$data_source == "csv")
+      ns <- session$ns
+      shiny::tagList(
+        shiny::checkboxInput(ns("pv_kwc_custom_active"),
+          "Utiliser ma propre valeur PV (kWc)", value = FALSE),
+        shiny::conditionalPanel(
+          sprintf("input['%s']", ns("pv_kwc_custom_active")),
+          shiny::numericInput(ns("pv_kwc_custom"), "Puissance cr\u00eate r\u00e9elle (kWc)",
+            value = NULL, min = 1, max = 500, step = 0.1),
+          shiny::uiOutput(ns("pv_kwc_custom_balance"))
+        )
+      )
+    })
+
+    # Balance report when custom PV kWc is set
+    output$pv_kwc_custom_balance <- shiny::renderUI({
+      shiny::req(isTRUE(input$pv_kwc_custom_active), input$pv_kwc_custom)
+      custom_kwc <- input$pv_kwc_custom
+      ref_kwc <- input$pv_kwc_ref
+      shiny::req(custom_kwc > 0, ref_kwc > 0)
+
+      df <- tryCatch(raw_data(), error = function(e) NULL)
+      if (is.null(df)) return(NULL)
+
+      feedin_col <- if ("intake_kwh" %in% names(df)) "intake_kwh" else
+        if ("feedin_kwh" %in% names(df)) "feedin_kwh" else NULL
+      if (is.null(feedin_col) || !"pv_kwh" %in% names(df)) return(NULL)
+
+      # Re-scale PV with custom kWc
+      ratio <- custom_kwc / ref_kwc
+      pv_rescaled <- df$pv_kwh * ratio
+      conso_est <- df[["offtake_kwh"]] + pv_rescaled - df[[feedin_col]]
+      n_bad <- sum(conso_est < -0.01, na.rm = TRUE)
+      n_pts <- nrow(df)
+      pct <- round(100 * n_bad / n_pts, 1)
+
+      if (n_bad > 0) {
+        col <- if (pct > 5) "#ef4444" else "#f59e0b"
+        shiny::tags$div(
+          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:6px 10px;margin:4px 0;font-size:.7rem;line-height:1.3;",
+            cl$bg_card, col),
+          shiny::HTML(sprintf(
+            "&#9888; <span style='color:%s;'>Bilan incoh\u00e9rent sur <b>%d</b> pas de temps (<b>%.1f%%</b>)</span><br><span style='color:%s;'>offtake + pv &lt; injection</span>",
+            col, n_bad, pct, cl$text_muted)))
+      } else {
+        shiny::tags$div(
+          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:6px 10px;margin:4px 0;font-size:.7rem;line-height:1.3;",
+            cl$bg_card, cl$success),
+          shiny::HTML(sprintf(
+            "&#9989; <span style='color:%s;'>Bilan \u00e9nerg\u00e9tique coh\u00e9rent</span>",
+            cl$success)))
+      }
+    })
+
+    # Update pv_kwc_ref when custom value is activated
+    shiny::observe({
+      if (isTRUE(input$pv_kwc_custom_active) && isTRUE(input$pv_kwc_custom > 0)) {
+        shiny::updateNumericInput(session, "pv_kwc_ref", value = input$pv_kwc_custom)
+      }
+    })
+
+    # Restore estimated pv_kwc_ref when custom is deactivated
+    shiny::observe({
+      if (!isTRUE(input$pv_kwc_custom_active)) {
+        df <- tryCatch(raw_data(), error = function(e) NULL)
+        if (!is.null(df) && "pv_kwh" %in% names(df)) {
+          est_kwc <- estimate_pv_kwc(df)
+          shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
+        }
+      }
     })
 
     # ---- What-if PV toggle (visible only when CSV eligible) ----
@@ -1083,6 +1160,25 @@ mod_sidebar_server <- function(id, sim_state) {
           )
         )
         saveRDS(bundle, file)
+      }
+    )
+
+    # ---- PPTX Export ----
+    output$download_pptx <- shiny::downloadHandler(
+      filename = function() {
+        paste0("pac_presentation_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".pptx")
+      },
+      content = function(file) {
+        shiny::req(sim_filtered(), kpis_r())
+        shiny::withProgress(message = "Generation de la presentation...", value = 0.3, {
+          render_presentation(
+            kpis = kpis_r(),
+            params = params_r(),
+            sim_data = sim_filtered(),
+            output_file = file,
+            format = "pptx"
+          )
+        })
       }
     )
 

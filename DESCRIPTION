@@ -33,7 +33,8 @@ Imports:
     rlang,
     tibble,
     pkgload,
-    yaml
+    yaml,
+    quarto
 URL: https://wise-energy.github.io/wise-poc-pac,
     https://github.com/wise-energy/wise-poc-pac
 BugReports: https://github.com/wise-energy/wise-poc-pac/issues
