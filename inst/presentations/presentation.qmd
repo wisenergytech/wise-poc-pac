@@ -138,7 +138,6 @@ cat(sprintf('
 - Reseau de chaleur mis en service en **novembre 2024**
 - Promoteur : **Devlop Ream Group** | Operateur DBFMO : **Karno** (K-0001)
 - Consommation chauffage annuelle : **`r params$conso_chauffage_mwh_an` MWh**
-- Decarbonation : **100%** — `r params$co2_evite_20ans_t` tonnes CO2 evitees sur 20 ans
 
 ::: notes
 Contrat DBFMO (Design-Build-Finance-Maintain-Operate) d'un cout de 430 000 EUR HTVA. Etudes et dimensionnement par Resolia, soutien financier de la Region Wallonne. Projet pilote demontrant la viabilite de reseaux de chaleur decarbones pour des quartiers residentiels de petite taille.

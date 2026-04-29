@@ -84,9 +84,6 @@ mod_pac_server <- function(id, sidebar) {
       kpi <- KPICalculator$new()
       prix_bl <- kpi$get_prix_moyen_pac(sim_data, params, "baseline")
       prix_op <- kpi$get_prix_moyen_pac(sim_data, params, "optimized")
-      cor_bl <- kpi$get_correlation_pac_prix(sim_data, params, "baseline")
-      cor_op <- kpi$get_correlation_pac_prix(sim_data, params, "optimized")
-
       # PAC consumption totals
       pac_qt <- params$p_pac_kw * params$dt_h
       pac_bl <- if ("pac_kwh" %in% names(sim_data)) {
@@ -125,14 +122,10 @@ mod_pac_server <- function(id, sidebar) {
           "PAC en heures pleines", "", cl$danger,
           baseline_val = pct_peak_bl, opti_val = pct_peak_op, gain_invert = TRUE,
           gain_val = round(pct_peak_op - pct_peak_bl, 1), gain_unit = "pts",
-          tooltip = sprintf("Part de la conso PAC en heures pleines. Ref temps = %.1f%%. Un thermostat aveugle serait proche de cette valeur.", pct_temps_peak)),
-        kpi_card(sprintf("%+.3f", if (!is.na(cor_bl)) cor_bl else 0),
-          "Correlation PAC/Prix", "", cl$text_muted,
-          baseline_val = cor_bl, opti_val = cor_op,
-          gain_val = if (!is.na(cor_bl) && !is.na(cor_op)) round(cor_op - cor_bl, 3) else NULL,
-          tooltip = "Correlation de Pearson entre conso PAC et prix. Negatif = la PAC evite les heures cheres (bon pilotage). Proche de 0 = thermostat aveugle.")
+          is_percentage = TRUE,
+          tooltip = sprintf("Part de la conso PAC en heures pleines. Ref temps = %.1f%%. Un thermostat aveugle serait proche de cette valeur.", pct_temps_peak))
       )
-      bslib::layout_columns(col_widths = rep(3, 4), !!!kpis)
+      bslib::layout_columns(col_widths = rep(4, 3), !!!kpis)
     })
 
     # ---- Hourly profile chart ----
