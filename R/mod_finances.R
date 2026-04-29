@@ -117,11 +117,6 @@ mod_finances_server <- function(id, sidebar) {
         } else NA
 
         row2 <- list(
-          kpi_card(paste0(formatC(round(fd), big.mark = " ", format = "d"), " EUR"),
-            "Facture nette", "", cl$opti,
-            baseline_val = fa, opti_val = fd, gain_invert = TRUE,
-            gain_val = round(fd - fa), gain_unit = "EUR",
-            tooltip = sprintf("Cout net (soutirage - injection) avec contrat %s + pilotage. Compare a votre situation actuelle (%s sans pilotage).", lbl_cible, lbl_actuel)),
           kpi_card(paste0(formatC(round(k_cible$cout_soutirage_opti), big.mark = " ", format = "d"), " EUR"),
             "Cout soutirage", "", cl$accent3,
             baseline_val = k$cout_soutirage_baseline, opti_val = k_cible$cout_soutirage_opti, gain_invert = TRUE,
