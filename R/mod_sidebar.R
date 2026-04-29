@@ -69,7 +69,7 @@ mod_sidebar_ui <- function(id) {
               "Plus le ballon est gros, plus l'optimiseur peut decaler la consommation vers les heures creuses ou le surplus PV. ",
               "Un ballon trop petit (ratio stockage/puissance faible) limite fortement les economies possibles."))))),
       shiny::conditionalPanel(sprintf("!input['%s'] || output['%s']", ns("volume_auto"), ns("csv_measured")),
-        shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 200, min = 50, max = 100000, step = 50),
+        shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 2500, min = 50, max = 100000, step = 50),
         shiny::uiOutput(ns("volume_csv_hint"))),
       shiny::numericInput(ns("t_consigne"), "Consigne (C)", 35, min = 20, max = 65, step = 1),
       shiny::tags$div(
@@ -792,11 +792,15 @@ mod_sidebar_server <- function(id, sim_state) {
     # ---- CSV measured baseline eligibility ----
     csv_measured_eligible <- shiny::reactiveVal(FALSE)
     csv_has_t_ballon <- shiny::reactiveVal(FALSE)
+    csv_est_pac_th_kw <- shiny::reactiveVal(NULL)
+    csv_est_volume_l <- shiny::reactiveVal(NULL)
 
     shiny::observe({
       if (input$data_source != "csv" || is.null(input$csv_file)) {
         csv_measured_eligible(FALSE)
         csv_has_t_ballon(FALSE)
+        csv_est_pac_th_kw(NULL)
+        csv_est_volume_l(NULL)
         return()
       }
       df <- raw_data()
@@ -814,28 +818,27 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
       }
 
-      # Pre-fill PAC thermal power from max observed electrical consumption × COP
+      # Estimate PAC thermal power (suggestion only, not pre-filled)
       if (has_pac) {
         cop_est <- input$cop_nominal %||% 3.5
         est_pac_elec_kw <- max(df$pac_kwh, na.rm = TRUE) / 0.25
         est_pac_th_kw <- round(est_pac_elec_kw * cop_est)
         est_pac_th_kw <- max(1, min(500, est_pac_th_kw))
-        shiny::updateNumericInput(session, "p_pac_th_kw", value = est_pac_th_kw)
+        csv_est_pac_th_kw(est_pac_th_kw)
       }
 
-      # Pre-fill ballon volume from heating rate
+      # Estimate ballon volume (suggestion only, not pre-filled)
       if (has_pac && has_tbal) {
         delta_t <- diff(df$t_ballon)
         pac_vals <- df$pac_kwh[-1]
-        # Select heating periods: PAC running, temperature rising
         heating <- which(pac_vals > 0.5 & delta_t > 0.1)
         if (length(heating) > 5) {
           cop_est <- input$cop_nominal %||% 3.5
           vol_estimates <- pac_vals[heating] * cop_est / (delta_t[heating] * 0.001163)
           est_vol <- round(stats::median(vol_estimates, na.rm = TRUE) / 100) * 100
           est_vol <- max(50, min(100000, est_vol))
-          shiny::updateNumericInput(session, "volume_ballon_manual", value = est_vol)
-          message(sprintf("[CSV] Volume ballon estime: %d L (mediane sur %d creneaux de chauffe)",
+          csv_est_volume_l(est_vol)
+          message(sprintf("[CSV] Volume ballon estime (suggestion): %d L (mediane sur %d creneaux de chauffe)",
             est_vol, length(heating)))
         }
       }
@@ -863,15 +866,13 @@ mod_sidebar_server <- function(id, sim_state) {
 
     # ---- CSV estimation hints (visible only when CSV eligible) ----
     output$pac_csv_hint <- shiny::renderUI({
-      if (!csv_measured_eligible()) return(NULL)
-      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-6px;margin-bottom:4px;", cl$success),
-        shiny::HTML("Estim\u00e9 depuis le CSV : max(pac_kwh) / 0.25h &times; COP. <b>V\u00e9rifiez avec la fiche constructeur.</b>"))
+      # CSV estimation hints disabled for now (calculation methods under review)
+      NULL
     })
 
     output$volume_csv_hint <- shiny::renderUI({
-      if (!csv_measured_eligible() || !csv_has_t_ballon()) return(NULL)
-      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-top:-6px;", cl$success),
-        shiny::HTML("Estim\u00e9 depuis le CSV : m\u00e9diane de pac&times;COP / (&Delta;T&times;0.001163) sur les cr\u00e9neaux de chauffe. <b>V\u00e9rifiez.</b>"))
+      # CSV estimation hints disabled for now (calculation methods under review)
+      NULL
     })
 
     # ---- PV kWc banner (CSV mode) ----

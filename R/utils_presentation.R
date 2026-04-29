@@ -167,6 +167,30 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
   p_profil <- plot_profil_horaire(profil_data, profil_prix)
 
+  # --- CO2 cumulative chart (optional, requires local CO2 data) ---
+  p_co2_cumul <- tryCatch({
+    co2_result <- fetch_co2_intensity(
+      min(sim_data$timestamp, na.rm = TRUE),
+      max(sim_data$timestamp, na.rm = TRUE)
+    )
+    co2_15min <- interpolate_co2_15min(co2_result$df, sim_data$timestamp)
+    impact <- compute_co2_impact(sim_data, co2_15min)
+    d <- data.frame(
+      timestamp = sim_data$timestamp,
+      cum_baseline = cumsum(ifelse(is.na(impact$co2_baseline_g), 0, impact$co2_baseline_g)) / 1000,
+      cum_opti = cumsum(ifelse(is.na(impact$co2_opti_g), 0, impact$co2_opti_g)) / 1000
+    )
+    d <- d %>%
+      dplyr::mutate(.h = lubridate::floor_date(timestamp, "hour")) %>%
+      dplyr::group_by(.h) %>%
+      dplyr::slice_tail(n = 1) %>%
+      dplyr::ungroup() %>%
+      dplyr::select(timestamp, cum_baseline, cum_opti)
+    plot_cumulative(d, ylab = "Emissions CO2 cumulees (kg)", unit = "kg",
+      baseline_label = "Baseline", opti_label = "Optimise",
+      delta_label = "CO2 evite")
+  }, error = function(e) NULL)
+
   # Copy template + assets to a temp dir for rendering
   tmp_dir <- tempfile("presentation_")
   dir.create(tmp_dir)
@@ -176,6 +200,9 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   # Save pre-built plotly objects for the .qmd
   saveRDS(p_tranches, file.path(tmp_dir, "plot_tranches.rds"))
   saveRDS(p_profil, file.path(tmp_dir, "plot_profil.rds"))
+  if (!is.null(p_co2_cumul)) {
+    saveRDS(p_co2_cumul, file.path(tmp_dir, "plot_co2_cumul.rds"))
+  }
 
   tmp_qmd <- file.path(tmp_dir, "presentation.qmd")
 

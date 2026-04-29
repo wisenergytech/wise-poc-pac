@@ -123,6 +123,10 @@ if (has_tranche) p_tranches <- readRDS(plot_tranches_file)
 plot_profil_file <- "plot_profil.rds"
 has_profil <- file.exists(plot_profil_file)
 if (has_profil) p_profil <- readRDS(plot_profil_file)
+
+plot_co2_file <- "plot_co2_cumul.rds"
+has_co2 <- file.exists(plot_co2_file)
+if (has_co2) p_co2_cumul <- readRDS(plot_co2_file)
 ```
 
 ```{r logos-and-background, echo=FALSE, results='asis'}
