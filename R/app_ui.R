@@ -7,6 +7,8 @@ app_ui <- function(request) {
   # Colors (cl) and helpers (tip, kpi_card, explainer, pl_layout)
   # are loaded from R/fct_ui_theme.R by Golem's R/ sourcing.
 
+  ui_cfg <- get_ui_config()
+
   shiny::tagList(
     golem_add_external_resources(),
 
@@ -53,8 +55,9 @@ app_ui <- function(request) {
           #   mod_dimensionnement_ui("dimensionnement")),
           bslib::nav_panel(title = "Comparaison", icon = shiny::icon("right-left"),
             mod_comparaison_ui("comparaison")),
-          bslib::nav_panel(title = "Documentation", icon = shiny::icon("book"),
-            mod_documentation_ui("documentation"))
+          if (isTRUE(ui_cfg$show_documentation))
+            bslib::nav_panel(title = "Documentation", icon = shiny::icon("book"),
+              mod_documentation_ui("documentation"))
         )
       ) # fin layout_sidebar
     ) # fin page_fillable

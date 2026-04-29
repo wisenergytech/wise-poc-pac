@@ -25,6 +25,9 @@ default:
     # Simple mode: hide optimizer/strategy controls, force LP 24h penalty 2.5 ToU
     simple_mode: true
 
+    # Show Documentation tab
+    show_documentation: true
+
 profondeville:
   ui:
     optimizers:
@@ -42,3 +45,5 @@ profondeville:
       curtailment: false
 
     simple_mode: true
+
+    show_documentation: false

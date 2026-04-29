@@ -31,7 +31,8 @@ get_ui_config <- function() {
       pv_sources = c("synthetic", "real_elia", "real_delaunoy"),
       show_battery = TRUE,
       strategies = list(tou = TRUE, curtailment = TRUE),
-      simple_mode = FALSE
+      simple_mode = FALSE,
+      show_documentation = TRUE
     ))
   }
   active <- Sys.getenv("R_CONFIG_ACTIVE", "default")
