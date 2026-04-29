@@ -18,17 +18,17 @@ mod_pac_ui <- function(id) {
       bslib::value_box(
         title = "Heures creuses BELIX",
         value = shiny::uiOutput(ns("vb_belix_temps")),
-        showcase = bslib::bs_icon("clock"),
+        showcase = bsicons::bs_icon("clock"),
         theme = "secondary"),
       bslib::value_box(
         title = "Conso PAC en heures creuses",
         value = shiny::uiOutput(ns("vb_belix_pac")),
-        showcase = bslib::bs_icon("lightning-charge"),
+        showcase = bsicons::bs_icon("lightning-charge"),
         theme = "secondary"),
       bslib::value_box(
         title = "Verdict pilotage",
         value = shiny::uiOutput(ns("vb_belix_verdict")),
-        showcase = bslib::bs_icon("thermometer-half"),
+        showcase = bsicons::bs_icon("thermometer-half"),
         theme = "secondary")),
     bslib::layout_columns(col_widths = 12,
       bslib::card(full_screen = TRUE,
