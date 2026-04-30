@@ -11,7 +11,8 @@
 #' @return Path to the rendered file (invisibly)
 render_presentation <- function(kpis, params, sim_data, output_file,
                                 format = c("revealjs", "pptx"),
-                                kpis_cible = NULL, params_cible = NULL) {
+                                kpis_cible = NULL, params_cible = NULL,
+                                sim_data_cible = NULL) {
   format <- match.arg(format)
 
   # Date range from simulation data
@@ -142,14 +143,31 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   }
 
   # --- PAC par tranche horaire (plotly object) ---
-  tranche_baseline <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "baseline")
-  tranche_opti <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "optimized")
+  # Use target contract sim when available (matches app behaviour)
+  sim_tranche <- if (!is.null(sim_data_cible)) sim_data_cible else sim_data
+  p_tranche_list <- if (!is.null(sim_data_cible) && !is.null(params_cible)) {
+    if (inherits(params_cible, "SimulationParams")) params_cible$as_list() else params_cible
+  } else p_list
+
+  tranche_baseline <- kpi_calc$get_pac_par_tranche(sim_tranche, p_tranche_list, "baseline")
+  tranche_opti <- kpi_calc$get_pac_par_tranche(sim_tranche, p_tranche_list, "optimized")
   tranche_baseline$scenario <- "Baseline"
   tranche_opti$scenario <- "Optimise"
   tranche_data <- rbind(tranche_baseline, tranche_opti)
   p_tranches <- plot_pac_tranches(tranche_data)
 
+  # --- Baseline-only tranches (constat slide) ---
+  tranche_bl_base <- kpi_calc$get_pac_par_tranche(sim_data, p_list, "baseline")
+  tranche_bl_base$scenario <- "Baseline"
+  p_tranches_baseline <- plot_pac_tranches(tranche_bl_base)
+
   # --- Profil horaire moyen (plotly object) ---
+  # Use target contract sim when available (matches app behaviour)
+  sim_profil <- if (!is.null(sim_data_cible)) sim_data_cible else sim_data
+  p_profil_list <- if (!is.null(sim_data_cible) && !is.null(params_cible)) {
+    if (inherits(params_cible, "SimulationParams")) params_cible$as_list() else params_cible
+  } else p_list
+
   get_pac_kwh_vec <- function(sim, params, type) {
     if (type == "optimized") {
       sim$sim_pac_on * params$p_pac_kw * params$dt_h
@@ -169,20 +187,42 @@ render_presentation <- function(kpis, params, sim_data, output_file,
         .groups = "drop"
       )
   }
-  profil_bl <- compute_profile(sim_data, p_list, "baseline")
+  profil_bl <- compute_profile(sim_profil, p_profil_list, "baseline")
   profil_bl$scenario <- "Baseline"
-  profil_op <- compute_profile(sim_data, p_list, "optimized")
+  profil_op <- compute_profile(sim_profil, p_profil_list, "optimized")
   profil_op$scenario <- "Optimise"
   profil_data <- rbind(profil_bl, profil_op)
 
-  h_vec <- as.integer(format(sim_data$timestamp, "%H", tz = "Europe/Brussels"))
-  profil_prix <- dplyr::tibble(hour = h_vec, prix = sim_data$prix_offtake) %>%
+  h_vec <- as.integer(format(sim_profil$timestamp, "%H", tz = "Europe/Brussels"))
+  profil_prix <- dplyr::tibble(hour = h_vec, prix = sim_profil$prix_offtake) %>%
     dplyr::group_by(hour) %>%
     dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
-  p_profil <- plot_profil_horaire(profil_data, profil_prix)
+  prix_label_cible <- if (!is.null(params_cible)) {
+    tc <- if (inherits(params_cible, "SimulationParams")) params_cible$as_list()$type_contrat else params_cible$type_contrat
+    switch(tc %||% "spot", belix = "Prix BELIX", fixe = "Prix fixe", "Prix spot Belpex")
+  } else prix_label_base
+  p_profil <- plot_profil_horaire(profil_data, profil_prix, prix_label = prix_label_cible)
 
   # --- Baseline-only profile (constat slide) ---
-  p_profil_baseline <- plot_profil_horaire(profil_bl, profil_prix)
+  # Use base contract prices (e.g. BELIX), not target contract prices
+  profil_bl_base <- compute_profile(sim_data, p_list, "baseline")
+  profil_bl_base$scenario <- "Baseline"
+  h_vec_base <- as.integer(format(sim_data$timestamp, "%H", tz = "Europe/Brussels"))
+  profil_prix_base <- dplyr::tibble(hour = h_vec_base, prix = sim_data$prix_offtake) %>%
+    dplyr::group_by(hour) %>%
+    dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
+  prix_label_base <- switch(p_list$type_contrat %||% "spot",
+    belix = "Prix BELIX", fixe = "Prix fixe", "Prix spot Belpex")
+  p_profil_baseline <- plot_profil_horaire(profil_bl_base, profil_prix_base, prix_label = prix_label_base)
+
+  # --- Opportunity chart: PAC + dual price curves (BELIX vs BELPEX) ---
+  p_opportunite <- if (!is.null(sim_data_cible)) {
+    h_vec_cible <- as.integer(format(sim_data_cible$timestamp, "%H", tz = "Europe/Brussels"))
+    prix_belpex <- dplyr::tibble(hour = h_vec_cible, prix = sim_data_cible$prix_offtake) %>%
+      dplyr::group_by(hour) %>%
+      dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
+    plot_opportunite_contrat(profil_bl_base, profil_prix_base, prix_belpex)
+  } else NULL
 
   # --- CO2 cumulative chart ---
   p_co2_cumul <- tryCatch({
@@ -203,10 +243,14 @@ render_presentation <- function(kpis, params, sim_data, output_file,
 
   # Save pre-built plotly objects for the .qmd
   saveRDS(p_tranches, file.path(tmp_dir, "plot_tranches.rds"))
+  saveRDS(p_tranches_baseline, file.path(tmp_dir, "plot_tranches_baseline.rds"))
   saveRDS(p_profil, file.path(tmp_dir, "plot_profil.rds"))
   saveRDS(p_profil_baseline, file.path(tmp_dir, "plot_profil_baseline.rds"))
   if (!is.null(p_co2_cumul)) {
     saveRDS(p_co2_cumul, file.path(tmp_dir, "plot_co2_cumul.rds"))
+  }
+  if (!is.null(p_opportunite)) {
+    saveRDS(p_opportunite, file.path(tmp_dir, "plot_opportunite.rds"))
   }
 
   tmp_qmd <- file.path(tmp_dir, "presentation.qmd")

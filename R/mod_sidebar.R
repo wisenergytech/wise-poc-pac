@@ -1373,7 +1373,8 @@ mod_sidebar_server <- function(id, sim_state) {
             output_file = file,
             format = "revealjs",
             kpis_cible = kpis_cible_r(),
-            params_cible = sim_result()$params_cible
+            params_cible = sim_result()$params_cible,
+            sim_data_cible = sim_filtered_cible()
           )
         })
       }

@@ -97,7 +97,7 @@ plot_co2_cumul <- function(sim_data, co2_impact) {
 #' @param profil_prix Data frame with columns: hour, prix_moy
 #' @return A plotly object
 #' @noRd
-plot_profil_horaire <- function(profil_data, profil_prix) {
+plot_profil_horaire <- function(profil_data, profil_prix, prix_label = "Prix spot Belpex") {
   bl <- profil_data[profil_data$scenario == "Baseline", ]
   op <- profil_data[profil_data$scenario == "Optimise", ]
   hp <- profil_prix
@@ -124,7 +124,7 @@ plot_profil_horaire <- function(profil_data, profil_prix) {
       marker = list(color = cl$opti, size = 5),
       hovertemplate = "<b>%{x}h</b><br>Optimise: %{y:.1f} kW<extra></extra>") %>%
     plotly::add_trace(
-      data = hp, x = ~hour, y = ~(prix_moy * 1000), name = "Prix spot Belpex",
+      data = hp, x = ~hour, y = ~(prix_moy * 1000), name = prix_label,
       type = "scatter", mode = "lines",
       line = list(color = cl$text_muted, width = 1, dash = "dot"),
       yaxis = "y2",
@@ -139,6 +139,80 @@ plot_profil_horaire <- function(profil_data, profil_prix) {
         showgrid = FALSE,
         tickfont = list(size = 9, color = cl$text_muted)),
       legend = list(orientation = "h", y = -0.15)
+    ) %>%
+    pl_layout(ylab = "Puissance PAC moyenne (kW)")
+}
+
+#' Opportunity chart: PAC consumption bars + dual price curves
+#'
+#' Shows hourly PAC baseline consumption as bars with BELIX and BELPEX
+#' price curves overlaid, highlighting the untapped spread at solar hours.
+#'
+#' @param pac_profile Data frame with columns: hour, pac_moy_kw (baseline only)
+#' @param prix_belix Data frame with columns: hour, prix_moy (BELIX prices)
+#' @param prix_belpex Data frame with columns: hour, prix_moy (BELPEX prices)
+#' @return A plotly object
+#' @noRd
+plot_opportunite_contrat <- function(pac_profile, prix_belix, prix_belpex) {
+  # Spread for annotation
+  spread <- dplyr::inner_join(prix_belix, prix_belpex, by = "hour", suffix = c("_belix", "_belpex"))
+  spread$delta <- (spread$prix_moy_belix - spread$prix_moy_belpex) * 1000  # EUR/MWh
+
+  # Highlight solar hours (10-16) with a green band
+  solar_shape <- list(
+    type = "rect", xref = "x", yref = "paper",
+    x0 = 9.5, x1 = 16.5, y0 = 0, y1 = 1,
+    fillcolor = "rgba(34,139,69,0.07)", line = list(width = 0)
+  )
+
+  bar_color <- sprintf("rgba(%s,0.35)",
+    paste(grDevices::col2rgb(cl$reel), collapse = ","))
+
+  plotly::plot_ly() %>%
+    plotly::add_bars(
+      data = pac_profile, x = ~hour, y = ~pac_moy_kw, name = "Conso PAC (baseline)",
+      marker = list(color = bar_color),
+      hovertemplate = "<b>%{x}h</b><br>PAC: %{y:.1f} kW<extra></extra>"
+    ) %>%
+    plotly::add_trace(
+      data = prix_belix, x = ~hour, y = ~(prix_moy * 1000), name = "Prix BELIX",
+      type = "scatter", mode = "lines+markers",
+      line = list(color = cl$reel, width = 2.5),
+      marker = list(color = cl$reel, size = 5),
+      yaxis = "y2",
+      hovertemplate = "<b>%{x}h</b><br>BELIX: %{y:.0f} EUR/MWh<extra></extra>"
+    ) %>%
+    plotly::add_trace(
+      data = prix_belpex, x = ~hour, y = ~(prix_moy * 1000), name = "Prix BELPEX",
+      type = "scatter", mode = "lines+markers",
+      line = list(color = cl$opti, width = 2.5),
+      marker = list(color = cl$opti, size = 5),
+      yaxis = "y2",
+      hovertemplate = "<b>%{x}h</b><br>BELPEX: %{y:.0f} EUR/MWh<extra></extra>"
+    ) %>%
+    plotly::add_trace(
+      data = spread, x = ~hour, y = ~(delta), name = "Spread BELIX-BELPEX",
+      type = "scatter", mode = "none",
+      fill = "tozeroy",
+      fillcolor = "rgba(34,139,69,0.12)",
+      yaxis = "y2",
+      hovertemplate = "<b>%{x}h</b><br>Spread: %{y:.0f} EUR/MWh<extra></extra>"
+    ) %>%
+    plotly::layout(
+      shapes = list(solar_shape),
+      xaxis = list(dtick = 1, tick0 = 0,
+        title = list(text = "Heure", standoff = 10)),
+      yaxis2 = list(
+        overlaying = "y", side = "right",
+        title = list(text = "EUR/MWh", standoff = 5),
+        showgrid = FALSE,
+        tickfont = list(size = 9, color = cl$text_muted)),
+      legend = list(orientation = "h", y = -0.15),
+      annotations = list(
+        list(x = 13, y = 0.95, xref = "x", yref = "paper",
+          text = "Zone solaire", showarrow = FALSE,
+          font = list(size = 10, color = "rgba(34,139,69,0.6)"))
+      )
     ) %>%
     pl_layout(ylab = "Puissance PAC moyenne (kW)")
 }

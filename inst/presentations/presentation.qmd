@@ -89,7 +89,7 @@ format:
   revealjs:
     embed-resources: true
     theme: [default, custom-theme.scss]
-    footer: "Karno x Wise Brain — Profondeville"
+    footer: "K001 Profondeville — POC pilotage WISE. Brain"
     slide-number: true
     transition: fade
     transition-speed: fast
@@ -124,6 +124,10 @@ plot_tranches_file <- "plot_tranches.rds"
 has_tranche <- file.exists(plot_tranches_file)
 if (has_tranche) p_tranches <- readRDS(plot_tranches_file)
 
+plot_tranches_bl_file <- "plot_tranches_baseline.rds"
+has_tranche_bl <- file.exists(plot_tranches_bl_file)
+if (has_tranche_bl) p_tranches_baseline <- readRDS(plot_tranches_bl_file)
+
 plot_profil_file <- "plot_profil.rds"
 has_profil <- file.exists(plot_profil_file)
 if (has_profil) p_profil <- readRDS(plot_profil_file)
@@ -135,6 +139,10 @@ if (has_profil_bl) p_profil_baseline <- readRDS(plot_profil_bl_file)
 plot_co2_file <- "plot_co2_cumul.rds"
 has_co2 <- file.exists(plot_co2_file)
 if (has_co2) p_co2_cumul <- readRDS(plot_co2_file)
+
+plot_oppo_file <- "plot_opportunite.rds"
+has_oppo <- file.exists(plot_oppo_file)
+if (has_oppo) p_opportunite <- readRDS(plot_oppo_file)
 ```
 
 ```{r logos-and-background, echo=FALSE, results='asis'}
@@ -171,11 +179,12 @@ cat(sprintf('
 
 ## Sommaire
 
-1. **Le site** — `r params$site_name`, installation et constats
-2. **L'opportunité** — Marché de l'énergie et stratégies de flexibilité
-3. **Notre approche** — Données, algorithme ToU
-4. **Les résultats** — Économies et impact
-5. **Et ensuite ?** — Prochaines étapes
+1. **Le site** : `r params$site_name`, installation technique
+2. **Les constats** : ce que les données terrain révèlent
+3. **L'opportunité** : volatilité des prix, potentiel inexploité
+4. **Notre approche** : données, algorithme ToU
+5. **Les résultats** : économies, énergie et CO2
+6. **Et ensuite ?** Prochaines étapes
 
 # Le site
 ## Le projet en bref
@@ -218,7 +227,7 @@ La géothermie est la source principale. L'aérothermie assure le backup et l'é
 | **Facture nette** | `r fmt(params$facture_baseline)` EUR / `r params$n_days` j | Soit ~`r fmt(params$proj_facture_baseline_an)` EUR/an extrapole |
 
 ::: notes
-Les KPIs sont calculés sur les données effectivement disponibles. La complétude de `r params$pct_completude`% est due aux coupures de la gateway Komfor.
+Les KPIs sont calculés sur les données effectivement disponibles.
 :::
 
 ## Profil de consommation baseline
@@ -227,23 +236,45 @@ Les KPIs sont calculés sur les données effectivement disponibles. La complétu
 if (has_profil_bl) p_profil_baseline
 ```
 
-**En résumé** : la PAC tourne surtout **la nuit et le matin**, quand l'énergie est chère (fond rouge) et le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilité de stockage thermique **inexploitée**.
-
-Ce décalage est un problème, mais aussi une **opportunité**.
+**En résumé** : la PAC tourne surtout **la nuit et le matin**, quand l'énergie est chère (fond rouge) et le PV ne produit pas.
 
 ::: notes
-Le profil de consommation actuel n'est pas aligné avec la production PV. Le démarrage simultané des deux PAC crée des pointes de puissance. La volatilité des prix spot et le faible taux d'autoconsommation représentent à la fois un defi et une opportunité d'optimisation.
+Le profil de consommation actuel n'est pas aligné avec la production PV. Le démarrage simultané des deux PAC crée des pointes de puissance.
+:::
+
+## Profil de consommation baseline (suite)
+
+```{r plot-tranches-baseline, echo=FALSE, fig.width=12, fig.height=5}
+if (has_tranche_bl) p_tranches_baseline
+```
+
+La répartition par tranche horaire confirme : **`r params$belix_pct_pac_offpeak`%** de la consommation PAC se concentre en **heures creuses** (nuit et week-end), quand le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilité de stockage thermique **inexploitée**.
+
+::: notes
+Le prix moyen par tranche (annoté au-dessus des barres) montre que la PAC consomme principalement aux heures les moins chères en contrat BELIX, mais ce sont aussi les heures sans production PV.
 :::
 
 # L'opportunité
-## Le marché de l'énergie pousse au pilotage intelligent
+## Le prix du kWh varie : votre PAC peut en profiter
 
-Le marché de l'électricité belge connaît une transformation profonde :
+```{r plot-opportunite, echo=FALSE, fig.width=14, fig.height=5}
+if (has_oppo) p_opportunite
+```
+
+- **Changer de contrat sans piloter** = subir la volatilité (la PAC tourne toujours la nuit)
+- **Piloter sans changer de contrat** = gains limités (le prix BELIX est lissé, peu de spread à capter)
+- **Wise Brain + contrat dynamique** = déplacer la PAC vers les heures solaires **et** capter le spread
+
+::: notes
+Slide clé : il justifie à la fois le pilotage (Wise Brain) et le switch de contrat. L'un sans l'autre ne donne qu'une fraction du potentiel. Le spread BELIX-BELPEX aux heures solaires n'est captable que si la PAC tourne à ces heures — ce que seul le pilotage intelligent permet.
+:::
+## Un contexte de marché favorable
+
+Le marché de l'électricité belge amplifie ce potentiel :
 
 - **Volatilité croissante** : les prix spot varient de < 0 a > 300 EUR/MWh au sein d'une meme journée
-- **Prix négatifs structurels** : au printemps/ete, la surproduction solaire fait régulièrement plonger les prix, surtout les week-ends
-- **Prix bas = électricité verte** : quand le solaire et l'éolien dominent le mix, les prix chutent **et** l'intensité carbone du réseau aussi. Consommer aux heures bon marché, c'est aussi consommer **décarboné**
-- **Contrats dynamiques** : seuls les consommateurs en contrat indexé sur le spot peuvent capter ces opportunités
+- **Prix négatifs structurels** : au printemps/ete, la surproduction solaire fait plonger les prix, surtout les week-ends
+- **Prix bas = électricité verte** : quand le solaire et l'éolien dominent, les prix chutent **et** l'intensité carbone aussi
 - **Flexibilité = valeur** : un réseau de chaleur avec stockage thermique est idéalement placé pour **absorber les heures gratuites** et éviter les heures chères
 
 ::: notes
@@ -252,7 +283,7 @@ La transition énergétique belge (nucléaire + renouvelable croissant) amplifie
 
 ## Illustration : le record du 26 avril 2026
 
-Dimanche 26 avril 2026, le prix spot belge a chuté à **-479,27 EUR/MWh** — un record historique. Cause : surproduction solaire massive et faible demande le week-end.
+Dimanche 26 avril 2026, le prix spot belge a chuté à **-479,27 EUR/MWh**, un record historique. Cause : surproduction solaire massive et faible demande le week-end.
 
 - Ce record dépasse meme l'Allemagne (-414 EUR/MWh) le meme jour
 - Une PAC avec stockage thermique aurait pu être **rémunérée** pour chauffer
@@ -271,82 +302,69 @@ if (length(imgs) > 0) {
 -479 EUR/MWh signifie que le producteur paie le consommateur pour absorber son électricité. Avec un ballon tampon de 32 000 L et une PAC de 60 kW, on aurait pu stocker de la chaleur pendant ces heures et être rémunéré pour le faire.
 :::
 
-## Quelles stratégies de flexibilité ?
+# Notre approche
+## Pourquoi le Time-of-Use ?
 
-| Stratégie | Gain estimé | Risque confort | Principe |
-|---|---:|:---:|---|
-| **ToU shifting** | **15 -- 30%** | Faible | Décaler la PAC vers les heures creuses / prix bas |
-| Peak shaving | 5 -- 15% | Faible | Écrêter les pics de puissance (tarif capacitaire) |
-| Curtailment | 2 -- 5% | Moyen | Couper la PAC pendant les prix extrêmes |
-| **ToU + Peak** | **20 -- 40%** | Faible | Combinaison des deux premiers leviers |
+| Stratégie | Gain estimé | Risque confort |
+|---|---:|:---:|
+| **ToU shifting** | **15 -- 30%** | Faible |
+| Peak shaving | 5 -- 15% | Faible |
+| Curtailment | 2 -- 5% | Moyen |
 
-Le **Time-of-Use** est le levier le plus rentable pour ce site :
-
-- Le ballon tampon de `r fmt(params$volume_ballon_l)` L offre l'inertie nécessaire pour pré-chauffer sans perte de confort
-- Les gains augmentent encore en passant du **BELIX au contrat dynamique** (spreads de prix plus grands)
-- Le curtailment vient "gratuitement" des qu'on implemente le ToU
-
-**Focus de cette présentation : ToU shifting.**
+Le **ToU** est le levier le plus rentable pour ce site : le ballon tampon de `r fmt(params$volume_ballon_l)` L offre l'inertie nécessaire pour **pré-chauffer aux heures solaires** sans perte de confort. Le curtailment vient "gratuitement" dès qu'on implémente le ToU.
 
 ::: notes
-Ordres de grandeur pour une PAC collective de 60 kW, 20 logements. Le peak shaving serait un bon second axe si on a accès au tarif capacitaire applicable. Le curtailment seul ne justifie pas un investissement en pilotage.
+Le peak shaving serait un bon second axe si on a accès au tarif capacitaire applicable. Le curtailment seul ne justifie pas un investissement en pilotage. Ordres de grandeur pour une PAC collective de 60 kW, 20 logements.
 :::
-
-# Notre approche
 ## D'ou viennent les données ?
 
-Pour optimiser, il faut croiser **3 flux terrain** au pas de 5 min :
+Pour optimiser, il faut croiser **3 flux terrain** :
 
 | Flux | Source | Ce qu'on mesure |
 |------|--------|-----------------|
-| **Consommation PAC** | Contrôleur Komfor (BigQuery) | Électricité consommée + température du ballon |
+| **Consommation PAC** | Contrôleur PAC (BigQuery) | Électricité consommée, température du ballon, COP mesuré |
 | **Échanges réseau** | Compteur ORES (BigQuery) | Soutirage et injection (import/export) |
 | **Production PV** | Profil Elia (API) | Estimation régionale mise à l'échelle (~`r params$pv_kwc` kWc) ([voir FAQ](#faq-pv)) |
 
-Ce croisement est possible **depuis novembre 2025** — on peut donc simuler l'optimisation jusqu'a aujourd'hui. La couverture du monitoring terrain est d'environ **84%** sur la période (coupures gateway Komfor, principalement fev-avril 2026). Les KPIs sont calculés sur les données effectivement disponibles.
+Ce croisement est possible **depuis novembre 2025**, ce qui permet de simuler l'optimisation jusqu'a aujourd'hui. La couverture du monitoring terrain est d'environ **84%** sur la période. Les KPIs sont calculés sur les données effectivement disponibles.
 
 ::: notes
-L'API Elia fournit la production PV agrégée par zone au pas de 15 min. Par calibration inverse, on obtient un facteur d'échelle équivalent à `r params$pv_kwc` kWc. Les trous de monitoring (~16% des quarts d'heure) sont dus à des coupures de la gateway Komfor. Ils n'affectent pas la validité des résultats : les KPIs sont des moyennes/totaux sur les périodes couvertes, et la projection annuelle tient compte du nombre de jours effectifs.
+L'API Elia fournit la production PV agrégée par zone au pas de 15 min. Par calibration inverse, on obtient un facteur d'échelle équivalent à `r params$pv_kwc` kWc. Les trous de monitoring (~16% des quarts d'heure) n'affectent pas la validité des résultats : les KPIs sont des moyennes/totaux sur les périodes couvertes, et la projection annuelle tient compte du nombre de jours effectifs.
 :::
 
 ## Que fait-on de ces données ?
 
-A ces 3 flux terrain, on ajouté deux sources externes pour **contextualiser** chaque pas de temps :
+A ces 3 flux terrain, on ajoute une source externe pour **contextualiser** chaque pas de temps :
 
 - **Prix spot BELPEX** (ENTSO-E) : combien coûte le kWh à cet instant ?
-- **Température extérieure** (Open-Meteo) : quel est le rendement (COP) de la PAC ?
 
-On en déduit la **demande thermique** = chaleur produite par la PAC (consommation électrique x COP).
+Le **COP mesuré** par le contrôleur PAC permet de calculer directement la **demande thermique** = consommation électrique × COP. Pas besoin d'estimer le rendement, on utilise la valeur réelle.
 
 L'optimiseur combine le tout pour répondre à : **"Quand aurait-il fallu faire tourner la PAC pour payer moins cher, à confort égal ?"**
 
 ::: notes
-Le COP varie avec la température extérieure (de ~`r params$cop_median_hiver` en hiver a ~`r params$cop_median_misaison` en mi-saison), ce qui impacte directement le coût réel de production thermique.
+Le COP mesuré varie de ~`r params$cop_median_hiver` en hiver à ~`r params$cop_median_misaison` en mi-saison. Les valeurs aberrantes (< 1.5 ou > 7) sont filtrées et remplacées par une estimation basée sur la température extérieure (Open-Meteo).
 :::
 
 ## Hypothèses de la simulation
 
-Deux simplifications retenues pour ce PoC :
-
 **1. Une seule PAC de `r params$pac_kw` kW thermique**
 
-Le site dispose de deux sous-systèmes (GSHP 40 kW on/off + ASHP 20 kW modulante). Pour cette simulation, on les traite comme **une seule unité modulante de `r params$pac_kw` kW** — ce qui surestime légèrement la flexibilité réelle mais donne un bon ordre de grandeur.
+Le site dispose de deux sous-systèmes (GSHP 40 kW on/off + ASHP 20 kW modulante). Pour cette simulation, on les traite comme **une seule unité modulante de `r params$pac_kw` kW**, ce qui surestime légèrement la flexibilité réelle mais donne un bon ordre de grandeur.
 
-**2. Aucun pilotage tarifaire dans la baseline**
+**2. Le baseline est le comportement réel mesuré sur site**
 
-Le site est sous **contrat BELIX** (heures creuses 22-7h + 11-17h, heures pleines le reste). Mais la PAC est-elle pilotée sur ce tarif ? **Non** : les heures creuses représentent **`r params$belix_pct_temps_offpeak`% de la journée**, mais la PAC n'y consomme que **`r params$belix_pct_pac_offpeak`% de son énergie**. Une PAC pilotée concentrerait sa consommation en heures creuses (80-90%), pas moins que la proportion du temps.
-
-C'est un **thermostat pur** — il chauffe quand le ballon refroidit, sans tenir compte du prix. L'opportunité de pilotage est donc **intacte**.
+Les données terrain sont utilisées telles quelles, sans modélisation du baseline. S'il existe un léger pilotage tarifaire en place (à confirmer), les gains présentés sont des gains **au-delà** de ce pilotage existant.
 
 ::: notes
-Le léger excès en heures pleines s'explique par les pics naturels du matin (~7h, relance après nuit + ECS douches) et du soir (17-21h, ECS cuisine/douches), qui tombent pile dans les plages peak du BELIX. C'est le rythme de vie des occupants, pas un pilotage. Le creux en milieu de journée (11-16h) vient du PV qui couvre une partie des besoins, pas d'un pilotage tarifaire.
+L'analyse BELIX montre que les heures creuses représentent `r params$belix_pct_temps_offpeak`% du temps, et la PAC y consomme `r params$belix_pct_pac_offpeak`% de son énergie — un écart de seulement `r params$belix_ecart_pp` pp, ce qui suggère un thermostat pur plutôt qu'un pilotage tarifaire. Mais peu importe : les résultats comparent l'optimisation au comportement réel, pas à un modèle.
 :::
 
 ## L'optimiseur ToU : pré-chauffer quand c'est pas cher
 
-**Idée** : déplacer la consommation PAC des heures chères vers les heures bon marché, grace a l'inertie thermique du ballon tampon.
+**Idée** : déplacer la consommation PAC des heures chères vers les heures bon marché, grâce à l'inertie thermique du ballon tampon.
 
-On le **pre-chauffe** quand le prix est bas, et on **puise dedans** quand le prix est haut.
+On le **pré-chauffe** quand le prix est bas, et on **puise dedans** quand le prix est haut.
 
 L'optimiseur utilise la **programmation linéaire (LP)** :
 
@@ -355,7 +373,7 @@ L'optimiseur utilise la **programmation linéaire (LP)** :
 - La température du ballon reste dans la plage [`r params$t_min`-`r params$t_max` C]
 - Intègre le **COP variable** selon la température extérieure
 
-**Les occupants ne ressentent rien** — seul le planning de la PAC change.
+**Les occupants ne ressentent rien** : seul le planning de la PAC change.
 
 ::: notes
 L'optimiseur traite la PAC comme une seule unité de `r params$pac_kw` kW. Le COP varie avec la température extérieure : ~`r params$cop_median_hiver` par -3 C (hiver) a ~`r params$cop_median_misaison` par 17 C (mi-saison). La contrainte T_min est "molle" (soft constraint avec pénalité) pour garantir que le solveur trouve toujours une solution.
@@ -434,7 +452,7 @@ Le graphique montre la redistribution de la consommation PAC entre les 4 tranche
 if (has_profil) p_profil
 ```
 
-Le **profil horaire** confirme : la baseline tourne la nuit et le soir — les heures les plus chères (fond rouge). Le Wise Brain concentre la puissance entre **10h et 16h** — quand le PV produit et les prix sont au plus bas (fond vert).
+Le **profil horaire** confirme : la baseline tourne la nuit et le soir, les heures les plus chères (fond rouge). Le Wise Brain concentre la puissance entre **10h et 16h**, quand le PV produit et les prix sont au plus bas (fond vert).
 
 ::: notes
 Le fond colore indique le prix spot moyen par heure : vert = bon marché, rouge = cher. La courbe pointillee grise montre le prix moyen sur l'axe de droite. La baseline montre deux pics (nuit + soir) typiques d'un thermostat. L'optimisé montre un pic unique en milieu de journée, aligné avec la production solaire.
@@ -452,7 +470,7 @@ Le fond colore indique le prix spot moyen par heure : vert = bon marché, rouge 
 
 La PAC = **`r params$pct_pac_conso`% de l'électricité du bâtiment**. Le Wise Brain ne réduit pas la consommation, il la **decale** vers les heures solaires et les prix bas.
 
-**Note** : la conso PAC baisse de `r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`% en optimisé — c'est un effet secondaire du COP plus élevé en journée. Ce chiffre repose sur un modèle de COP idéalisé et une modulation continue — il est **discutable** ([voir FAQ](#faq-conso-pac)).
+**Note** : la conso PAC baisse de `r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`% en optimisé, un effet du COP mesuré plus élevé en journée ([voir FAQ](#faq-conso-pac)).
 
 ::: notes
 L'autoconsommation PV passe de `r fmt1(params$ac_baseline)`% a `r fmt1(params$ac_opti)`%. Le soutirage réseau diminue car on consomme davantage de PV localement.
@@ -499,11 +517,11 @@ if (dual) {
     fmt(params$co2_saved_kg), fmt(params$proj_co2_saved_an_kg)))
 }
 
-cat("**Estimation prudente** : en ete il y a peu de chauffage mais beaucoup de PV — le gain ToU est plus faible, mais l'autoconsommation \"gratuite\" augmente.\n")
+cat("**Estimation prudente** : en été il y a peu de chauffage mais beaucoup de PV, le gain ToU est plus faible, mais l'autoconsommation \"gratuite\" augmente.\n")
 ```
 
 ::: notes
-La projection tient compte de la saisonnalité : en ete le COP est plus élevé (~4.5 vs ~2.5 en hiver, donc moins de kWh par degré-jour) et les spreads de prix sont différents. Les mois d'ete représentent ~2% de la demande thermique — leur poids financier est marginal.
+La projection tient compte de la saisonnalité : en été le COP est plus élevé (~4.5 vs ~2.5 en hiver, donc moins de kWh par degré-jour) et les spreads de prix sont différents. Les mois d'été représentent ~2% de la demande thermique — leur poids financier est marginal.
 :::
 
 ## Réduction des émissions CO2
@@ -512,7 +530,7 @@ La projection tient compte de la saisonnalité : en ete le COP est plus élevé 
 if (has_co2) p_co2_cumul
 ```
 
-En decalant la PAC vers les heures solaires, le Wise Brain réduit l'empreinte carbone : **-`r fmt(params$co2_saved_kg)` kg CO2** sur `r params$n_days` jours (-`r params$co2_pct_reduction`%). L'intensité carbone globale du site passe de **`r params$co2_intensity_baseline`** à **`r params$co2_intensity_opti` gCO2/kWh** — double effet : plus d'autoconsommation PV et soutirage aux heures propres.
+En decalant la PAC vers les heures solaires, le Wise Brain réduit l'empreinte carbone : **-`r fmt(params$co2_saved_kg)` kg CO2** sur `r params$n_days` jours (-`r params$co2_pct_reduction`%). L'intensité carbone globale du site passe de **`r params$co2_intensity_baseline`** à **`r params$co2_intensity_opti` gCO2/kWh**, double effet : plus d'autoconsommation PV et soutirage aux heures propres.
 
 Équivalent : **`r fmt(params$co2_equiv_car_km)` km** en voiture évités, ou **`r params$co2_equiv_trees_year` arbres** plantés par an. Source : intensité carbone horaire du réseau belge via **Elia Open Data** (ODS192/ODS201).
 
@@ -526,22 +544,22 @@ L'intensité carbone globale = émissions du soutirage / consommation totale du 
 ```{r message-cle, echo=FALSE, results='asis'}
 dual <- isTRUE(params$has_dual_contrat)
 if (dual) {
-  cat(sprintf('> "La PAC du projet K-0001 a Profondeville représente %s%% de la consommation électrique et tourne surtout la nuit quand l\'énergie est chère. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. En combinant pilotage ToU et passage %s -> %s : **-%s%% sur la facture, ~%s EUR/an d\'économie**, avec les données mesurées sur site."\n',
+  cat(sprintf('> "La PAC du projet K-0001 a Profondeville représente %s%% de la consommation électrique et tourne surtout la nuit quand l\'énergie est chère. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas, sans toucher au confort. En combinant pilotage ToU et passage %s -> %s : **-%s%% sur la facture, ~%s EUR/an d\'économie**, avec les données mesurées sur site."\n',
     params$pct_pac_conso, params$type_contrat, params$type_contrat_cible,
     params$dual_gain_total_pct, fmt(params$dual_proj_gain_total_an)))
 } else {
-  cat(sprintf('> "La PAC du projet K-0001 a Profondeville représente %s%% de la consommation électrique et tourne surtout la nuit quand l\'énergie est chère. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas — sans toucher au confort. Résultat : **-%s%% sur la facture, ~%s EUR/an d\'économie**, avec les données mesurées sur site."\n',
+  cat(sprintf('> "La PAC du projet K-0001 a Profondeville représente %s%% de la consommation électrique et tourne surtout la nuit quand l\'énergie est chère. Le Wise Brain la fait tourner quand le soleil brille et les prix sont bas, sans toucher au confort. Résultat : **-%s%% sur la facture, ~%s EUR/an d\'économie**, avec les données mesurées sur site."\n',
     params$pct_pac_conso, params$gain_pct, fmt(params$proj_gain_eur_an)))
 }
 ```
 
 ## Prochaines étapes
 
-Les axes d'amélioration sont nombreux — les prochaines implémentations seront surtout nourries de **vos retours et échanges** :
+Les axes d'amélioration sont nombreux. Les prochaines implémentations seront surtout nourries de **vos retours et échanges** :
 
 - **Peak shaving** : écrêter les pointes de puissance (`r params$pac_kw` -> `r round(params$pac_kw * 2/3)` kW) en séquençant le démarrage des deux PAC ?
 - **Curtailment** : limiter l'injection PV en période de prix négatifs pour maximiser l'autoconsommation ?
-- **Distinction GSHP / ASHP** : piloter les deux PAC indépendamment (on/off vs modulante). Un sous-comptage individuel existe deja mais n'est pas encore exploité — reste a définir comment cette distinction s'implémente en termes d'optimisation sous contraintes (variables de decision séparées, contraintes de démarrage séquentiel, etc.)
+- **Distinction GSHP / ASHP** : piloter les deux PAC indépendamment (on/off vs modulante). Un sous-comptage individuel existe deja mais n'est pas encore exploité. Reste a définir comment cette distinction s'implémente en termes d'optimisation sous contraintes (variables de decision séparées, contraintes de démarrage séquentiel, etc.)
 
 
 ::: notes
@@ -561,38 +579,20 @@ Merci pour votre attention.
 **Des questions ?**
 
 # FAQ
-## Pourquoi dit-on qu'il n'y a pas de pilotage BELIX ?
-
-Si la PAC etait pilotée sur le tarif BELIX, elle **éviterait les heures pleines** et concentrerait sa consommation en heures creuses. Le % de conso en heures pleines serait nettement inferieur au % de temps correspondant.
-
-Or les données montrent l'inverse : **`r round(100 - params$belix_pct_pac_offpeak, 1)`% de la conso en heures pleines** pour `r round(100 - params$belix_pct_temps_offpeak, 1)`% du temps. La PAC consomme légèrement **plus** quand c'est cher.
-
-**Pourquoi ce léger excès ?** Le profil horaire l'explique :
-
-- **Matin (~7h)** : relance après la nuit + ECS douches → tombe en **heure pleine**
-- **Soir (17-21h)** : ECS cuisine/douches → tombe en **heure pleine**
-- **Milieu de journée (11-16h)** : creux naturel → le PV couvre une partie des besoins
-
-C'est le **rythme de vie des occupants**, pas un pilotage. La PAC s'en fiche du prix — elle chauffe quand le ballon refroidit, un point c'est tout.
-
-::: notes
-A l'inverse, un pilotage BELIX aurait bloque la PAC en heures pleines (7-11h, 17-22h) et surchauffe le ballon juste avant. Or la PAC tourne tout autant a 18h (peak, cher) qu'a 1h (off-peak, pas cher). La baseline est neutre/agnostique au contrat, ce qui permet de simuler valablement un passage en contrat dynamique.
-:::
-
 ## Pourquoi la PAC consomme-t-elle moins en optimisé ? {#faq-conso-pac}
 
 La simulation montre une **réduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la conso PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : le Wise Brain produit la **meme chaleur** avec **moins d'électricité** :
 
 | Mécanisme | Explication | Impact |
 |-----------|-------------|--------|
-| **COP plus élevé** | Le Wise Brain déplace la PAC vers les heures diurnes ou il fait plus chaud. COP `r params$cop_median_misaison` à 15 C vs `r params$cop_median_hiver` a 0 C = plus de chaleur par kWh | Principal |
+| **COP plus élevé** | Le Wise Brain déplace la PAC vers les heures diurnes ou le COP mesuré est plus élevé (air plus chaud). COP `r params$cop_median_misaison` à 15 C vs `r params$cop_median_hiver` a 0 C | Principal |
 | **Moins de pertes thermiques** | Le ballon est maintenu plus proche de sa température minimale en moyenne | Secondaire |
 | **Modulation continue** | Puissance [0-100%] au lieu du tout-ou-rien du thermostat | Mineur |
 
 **En résumé** : le Wise Brain ne chauffe pas moins, il chauffe **plus intelligemment**.
 
 ::: notes
-La réduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le thermostat classique chauffe surtout la nuit quand les températures sont basses (COP faible). Le Wise Brain pre-chauffe en journée quand les températures sont plus élevées (COP élevé), produisant autant de chaleur avec moins d'électricité.
+La réduction de consommation PAC est un "bonus" de l'optimisation temporelle, pas un objectif en soi. Le COP utilisé est le COP réel mesuré par le contrôleur PAC (pas un modèle théorique), ce qui rend cette estimation fiable.
 :::
 
 ## Pourquoi le PV affiche ~`r params$pv_kwc_ref` kWc alors que l'installation fait `r params$pv_kwc` kWc ? {#faq-pv}
@@ -639,14 +639,14 @@ La méthodologie consumption-based (ODS192) inclut les émissions liées aux imp
 
 ## Pourquoi "intensité carbone globale" ? {#faq-co2}
 
-L'intensité carbone peut se calculer de **deux façons** — la distinction est importante :
+L'intensité carbone peut se calculer de **deux façons**, et la distinction est importante :
 
 | Méthode | Formule | Problème |
 |---------|---------|----------|
 | Par kWh soutiré | emissions / soutirage | Peut **monter** quand l'autoconsommation PV augmente |
 | **Globale (Carbon Trust)** | emissions / conso totale site | **Baisse toujours** avec l'optimisation |
 
-**Pourquoi l'intensité par kWh soutiré peut augmenter ?** En augmentant l'autoconsommation PV, on retire du soutirage réseau les kWh solaires diurnes — qui sont les **moins carbonés**. Les kWh restants (soir/nuit) pèsent plus lourd → l'intensité par kWh soutiré monte, même si les émissions totales baissent.
+**Pourquoi l'intensité par kWh soutiré peut augmenter ?** En augmentant l'autoconsommation PV, on retire du soutirage réseau les kWh solaires diurnes, qui sont les **moins carbonés**. Les kWh restants (soir/nuit) pèsent plus lourd → l'intensité par kWh soutiré monte, même si les émissions totales baissent.
 
 **Notre choix** : l'intensité **globale** (GHG Protocol Scope 2, méthode Carbon Trust). Le dénominateur est la consommation totale du site (soutirage + PV autoconsommé). Le PV autoconsommé a une intensité de 0 gCO2/kWh, ce qui fait mécaniquement baisser la moyenne. Cette méthode reflète fidèlement le double bénéfice du pilotage : **plus d'autoconsommation** et **soutirage aux heures propres**.
 

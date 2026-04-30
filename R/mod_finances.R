@@ -79,28 +79,14 @@ mod_finances_server <- function(id, sidebar) {
         pct1 <- if (abs(fa) > 0.001) round(levier1 / abs(fa) * 100, 1) else 0
         pct2 <- if (abs(fa) > 0.001) round(levier2 / abs(fa) * 100, 1) else 0
 
-        # -- Row 1: Decomposition (4 cards) --
-        # All % are relative to situation actuelle (fa) so they are additive
+        # -- Row 1: Résultat final --
         row1 <- list(
-          kpi_card(paste0(formatC(round(fa), big.mark = " ", format = "d"), " EUR"),
-            "Situation actuelle", "", cl$reel,
-            tooltip = sprintf("Votre facture actuelle en contrat %s, sans pilotage intelligent. C'est le point de depart : ce que vous payez aujourd'hui.", lbl_actuel)),
-          kpi_card(paste0(formatC(round(levier1), big.mark = " ", format = "d"), " EUR"),
-            "Levier 1 : Pilotage", "", cl$opti,
-            baseline_val = fa, opti_val = fa - levier1, gain_invert = TRUE,
-            tooltip = sprintf("%d EUR = facture actuelle (%d) - facture %s pilotee (%d). Soit %.1f%% de votre facture actuelle. Le pilotage intelligent chauffe aux moments les plus avantageux, sans changer de contrat.",
-              round(levier1), round(fa), lbl_actuel, round(fb), pct1)),
-          kpi_card(paste0(formatC(round(levier2), big.mark = " ", format = "d"), " EUR"),
-            "Levier 2 : + Contrat", "", cl$accent3,
-            baseline_val = fa, opti_val = fa - levier2, gain_invert = TRUE,
-            tooltip = sprintf("%d EUR = facture %s pilotee (%d) - facture %s pilotee (%d). Soit %.1f%% de votre facture actuelle. Les deux scenarios sont pilotes, seul le contrat change.",
-              round(levier2), lbl_actuel, round(fb), lbl_cible, round(fd), pct2)),
           kpi_card(paste0(formatC(round(fd), big.mark = " ", format = "d"), " EUR"),
-            "Resultat final", "", col_fn(gain_total),
+            "Facture optimisee", "", col_fn(gain_total),
             baseline_val = fa, opti_val = fd, gain_invert = TRUE,
             gain_val = round(fd - fa), gain_unit = "EUR",
-            tooltip = sprintf("Votre facture avec contrat %s + pilotage intelligent : %d EUR. Economie totale : %d EUR (%.1f%%) = levier 1 (%d) + levier 2 (%d).",
-              lbl_cible, round(fd), round(gain_total), pct_total, round(levier1), round(levier2)))
+            tooltip = sprintf("Votre facture avec contrat %s + pilotage Wise Brain : %d EUR (vs %d EUR en %s sans pilotage).",
+              lbl_cible, round(fd), round(fa), lbl_actuel))
         )
 
         row1_div <- do.call(shiny::tags$div, c(
