@@ -79,22 +79,6 @@ mod_finances_server <- function(id, sidebar) {
         pct1 <- if (abs(fa) > 0.001) round(levier1 / abs(fa) * 100, 1) else 0
         pct2 <- if (abs(fa) > 0.001) round(levier2 / abs(fa) * 100, 1) else 0
 
-        # -- Row 1: Résultat final --
-        row1 <- list(
-          kpi_card(paste0(formatC(round(fd), big.mark = " ", format = "d"), " EUR"),
-            "Facture optimisee", "", col_fn(gain_total),
-            baseline_val = fa, opti_val = fd, gain_invert = TRUE,
-            gain_val = round(fd - fa), gain_unit = "EUR",
-            tooltip = sprintf("Votre facture avec contrat %s + pilotage Wise Brain : %d EUR (vs %d EUR en %s sans pilotage).",
-              lbl_cible, round(fd), round(fa), lbl_actuel))
-        )
-
-        row1_div <- do.call(shiny::tags$div, c(
-          list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:8px;"),
-          lapply(row1, function(k) shiny::tags$div(style = "flex:1;", k))
-        ))
-
-        # -- Row 2: Detail du resultat final (vs situation actuelle A) --
         prix_pac_a <- if (!is.null(k$prix_kwh_pac_baseline) && !is.na(k$prix_kwh_pac_baseline)) {
           round(k$prix_kwh_pac_baseline * 100, 1)
         } else NA
@@ -102,7 +86,13 @@ mod_finances_server <- function(id, sidebar) {
           round(k_cible$prix_kwh_pac_opti * 100, 1)
         } else NA
 
-        row2 <- list(
+        kpis <- list(
+          kpi_card(paste0(formatC(round(fd), big.mark = " ", format = "d"), " EUR"),
+            "Facture optimisee", "", col_fn(gain_total),
+            baseline_val = fa, opti_val = fd, gain_invert = TRUE,
+            gain_val = round(fd - fa), gain_unit = "EUR",
+            tooltip = sprintf("Votre facture avec contrat %s + pilotage Wise Brain : %d EUR (vs %d EUR en %s sans pilotage).",
+              lbl_cible, round(fd), round(fa), lbl_actuel)),
           kpi_card(paste0(formatC(round(k_cible$cout_soutirage_opti), big.mark = " ", format = "d"), " EUR"),
             "Cout soutirage", "", cl$accent3,
             baseline_val = k$cout_soutirage_baseline, opti_val = k_cible$cout_soutirage_opti, gain_invert = TRUE,
@@ -122,14 +112,12 @@ mod_finances_server <- function(id, sidebar) {
               tooltip = sprintf("Prix effectif moyen du kWh consomme par la PAC (kWh PV comptes a 0). En %s pilote, la PAC profite des creux de prix et du PV gratuit.", lbl_cible))
           }
         )
-        row2 <- Filter(Negate(is.null), row2)
+        kpis <- Filter(Negate(is.null), kpis)
 
-        row2_div <- do.call(shiny::tags$div, c(
+        do.call(shiny::tags$div, c(
           list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
-          lapply(row2, function(k) shiny::tags$div(style = "flex:1;", k))
+          lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k))
         ))
-
-        shiny::tagList(row1_div, row2_div)
 
       } else {
         # ---- SINGLE CONTRACT MODE (unchanged) ----

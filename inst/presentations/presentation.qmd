@@ -579,6 +579,22 @@ Merci pour votre attention.
 **Des questions ?**
 
 # FAQ
+## Pourquoi "programmation linéaire" ? {#faq-lp}
+
+L'optimiseur doit choisir **quand** et **combien** faire tourner la PAC. Pour le résoudre mathématiquement, on exprime le problème sous forme d'équations :
+
+- **Objectif** : minimiser `somme( puissance_pac[t] × prix[t] )` → variable × constante
+- **Thermique** : `T_ballon[t+1] = T_ballon[t] + chaleur_PAC[t] - pertes[t]` → variable + variable × constante
+- **Bornes** : `0 ≤ puissance ≤ max`, `T_min ≤ T_ballon ≤ T_max`
+
+**Linéaire** = toutes les relations sont proportionnelles. Jamais une variable n'est multipliée par une autre variable. C'est ce qui permet de trouver **la** solution optimale exacte en quelques millisecondes (algorithme du simplexe).
+
+Le COP mesuré est une constante connue à chaque quart d'heure, ce qui garantit la linéarité. Si le COP dépendait de T_ballon (variable × variable), le problème deviendrait non-linéaire et plus complexe à résoudre.
+
+::: notes
+L'itération COP en deux passes (utilisée quand le COP est estimé) contourne la non-linéarité COP(T_ballon) en fixant le COP à chaque passe. Avec le COP mesuré, une seule passe suffit. Le MILP (on/off strict) et le QP (pénalité de variation) sont aussi implémentés dans l'app mais non utilisés ici.
+:::
+
 ## Pourquoi la PAC consomme-t-elle moins en optimisé ? {#faq-conso-pac}
 
 La simulation montre une **réduction de ~`r pct_delta(params$conso_pac_baseline_kwh, params$conso_pac_opti_kwh)`%** de la conso PAC (`r fmt(params$conso_pac_baseline_kwh - params$conso_pac_opti_kwh)` kWh). Ce n'est pas une erreur : le Wise Brain produit la **meme chaleur** avec **moins d'électricité** :
