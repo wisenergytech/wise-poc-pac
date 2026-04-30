@@ -101,7 +101,7 @@ mod_comparaison_server <- function(id, sidebar) {
     palette_external  <- c(cl$external1, cl$external2, cl$external3)
 
     get_palette <- function(var) {
-      if (grepl("^raw__", var)) palette_external
+      if (grepl("^raw__|^bqraw__", var)) palette_external
       else if (var %in% vars_baseline) palette_baseline
       else if (var %in% vars_optimised) palette_optimised
       else palette_external
@@ -131,6 +131,13 @@ mod_comparaison_server <- function(id, sidebar) {
         rcv <- raw_csv_vars()
         idx <- match(var, rcv$choices)
         if (!is.na(idx) && rcv$units[idx] != "") return(rcv$units[idx])
+        return(NA_character_)
+      }
+      # BQ raw variables: unit from registry
+      if (grepl("^bqraw__", var)) {
+        bqv <- bq_raw_vars()
+        idx <- match(var, bqv$choices)
+        if (!is.na(idx) && bqv$units[idx] != "") return(bqv$units[idx])
         return(NA_character_)
       }
       label <- names(all_vars)[all_vars == var]
@@ -228,15 +235,12 @@ mod_comparaison_server <- function(id, sidebar) {
     })
 
     # ---- Raw CSV variable registry ----
-    # Tracks raw CSV columns with prefixed names like "raw__filename__col"
-    raw_csv_vars <- shiny::reactiveVal(list(choices = character(0), units = character(0)))
-
-    shiny::observe({
+    # Lazy reactive: computed when accessed, no timing issues with observers
+    raw_csv_vars <- shiny::reactive({
       raw <- tryCatch(raw_data(), error = function(e) NULL)
       fn <- tryCatch(csv_filename(), error = function(e) NULL)
       if (is.null(raw) || nrow(raw) == 0 || is.null(fn)) {
-        raw_csv_vars(list(choices = character(0), units = character(0)))
-        return()
+        return(list(choices = character(0), units = character(0)))
       }
       prefix <- tools::file_path_sans_ext(fn)
       num_cols <- setdiff(
@@ -255,7 +259,51 @@ mod_comparaison_server <- function(id, sidebar) {
         grepl("prix|eur", num_cols) ~ "EUR/MWh",
         TRUE ~ ""
       )
-      raw_csv_vars(list(choices = choices, units = units))
+      list(choices = choices, units = units)
+    })
+
+    # ---- Auto-loaded BQ raw CSVs (data/bq_*_raw.csv) ----
+    bq_raw_data <- local({
+      bq_files <- list.files("data", pattern = "^bq_.*_raw\\.csv$", full.names = TRUE)
+      loaded <- list()
+      for (f in bq_files) {
+        df <- tryCatch(
+          readr::read_csv(f, show_col_types = FALSE),
+          error = function(e) NULL
+        )
+        if (!is.null(df) && nrow(df) > 0) {
+          # Parse time column
+          if ("time" %in% names(df)) {
+            df$time <- lubridate::ymd_hms(df$time, quiet = TRUE)
+            names(df)[names(df) == "time"] <- "timestamp"
+          }
+          loaded[[tools::file_path_sans_ext(basename(f))]] <- df
+        }
+      }
+      loaded
+    })
+
+    bq_raw_vars <- shiny::reactive({
+      choices <- character(0)
+      units <- character(0)
+      for (prefix in names(bq_raw_data)) {
+        df <- bq_raw_data[[prefix]]
+        num_cols <- setdiff(names(df)[sapply(df, is.numeric)], "timestamp")
+        vals <- paste0("bqraw__", prefix, "__", num_cols)
+        labels <- paste0("[", prefix, "] ", num_cols)
+        new_choices <- stats::setNames(vals, labels)
+        new_units <- dplyr::case_when(
+          grepl("_kwh$|_kWh$", num_cols, ignore.case = TRUE) ~ "kWh",
+          grepl("_kw$|_kW$", num_cols, ignore.case = TRUE)   ~ "kW",
+          grepl("^T_|^t_|temp", num_cols)                     ~ "\u00b0C",
+          grepl("^COP$|cop", num_cols, ignore.case = TRUE)    ~ "COP",
+          grepl("index", num_cols, ignore.case = TRUE)        ~ "kWh (index)",
+          TRUE ~ ""
+        )
+        choices <- c(choices, new_choices)
+        units <- c(units, new_units)
+      }
+      list(choices = choices, units = units)
     })
 
     # ---- Build grouped choices based on data availability ----
@@ -293,6 +341,12 @@ mod_comparaison_server <- function(id, sidebar) {
       rcv <- raw_csv_vars()
       if (length(rcv$choices) > 0) {
         groups[["\U0001f4c4 Donn\u00e9es brutes CSV"]] <- rcv$choices
+      }
+
+      # Add auto-loaded BQ raw columns
+      bqv <- bq_raw_vars()
+      if (length(bqv$choices) > 0) {
+        groups[["\U0001f4be BigQuery brut (5-min)"]] <- bqv$choices
       }
 
       groups
@@ -480,6 +534,41 @@ mod_comparaison_server <- function(id, sidebar) {
         }
       }
 
+      # Inject BQ raw columns (5-min data, matched to nearest 15-min)
+      bqv <- bq_raw_vars()
+      if (length(bqv$choices) > 0) {
+        for (prefix in names(bq_raw_data)) {
+          bq_df <- bq_raw_data[[prefix]]
+          if (is.null(bq_df) || nrow(bq_df) == 0 || !"timestamp" %in% names(bq_df)) next
+          bq_ts <- bq_df
+          bq_ts$timestamp <- lubridate::floor_date(bq_ts$timestamp, "15 min")
+          # Aggregate 5-min to 15-min: sum for kWh columns, mean for others
+          num_cols <- setdiff(names(bq_ts)[sapply(bq_ts, is.numeric)], "timestamp")
+          kwh_cols <- num_cols[grepl("_kwh$|_kWh$|consumption|power", num_cols, ignore.case = TRUE)]
+          mean_cols <- setdiff(num_cols, kwh_cols)
+          agg_parts <- list()
+          if (length(kwh_cols) > 0) {
+            agg_parts[["sum"]] <- bq_ts %>%
+              dplyr::group_by(timestamp) %>%
+              dplyr::summarise(dplyr::across(dplyr::all_of(kwh_cols), ~sum(., na.rm = TRUE)), .groups = "drop")
+          }
+          if (length(mean_cols) > 0) {
+            agg_parts[["mean"]] <- bq_ts %>%
+              dplyr::group_by(timestamp) %>%
+              dplyr::summarise(dplyr::across(dplyr::all_of(mean_cols), ~mean(., na.rm = TRUE)), .groups = "drop")
+          }
+          if (length(agg_parts) > 0) {
+            bq_agg <- Reduce(function(a, b) dplyr::left_join(a, b, by = "timestamp"), agg_parts)
+            for (col in num_cols) {
+              var_name <- paste0("bqraw__", prefix, "__", col)
+              if (var_name %in% bqv$choices && col %in% names(bq_agg)) {
+                df[[var_name]] <- bq_agg[[col]][match(df$timestamp, bq_agg$timestamp)]
+              }
+            }
+          }
+        }
+      }
+
       df
     })
 
@@ -505,9 +594,10 @@ mod_comparaison_server <- function(id, sidebar) {
 
       # Aggregate with proper sum/mean distinction
       df_sel <- df[, c("timestamp", vars)]
-      # Raw CSV kWh columns are summable too
+      # Raw CSV and BQ raw kWh/consumption columns are summable too
       raw_summable <- grep("^raw__.*_kwh$", vars, value = TRUE)
-      sum_cols_sel <- union(intersect(vars, summable), raw_summable)
+      bq_summable <- grep("^bqraw__.*(_kwh|_kWh|consumption)", vars, value = TRUE, ignore.case = TRUE)
+      sum_cols_sel <- union(intersect(vars, summable), c(raw_summable, bq_summable))
       agg <- auto_aggregate(df_sel, sum_cols = sum_cols_sel)
       df_agg <- agg$data
       agg_level <- agg$level
@@ -540,6 +630,10 @@ mod_comparaison_server <- function(id, sidebar) {
           rcv <- raw_csv_vars()
           idx <- match(v, rcv$choices)
           if (!is.na(idx)) names(rcv$choices)[idx] else v
+        } else if (grepl("^bqraw__", v)) {
+          bqv <- bq_raw_vars()
+          idx <- match(v, bqv$choices)
+          if (!is.na(idx)) names(bqv$choices)[idx] else v
         } else {
           names(all_vars)[all_vars == v]
         }
