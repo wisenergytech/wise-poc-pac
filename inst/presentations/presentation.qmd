@@ -217,6 +217,12 @@ La géothermie est la source principale. L'aérothermie assure le backup et l'é
 | **Part PAC dans la conso** | `r params$pct_pac_conso`% | La PAC est le premier poste de consommation électrique |
 | **Facture nette** | `r fmt(params$facture_baseline)` EUR / `r params$n_days` j | Soit ~`r fmt(params$proj_facture_baseline_an)` EUR/an extrapole |
 
+::: notes
+Les KPIs sont calculés sur les données effectivement disponibles. La complétude de `r params$pct_completude`% est due aux coupures de la gateway Komfor.
+:::
+
+## Profil de consommation baseline
+
 ```{r plot-profil-baseline, echo=FALSE, fig.width=14, fig.height=4}
 if (has_profil_bl) p_profil_baseline
 ```
@@ -310,10 +316,7 @@ A ces 3 flux terrain, on ajouté deux sources externes pour **contextualiser** c
 - **Prix spot BELPEX** (ENTSO-E) : combien coûte le kWh à cet instant ?
 - **Température extérieure** (Open-Meteo) : quel est le rendement (COP) de la PAC ?
 
-On en déduit ensuite deux grandeurs clés :
-
-- **Consommation hors PAC** = tout ce que le bâtiment consomme en dehors de la PAC
-- **Demande thermique** = chaleur produite par la PAC (consommation x COP)
+On en déduit la **demande thermique** = chaleur produite par la PAC (consommation électrique x COP).
 
 L'optimiseur combine le tout pour répondre à : **"Quand aurait-il fallu faire tourner la PAC pour payer moins cher, à confort égal ?"**
 
