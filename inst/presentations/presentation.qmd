@@ -25,6 +25,8 @@ params:
   date_debut: "20/11/2025"
   date_fin: "28/04/2026"
   n_days: 159
+  pct_completude: 84
+  heures_manquantes: 627
   mode_optim: "LP"
   type_contrat: "spot"
   # Financial KPIs
@@ -126,6 +128,10 @@ plot_profil_file <- "plot_profil.rds"
 has_profil <- file.exists(plot_profil_file)
 if (has_profil) p_profil <- readRDS(plot_profil_file)
 
+plot_profil_bl_file <- "plot_profil_baseline.rds"
+has_profil_bl <- file.exists(plot_profil_bl_file)
+if (has_profil_bl) p_profil_baseline <- readRDS(plot_profil_bl_file)
+
 plot_co2_file <- "plot_co2_cumul.rds"
 has_co2 <- file.exists(plot_co2_file)
 if (has_co2) p_co2_cumul <- readRDS(plot_co2_file)
@@ -202,7 +208,7 @@ La géothermie est la source principale. L'aérothermie assure le backup et l'é
 # Les constats
 ## Ce que les données mesurées revelent
 
-**`r params$n_days` jours** de données réelles (`r params$date_debut` -> `r params$date_fin`) :
+**`r params$n_days` jours** de données réelles (`r params$date_debut` -> `r params$date_fin`), complétude **`r params$pct_completude`%** (`r fmt(params$heures_manquantes)` h manquantes) :
 
 | Métrique mesurée | Valeur | Ce que ca signifie |
 |---|---:|---|
@@ -211,7 +217,11 @@ La géothermie est la source principale. L'aérothermie assure le backup et l'é
 | **Part PAC dans la conso** | `r params$pct_pac_conso`% | La PAC est le premier poste de consommation électrique |
 | **Facture nette** | `r fmt(params$facture_baseline)` EUR / `r params$n_days` j | Soit ~`r fmt(params$proj_facture_baseline_an)` EUR/an extrapole |
 
-**En résumé** : la PAC tourne surtout **la nuit et le matin**, quand l'énergie est chère, carbonée et le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilité de stockage thermique **inexploitée**.
+```{r plot-profil-baseline, echo=FALSE, fig.width=14, fig.height=4}
+if (has_profil_bl) p_profil_baseline
+```
+
+**En résumé** : la PAC tourne surtout **la nuit et le matin**, quand l'énergie est chère (fond rouge) et le PV ne produit pas. Le ballon tampon (`r fmt(params$volume_ballon_l)` L) offre une flexibilité de stockage thermique **inexploitée**.
 
 Ce décalage est un problème, mais aussi une **opportunité**.
 
@@ -501,10 +511,10 @@ if (has_co2) p_co2_cumul
 
 En decalant la PAC vers les heures solaires, le Wise Brain réduit l'empreinte carbone : **-`r fmt(params$co2_saved_kg)` kg CO2** sur `r params$n_days` jours (-`r params$co2_pct_reduction`%). L'intensité carbone globale du site passe de **`r params$co2_intensity_baseline`** à **`r params$co2_intensity_opti` gCO2/kWh** — double effet : plus d'autoconsommation PV et soutirage aux heures propres.
 
-Équivalent : **`r fmt(params$co2_equiv_car_km)` km** en voiture évités, ou **`r params$co2_equiv_trees_year` arbres** plantés par an.
+Équivalent : **`r fmt(params$co2_equiv_car_km)` km** en voiture évités, ou **`r params$co2_equiv_trees_year` arbres** plantés par an. Source : intensité carbone horaire du réseau belge via **Elia Open Data** (ODS192/ODS201).
 
 ::: notes
-L'intensité carbone globale = émissions du soutirage / consommation totale du site (soutirage + PV autoconsommé). Le PV autoconsommé a 0 gCO2/kWh, ce qui dilue l'intensité. Méthode conforme GHG Protocol Scope 2 / Carbon Trust ([voir FAQ](#faq-co2)).
+L'intensité carbone globale = émissions du soutirage / consommation totale du site (soutirage + PV autoconsommé). Le PV autoconsommé a 0 gCO2/kWh, ce qui dilue l'intensité. Méthode conforme GHG Protocol Scope 2 / Carbon Trust ([voir FAQ](#faq-co2)). Source principale : Elia ODS192 (consumption-based, imports inclus), complétée par ODS201 (production-based, facteurs IPCC AR5) pour les heures manquantes.
 :::
 
 # Et ensuite ?

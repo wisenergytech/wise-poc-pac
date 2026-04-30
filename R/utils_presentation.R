@@ -56,6 +56,18 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     date_debut = date_debut,
     date_fin = date_fin,
     n_days = round(kpis$n_days),
+    pct_completude = {
+      dt_h <- as.numeric(difftime(sim_data$timestamp[2], sim_data$timestamp[1], units = "hours"))
+      if (is.na(dt_h) || dt_h <= 0) dt_h <- 0.25
+      expected <- as.numeric(difftime(max(sim_data$timestamp), min(sim_data$timestamp), units = "hours")) / dt_h + 1
+      round(nrow(sim_data) / expected * 100)
+    },
+    heures_manquantes = {
+      dt_h <- as.numeric(difftime(sim_data$timestamp[2], sim_data$timestamp[1], units = "hours"))
+      if (is.na(dt_h) || dt_h <= 0) dt_h <- 0.25
+      expected <- as.numeric(difftime(max(sim_data$timestamp), min(sim_data$timestamp), units = "hours")) / dt_h + 1
+      round((expected - nrow(sim_data)) * dt_h)
+    },
     mode_optim = "LP",
     type_contrat = params$type_contrat %||% "spot",
     # Financial KPIs
@@ -169,6 +181,9 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     dplyr::summarise(prix_moy = mean(prix, na.rm = TRUE), .groups = "drop")
   p_profil <- plot_profil_horaire(profil_data, profil_prix)
 
+  # --- Baseline-only profile (constat slide) ---
+  p_profil_baseline <- plot_profil_horaire(profil_bl, profil_prix)
+
   # --- CO2 cumulative chart (optional, requires local CO2 data) ---
   p_co2_cumul <- tryCatch({
     co2_result <- fetch_co2_intensity(
@@ -189,6 +204,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   # Save pre-built plotly objects for the .qmd
   saveRDS(p_tranches, file.path(tmp_dir, "plot_tranches.rds"))
   saveRDS(p_profil, file.path(tmp_dir, "plot_profil.rds"))
+  saveRDS(p_profil_baseline, file.path(tmp_dir, "plot_profil_baseline.rds"))
   if (!is.null(p_co2_cumul)) {
     saveRDS(p_co2_cumul, file.path(tmp_dir, "plot_co2_cumul.rds"))
   }
