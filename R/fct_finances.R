@@ -113,9 +113,16 @@ project_annual_kpis <- function(kpis, sim_data, cop_nominal = 3.5, t_ref = 7,
   month_indices <- month_indices[!is.na(month_indices)]
   unmeasured_indices <- setdiff(seq_len(12), month_indices)
 
-  # DJ weights
-  dj_measured <- sum(.monthly_dj[month_indices])
+  # DJ weights — use actual measured DJ from t_ext when available
+  # This corrects for monitoring gaps within covered months
   dj_total <- sum(.monthly_dj)
+  if ("t_ext" %in% names(sim_data) && any(!is.na(sim_data$t_ext))) {
+    dt_h <- as.numeric(difftime(sim_data$timestamp[2], sim_data$timestamp[1], units = "hours"))
+    if (is.na(dt_h) || dt_h <= 0) dt_h <- 0.25
+    dj_measured <- sum(pmax(0, 16.5 - sim_data$t_ext) * dt_h / 24, na.rm = TRUE)
+  } else {
+    dj_measured <- sum(.monthly_dj[month_indices])
+  }
 
   # PV weights (unchanged — irradiation-based)
   pv_measured <- sum(.monthly_pv_weight[month_indices])

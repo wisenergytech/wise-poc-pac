@@ -42,7 +42,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     n_immeubles = 4,
     surface_m2 = 2000,
     conso_chauffage_mwh_an = 198,
-    co2_evite_20ans_t = 717,
+    co2_évité_20ans_t = 717,
     # Technical (from simulation params)
     pac_kw = params$p_pac_th_kw %||% 60,
     pv_kwc = params$pv_kwc %||% 64,

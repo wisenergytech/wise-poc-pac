@@ -697,6 +697,20 @@ mod_sidebar_server <- function(id, sim_state) {
           }
         }
 
+        # Temporal coverage analysis
+        dt_s <- as.numeric(difftime(df$timestamp[2], df$timestamp[1], units = "secs"))
+        if (!is.na(dt_s) && dt_s > 0) {
+          expected_pts <- as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "secs")) / dt_s + 1
+          n_missing <- round(expected_pts) - n_pts
+          pct_coverage <- round(n_pts / expected_pts * 100, 1)
+          if (n_missing > 0) {
+            missing_h <- round(n_missing * dt_s / 3600, 1)
+            warn_lines <- c(warn_lines, sprintf(
+              "Couverture temporelle : %s%% (%s h manquantes sur %.0f jours)",
+              pct_coverage, missing_h, n_jours))
+          }
+        }
+
         # Energy balance validation
         energy_cols <- c("pv_kwh", "offtake_kwh", "intake_kwh")
         if ("pac_kwh" %in% names(df)) energy_cols <- c(energy_cols, "pac_kwh")

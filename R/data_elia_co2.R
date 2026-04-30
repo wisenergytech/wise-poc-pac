@@ -399,7 +399,7 @@ interpolate_co2_15min <- function(co2_hourly, ts_15min) {
 #' @export
 compute_co2_impact <- function(sim, co2_15min) {
 
-  # CO2 par quart d'heure (gCO2eq)
+  # CO2 par quart d'heure (gCO2eq) — seul le soutirage reseau emet
   co2_baseline_g <- sim$offtake_kwh * co2_15min
   co2_opti_g     <- sim$sim_offtake * co2_15min
   co2_saved_g    <- co2_baseline_g - co2_opti_g
@@ -411,12 +411,21 @@ compute_co2_impact <- function(sim, co2_15min) {
   total_baseline_kwh <- sum(sim$offtake_kwh, na.rm = TRUE)
   total_opti_kwh     <- sum(sim$sim_offtake, na.rm = TRUE)
 
-  intensity_before <- if (total_baseline_kwh > 0) {
-    sum(co2_baseline_g, na.rm = TRUE) / total_baseline_kwh
+  # Conso totale du site (soutirage + PV autoconsomme) — stable baseline/opti
+  pv_autoconso_baseline <- pmax(0, sim$pv_kwh - sim$intake_kwh)
+  pv_autoconso_opti     <- pmax(0, sim$pv_kwh - sim$sim_intake)
+  conso_totale_baseline <- sum(sim$offtake_kwh + pv_autoconso_baseline, na.rm = TRUE)
+  conso_totale_opti     <- sum(sim$sim_offtake + pv_autoconso_opti, na.rm = TRUE)
+
+  # Intensite globale = emissions / conso totale site (Carbon Trust method)
+  # Le denominateur inclut le PV autoconsomme (zero emission), donc
+  # l'intensite baisse mecaniquement quand l'autoconsommation augmente.
+  intensity_before <- if (conso_totale_baseline > 0) {
+    sum(co2_baseline_g, na.rm = TRUE) / conso_totale_baseline
   } else 0
 
-  intensity_after <- if (total_opti_kwh > 0) {
-    sum(co2_opti_g, na.rm = TRUE) / total_opti_kwh
+  intensity_after <- if (conso_totale_opti > 0) {
+    sum(co2_opti_g, na.rm = TRUE) / conso_totale_opti
   } else 0
 
   co2_saved_kg <- sum(co2_saved_g, na.rm = TRUE) / 1000
@@ -446,11 +455,14 @@ compute_co2_impact <- function(sim, co2_15min) {
 
 #' Prepare CO2 intensity heatmap matrix
 #'
-#' Pivots per-timestep CO2 intensity into a day x hour matrix suitable
-#' for heatmap visualisation.
+#' Pivots hourly CO2 intensity into a day x hour matrix suitable
+#' for heatmap visualisation. Uses the raw Elia CO2 data (complete hourly
+#' series) rather than simulation timestamps, so monitoring gaps don't
+#' create white cells.
 #'
-#' @param sim Simulation dataframe with a \code{timestamp} column
-#' @param impact Result from [compute_co2_impact()]
+#' @param co2_df Tibble with columns \code{datetime} (POSIXct UTC) and
+#'   \code{co2_g_per_kwh} (numeric), as returned by \code{fetch_co2_intensity()$df}
+#' @param tz Timezone for hour extraction (default: "Europe/Brussels")
 #' @return A named list with:
 #'   \describe{
 #'     \item{jours}{Date vector (rows)}
@@ -458,15 +470,15 @@ compute_co2_impact <- function(sim, co2_15min) {
 #'     \item{z_mat}{Numeric matrix of mean CO2 intensity (gCO2/kWh)}
 #'   }
 #' @export
-prepare_co2_heatmap <- function(sim, impact) {
-  d <- sim %>%
+prepare_co2_heatmap <- function(co2_df, tz = "Europe/Brussels") {
+  d <- co2_df %>%
     dplyr::mutate(
-      co2_intensity = impact$co2_intensity,
-      jour = as.Date(timestamp),
-      h = lubridate::hour(timestamp)
+      dt_local = lubridate::with_tz(datetime, tz),
+      jour = as.Date(dt_local),
+      h = lubridate::hour(dt_local)
     ) %>%
     dplyr::group_by(jour, h) %>%
-    dplyr::summarise(co2 = mean(co2_intensity, na.rm = TRUE), .groups = "drop")
+    dplyr::summarise(co2 = mean(co2_g_per_kwh, na.rm = TRUE), .groups = "drop")
 
   mat <- d %>%
     tidyr::pivot_wider(names_from = h, values_from = co2) %>%

@@ -87,7 +87,7 @@ mod_co2_server <- function(id, sidebar) {
           "Intensite carbone", "gCO2/kWh", cl$opti,
           baseline_val = k$co2_intensity_baseline, opti_val = k$co2_intensity_opti, gain_invert = TRUE,
           gain_val = round(k$co2_intensity_opti - k$co2_intensity_baseline, 1), gain_unit = "gCO2/kWh",
-          tooltip = "Intensite carbone ponderee par la consommation. En decalant la PAC vers les heures solaires (moins carbonees), l'intensite moyenne baisse."),
+          tooltip = "Intensite carbone globale du site : emissions CO2 du soutirage reseau rapportees a la consommation totale (soutirage + PV autoconsomme). Baisse quand on augmente l'autoconsommation PV et/ou qu'on soutire aux heures moins carbonees."),
         kpi_card(sprintf("%.0f", k$co2_equiv_car_km),
           "Equiv. voiture", "km", cl$opti,
           tooltip = "Kilometres de voiture equivalents au CO2 evite (120 gCO2/km, WLTP)."),
@@ -121,10 +121,10 @@ mod_co2_server <- function(id, sidebar) {
       plot_co2_cumul(sim_co2(), co2_impact_r())
     })
 
-    # ---- Heatmap ----
+    # ---- Heatmap (from raw Elia CO2 data — no monitoring gaps) ----
     output$plot_co2_heatmap <- plotly::renderPlotly({
-      shiny::req(sim_co2(), co2_impact_r())
-      hm <- prepare_co2_heatmap(sim_co2(), co2_impact_r())
+      shiny::req(co2_data())
+      hm <- prepare_co2_heatmap(co2_data()$df)
 
       txt_mat <- matrix(
         paste0(rep(format(hm$jours, "%d %b"), each = length(hm$heures)), " ",
