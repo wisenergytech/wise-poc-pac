@@ -47,9 +47,14 @@ solve_block_lp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
 
   # Precalculations
   pac_qt <- params$p_pac_kw * params$dt_h
-  # COP: use override if provided (iterative COP), else linearize around T_consigne
-  cop <- if (!is.null(params$cop_override)) params$cop_override
-         else calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
+  # COP: use override if provided (iterative COP), else measured cop_reel if available, else estimate
+  cop <- if (!is.null(params$cop_override)) {
+    params$cop_override
+  } else if ("cop_reel" %in% names(block_data) && any(!is.na(block_data$cop_reel))) {
+    block_data$cop_reel
+  } else {
+    calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = params$t_consigne)
+  }
   chaleur_pac <- pac_qt * cop
   cap <- params$capacite_kwh_par_degre
 
@@ -235,7 +240,8 @@ run_optimization_lp <- function(df, params) {
         sim_t_ballon = bd$t_ballon,
         sim_offtake = bd$offtake_kwh,
         sim_intake = bd$intake_kwh,
-        sim_cop = calc_cop(bd$t_ext, params$cop_nominal, params$t_ref_cop),
+        sim_cop = if ("cop_reel" %in% names(bd) && any(!is.na(bd$cop_reel))) bd$cop_reel
+                  else calc_cop(bd$t_ext, params$cop_nominal, params$t_ref_cop),
         decision_raison = "optimizer_lp_fallback",
         batt_soc = 0,
         batt_flux = 0
@@ -244,7 +250,11 @@ run_optimization_lp <- function(df, params) {
 
     # Last block has no lookahead beyond data — use average price of current block as terminal value
     if (i_lookahead_end == i_end) {
-      cop_moyen <- mean(calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop))
+      cop_moyen <- if ("cop_reel" %in% names(block_data) && any(!is.na(block_data$cop_reel))) {
+        mean(block_data$cop_reel, na.rm = TRUE)
+      } else {
+        mean(calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop))
+      }
       prix_moyen <- mean(block_data$prix_offtake, na.rm = TRUE)
       prix_terminal_per_deg <- params$capacite_kwh_par_degre / max(cop_moyen, 1) * prix_moyen
     } else {
@@ -255,11 +265,14 @@ run_optimization_lp <- function(df, params) {
       block_result <- baseline_fallback(df[i_start:i_end, ])
     } else {
       # Iterative COP: solve, get T trajectory, update COP, re-solve
+      # Skip iteration when measured COP is available (already includes T_ballon effect)
+      has_measured_cop <- "cop_reel" %in% names(block_data) && any(!is.na(block_data$cop_reel))
       params_iter <- params
       full_result <- NULL
-      for (cop_iter in 1:2) {
+      n_cop_iter <- if (has_measured_cop) 1L else 2L
+      for (cop_iter in seq_len(n_cop_iter)) {
         full_result <- solve_block_lp(block_data, params_iter, t_init, soc_init, prix_terminal_per_deg)
-        if (is.null(full_result) || cop_iter == 2) break
+        if (is.null(full_result) || cop_iter == n_cop_iter) break
         t_bal_solved <- full_result$sim_t_ballon
         params_iter$cop_override <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = t_bal_solved)
       }

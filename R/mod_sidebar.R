@@ -677,6 +677,14 @@ mod_sidebar_server <- function(id, sim_state) {
           report <- c(report, sprintf("&#10060; <code>t_ballon</code> absent &rarr; soutirages ECS <b>distribu\u00e9s selon profil type</b> (pics matin/soir)"))
         }
 
+        # Optional: cop (measured COP from BigQuery)
+        if ("cop" %in% names(df) && any(!is.na(df$cop))) {
+          n_cop <- sum(!is.na(df$cop))
+          report <- c(report, sprintf("&#9989; <code>cop</code> &mdash; COP mesur\u00e9 (%d/%d pas de temps) &rarr; <b>utilis\u00e9 directement</b>", n_cop, n_pts))
+        } else {
+          report <- c(report, sprintf("&#10060; <code>cop</code> absent &rarr; COP <b>estim\u00e9 depuis T_ext</b> (mod\u00e8le lin\u00e9aire)"))
+        }
+
         # Optional: t_ext
         if ("t_ext" %in% names(df)) {
           report <- c(report, sprintf("&#9989; <code>t_ext</code> &mdash; temp\u00e9rature ext\u00e9rieure"))

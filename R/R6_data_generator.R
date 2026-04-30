@@ -275,10 +275,22 @@ DataGenerator <- R6::R6Class("DataGenerator",
         df <- df %>% dplyr::rename(intake_kwh = feedin_kwh)
       }
 
+      has_cop <- "cop" %in% names(df) && any(!is.na(df$cop))
+
+      # Sanitize measured COP: keep only realistic values (1.5-7), rest → NA
+      if (has_cop) {
+        df$cop <- ifelse(!is.na(df$cop) & df$cop >= 1.5 & df$cop <= 7, df$cop, NA_real_)
+        has_cop <- any(!is.na(df$cop))
+      }
+
       df <- df %>% dplyr::mutate(
         pv_kwh_original = pv_kwh,
         pv_kwh = pv_kwh * ratio_pv,
-        cop_reel = calc_cop(t_ext, params$cop_nominal, params$t_ref_cop)
+        cop_reel = if (has_cop) {
+          dplyr::coalesce(cop, calc_cop(t_ext, params$cop_nominal, params$t_ref_cop))
+        } else {
+          calc_cop(t_ext, params$cop_nominal, params$t_ref_cop)
+        }
       )
 
       # Apply local performance correction when PV is from regional profile

@@ -171,7 +171,7 @@ if (!is.null(elia$df) && nrow(elia$df) > 0) {
   df_elia <- df_base %>%
     left_join(scaled, by = "timestamp") %>%
     mutate(pv_kwh = coalesce(pv_kwh_elia, 0)) %>%
-    select(timestamp, pv_kwh, pac_kwh, offtake_kwh, feedin_kwh, t_ballon) %>%
+    select(timestamp, pv_kwh, pac_kwh, offtake_kwh, feedin_kwh, t_ballon, cop = cop_mean) %>%
     filter(!is.na(timestamp))
 
   # Exclure les jours incomplets (avec NA)
@@ -231,7 +231,7 @@ if (length(fusion_files) > 0) {
   df_fusion <- df_base %>%
     left_join(df_fusion_pv, by = c("timestamp" = "qt")) %>%
     mutate(pv_kwh = coalesce(pv_kwh_fusion, 0)) %>%
-    select(timestamp, pv_kwh, pac_kwh, offtake_kwh, feedin_kwh, t_ballon) %>%
+    select(timestamp, pv_kwh, pac_kwh, offtake_kwh, feedin_kwh, t_ballon, cop = cop_mean) %>%
     filter(!is.na(timestamp))
 
   # Exclure les jours incomplets (avec NA)

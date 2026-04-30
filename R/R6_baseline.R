@@ -102,9 +102,13 @@ Baseline <- R6::R6Class("Baseline",
       t_ext_v <- df$t_ext
       surplus_pv_qt <- pv - conso
 
+      has_measured_cop <- "cop_reel" %in% names(df) && any(!is.na(df$cop_reel))
+      cop_reel_v <- if (has_measured_cop) df$cop_reel else NULL
+
       # Pre-compute mean COP (used by pv_tracking mode)
       cop_moyen <- if (mode == "pv_tracking") {
-        mean(calc_cop(t_ext_v, params$cop_nominal, params$t_ref_cop), na.rm = TRUE)
+        if (has_measured_cop) mean(cop_reel_v, na.rm = TRUE)
+        else mean(calc_cop(t_ext_v, params$cop_nominal, params$t_ref_cop), na.rm = TRUE)
       } else {
         NULL
       }
@@ -121,8 +125,11 @@ Baseline <- R6::R6Class("Baseline",
 
       for (i in seq_len(n)) {
         t_prev <- if (i == 1) params$t_consigne else t_bal[i - 1]
-        cop_i <- calc_cop(t_ext_v[i], params$cop_nominal, params$t_ref_cop,
-                          t_ballon = t_prev)
+        cop_i <- if (has_measured_cop && !is.na(cop_reel_v[i])) {
+          cop_reel_v[i]
+        } else {
+          calc_cop(t_ext_v[i], params$cop_nominal, params$t_ref_cop, t_ballon = t_prev)
+        }
 
         # --- Decision ---
         if (mode == "pv_tracking") {
