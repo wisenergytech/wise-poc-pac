@@ -1008,14 +1008,9 @@ mod_sidebar_server <- function(id, sim_state) {
     # Keep the output slot so uiOutput("ecs_csv_banner") doesn't error.
     output$ecs_csv_banner <- shiny::renderUI(NULL)
 
-    # ---- ECS field (hidden in CSV mode — back-calculated from pac_kwh) ----
-    output$ecs_field <- shiny::renderUI({
-      ns <- session$ns
-      if (input$data_source == "csv") return(NULL)
-      shiny::numericInput(ns("ecs_kwh_jour"),
-        shiny::tags$span("ECS (kWh_th/jour)", tip("Demande en eau chaude sanitaire par jour en kWh thermiques. Reference : 6 kWh/jour pour un menage, 50-200 kWh/jour pour un immeuble ou une industrie. Si vide, estime automatiquement a partir de la puissance PAC.")),
-        NULL, min = 1, max = 5000, step = 1)
-    })
+    # ---- ECS field (hidden for now — auto-estimated from PAC power) ----
+    # Keep the output slot so uiOutput("ecs_field") doesn't error.
+    output$ecs_field <- shiny::renderUI(NULL)
 
     # ---- What-if PV warning banner ----
     output$measured_baseline_banner <- shiny::renderUI({

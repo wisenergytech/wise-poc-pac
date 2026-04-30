@@ -55,6 +55,7 @@ mod_comparaison_server <- function(id, sidebar) {
     date_range   <- sidebar$date_range
     raw_data     <- sidebar$raw_data
     params_r     <- sidebar$params_r
+    csv_filename <- sidebar$csv_filename
 
     # ---- Variable definitions by category ----
     vars_external <- c(
@@ -84,9 +85,12 @@ mod_comparaison_server <- function(id, sidebar) {
       "Injection optimis\u00e9e (kWh)"         = "sim_intake",
       "Autoconsommation optimis\u00e9e (kWh)"  = "autoconso_opti",
       "Facture optimis\u00e9e (EUR)"            = "facture_opti",
+      "Conso PAC optimis\u00e9e (kWh)"         = "sim_pac_kwh",
       "Temp\u00e9rature ballon optimis\u00e9e (\u00b0C)" = "sim_t_ballon",
       "COP"                                     = "sim_cop",
-      "PAC on (optimis\u00e9)"                  = "sim_pac_on"
+      "PAC on (optimis\u00e9)"                  = "sim_pac_on",
+      "Batterie SoC (kWh)"                      = "batt_soc",
+      "Batterie flux (kWh)"                     = "batt_flux"
     )
 
     all_vars <- c(vars_external, vars_baseline, vars_optimised)
@@ -97,7 +101,8 @@ mod_comparaison_server <- function(id, sidebar) {
     palette_external  <- c(cl$external1, cl$external2, cl$external3)
 
     get_palette <- function(var) {
-      if (var %in% vars_baseline) palette_baseline
+      if (grepl("^raw__", var)) palette_external
+      else if (var %in% vars_baseline) palette_baseline
       else if (var %in% vars_optimised) palette_optimised
       else palette_external
     }
@@ -116,11 +121,18 @@ mod_comparaison_server <- function(id, sidebar) {
 
     summable <- c("ext_pv", "pv_kwh", "offtake_kwh", "sim_offtake",
       "intake_kwh", "sim_intake", "conso_hors_pac", "pac_kwh", "soutirage_estime_kwh",
-      "sim_pac_on", "autoconso_baseline", "autoconso_opti",
+      "sim_pac_on", "sim_pac_kwh", "batt_flux", "autoconso_baseline", "autoconso_opti",
       "facture_baseline", "facture_opti")
 
     get_unit <- function(var) {
       if (is.null(var) || var == "") return(NA_character_)
+      # Raw CSV variables: unit from registry
+      if (grepl("^raw__", var)) {
+        rcv <- raw_csv_vars()
+        idx <- match(var, rcv$choices)
+        if (!is.na(idx) && rcv$units[idx] != "") return(rcv$units[idx])
+        return(NA_character_)
+      }
       label <- names(all_vars)[all_vars == var]
       if (length(label) == 0) return(NA_character_)
       m <- regmatches(label, regexpr("\\(([^)]+)\\)", label))
@@ -215,6 +227,37 @@ mod_comparaison_server <- function(id, sidebar) {
       grid
     })
 
+    # ---- Raw CSV variable registry ----
+    # Tracks raw CSV columns with prefixed names like "raw__filename__col"
+    raw_csv_vars <- shiny::reactiveVal(list(choices = character(0), units = character(0)))
+
+    shiny::observe({
+      raw <- tryCatch(raw_data(), error = function(e) NULL)
+      fn <- tryCatch(csv_filename(), error = function(e) NULL)
+      if (is.null(raw) || nrow(raw) == 0 || is.null(fn)) {
+        raw_csv_vars(list(choices = character(0), units = character(0)))
+        return()
+      }
+      prefix <- tools::file_path_sans_ext(fn)
+      num_cols <- setdiff(
+        names(raw)[sapply(raw, is.numeric)],
+        "timestamp"
+      )
+      vals <- paste0("raw__", prefix, "__", num_cols)
+      labels <- paste0("[", prefix, "] ", num_cols)
+      choices <- stats::setNames(vals, labels)
+      # Guess units from column names
+      units <- dplyr::case_when(
+        grepl("_kwh$", num_cols) ~ "kWh",
+        grepl("_kw$", num_cols)  ~ "kW",
+        grepl("^t_|temp", num_cols) ~ "\u00b0C",
+        grepl("cop", num_cols)   ~ "COP",
+        grepl("prix|eur", num_cols) ~ "EUR/MWh",
+        TRUE ~ ""
+      )
+      raw_csv_vars(list(choices = choices, units = units))
+    })
+
     # ---- Build grouped choices based on data availability ----
     build_choices <- function() {
       ext <- external_data()
@@ -240,11 +283,19 @@ mod_comparaison_server <- function(id, sidebar) {
         op_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
       }
 
-      list(
+      groups <- list(
         "\U0001f4e1 Sources externes" = ext_avail,
         "\U0001f3e0 Baseline / CSV"   = bl_avail,
         "\u2728 Optimis\u00e9"        = op_avail
       )
+
+      # Add raw CSV columns if available
+      rcv <- raw_csv_vars()
+      if (length(rcv$choices) > 0) {
+        groups[["\U0001f4c4 Donn\u00e9es brutes CSV"]] <- rcv$choices
+      }
+
+      groups
     }
 
     # Filter choices for serie 3: max 2 distinct units across all 3 series
@@ -273,7 +324,7 @@ mod_comparaison_server <- function(id, sidebar) {
     }
 
     # ---- Update selectInputs on external data or raw CSV load ----
-    shiny::observeEvent(list(external_data(), raw_data()), {
+    shiny::observeEvent(list(external_data(), raw_data(), raw_csv_vars()), {
       choices <- build_choices()
       all_vals <- unlist(choices)
       # Prefer CSV baseline columns if available, else external
@@ -362,12 +413,14 @@ mod_comparaison_server <- function(id, sidebar) {
 
       # Merge sim or raw CSV data
       merge_src <- if (has_sim()) {
+        p <- params_r()
         sim_result()$sim %>%
           dplyr::mutate(
             autoconso_baseline = pmax(0, pv_kwh - intake_kwh),
             autoconso_opti = pmax(0, pv_kwh - sim_intake),
             facture_baseline = offtake_kwh * prix_offtake - intake_kwh * prix_injection,
-            facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection
+            facture_opti = sim_offtake * prix_offtake - sim_intake * prix_injection,
+            sim_pac_kwh = sim_pac_on * p$p_pac_kw * p$dt_h
           )
       } else {
         raw <- tryCatch(raw_data(), error = function(e) NULL)
@@ -406,6 +459,27 @@ mod_comparaison_server <- function(id, sidebar) {
       if ("prix_offtake" %in% names(df)) df$prix_offtake <- df$prix_offtake * 1000
       if ("prix_injection" %in% names(df)) df$prix_injection <- df$prix_injection * 1000
 
+      # Inject raw CSV columns (prefixed names)
+      rcv <- raw_csv_vars()
+      if (length(rcv$choices) > 0) {
+        raw <- tryCatch(raw_data(), error = function(e) NULL)
+        if (!is.null(raw) && nrow(raw) > 0 && "timestamp" %in% names(raw)) {
+          raw_ts <- raw
+          raw_ts$timestamp <- lubridate::floor_date(raw_ts$timestamp, "15 min")
+          for (i in seq_along(rcv$choices)) {
+            var_name <- rcv$choices[i]
+            # Extract original column name: raw__prefix__colname
+            orig_col <- sub("^raw__[^_]+__", "", sub("^raw__", "", var_name))
+            # Handle double-underscore in prefix: split on last "__"
+            parts <- strsplit(var_name, "__")[[1]]
+            orig_col <- parts[length(parts)]
+            if (orig_col %in% names(raw_ts)) {
+              df[[var_name]] <- raw_ts[[orig_col]][match(df$timestamp, raw_ts$timestamp)]
+            }
+          }
+        }
+      }
+
       df
     })
 
@@ -431,14 +505,16 @@ mod_comparaison_server <- function(id, sidebar) {
 
       # Aggregate with proper sum/mean distinction
       df_sel <- df[, c("timestamp", vars)]
-      sum_cols_sel <- intersect(vars, summable)
+      # Raw CSV kWh columns are summable too
+      raw_summable <- grep("^raw__.*_kwh$", vars, value = TRUE)
+      sum_cols_sel <- union(intersect(vars, summable), raw_summable)
       agg <- auto_aggregate(df_sel, sum_cols = sum_cols_sel)
       df_agg <- agg$data
       agg_level <- agg$level
 
       # Resolve trace config for each variable
       unit1 <- get_unit(v1); unit2 <- get_unit(v2)
-      configs <- resolve_trace_config(vars, agg_level, summable, get_unit,
+      configs <- resolve_trace_config(vars, agg_level, sum_cols_sel, get_unit,
                                        unit1, unit2)
       n_bars <- attr(configs, "n_bars_y1")
 
@@ -460,7 +536,13 @@ mod_comparaison_server <- function(id, sidebar) {
         v <- vars[i]
         cfg <- configs[[v]]
         col <- colors[i]
-        lbl <- names(all_vars)[all_vars == v]
+        lbl <- if (grepl("^raw__", v)) {
+          rcv <- raw_csv_vars()
+          idx <- match(v, rcv$choices)
+          if (!is.na(idx)) names(rcv$choices)[idx] else v
+        } else {
+          names(all_vars)[all_vars == v]
+        }
 
         if (cfg$type == "bar") {
           opacity <- if (n_bars >= 2 && i > 1) cl$scenarios$optimise$bar_opacity
@@ -488,7 +570,7 @@ mod_comparaison_server <- function(id, sidebar) {
       barmode <- if (n_bars >= 2) "group" else if (n_bars == 1) "overlay" else "group"
 
       # Correlation annotation when PAC and price are both selected
-      pac_vars <- c("pac_kwh", "sim_pac_on")
+      pac_vars <- c("pac_kwh", "sim_pac_on", "sim_pac_kwh")
       prix_vars <- c("ext_prix", "prix_offtake")
       sel_pac <- intersect(vars, pac_vars)
       sel_prix <- intersect(vars, prix_vars)
