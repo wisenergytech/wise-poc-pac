@@ -1004,27 +1004,14 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- ECS source banner (CSV mode, in Ballon section) ----
-    output$ecs_csv_banner <- shiny::renderUI({
-      if (!csv_measured_eligible()) return(NULL)
-      ecs_msg <- if (csv_has_t_ballon()) {
-        "ECS d\u00e9duit des mesures t_ballon"
-      } else {
-        "ECS estim\u00e9 par profil synth\u00e9tique (pas de t_ballon)"
-      }
-      border_col <- if (csv_has_t_ballon()) cl$success else cl$text_muted
-      shiny::tags$div(
-        style = sprintf(
-          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0 4px 0;font-size:.75rem;line-height:1.4;",
-          cl$bg_card, border_col),
-        shiny::HTML(sprintf(
-          "<span style='font-size:.65rem;color:%s;'>%s</span>",
-          cl$text_muted, ecs_msg)))
-    })
+    # Hidden for now: ECS is back-calculated from pac_kwh in CSV mode.
+    # Keep the output slot so uiOutput("ecs_csv_banner") doesn't error.
+    output$ecs_csv_banner <- shiny::renderUI(NULL)
 
-    # ---- ECS field (hidden when CSV has t_ballon + measured baseline) ----
+    # ---- ECS field (hidden in CSV mode — back-calculated from pac_kwh) ----
     output$ecs_field <- shiny::renderUI({
       ns <- session$ns
-      if (csv_measured_eligible() && csv_has_t_ballon()) return(NULL)
+      if (input$data_source == "csv") return(NULL)
       shiny::numericInput(ns("ecs_kwh_jour"),
         shiny::tags$span("ECS (kWh_th/jour)", tip("Demande en eau chaude sanitaire par jour en kWh thermiques. Reference : 6 kWh/jour pour un menage, 50-200 kWh/jour pour un immeuble ou une industrie. Si vide, estime automatiquement a partir de la puissance PAC.")),
         NULL, min = 1, max = 5000, step = 1)
