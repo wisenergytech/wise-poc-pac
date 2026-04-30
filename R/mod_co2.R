@@ -42,21 +42,8 @@ mod_co2_server <- function(id, sidebar) {
       if (!is.null(sim_c)) sim_c else sim_filtered()
     })
 
-    # ---- CO2 data (CSV local = instantane, fallback API si besoin) ----
-    co2_data <- shiny::reactive({
-      shiny::req(sim_filtered())
-      sim <- sim_filtered()
-      result <- fetch_co2_intensity(
-        min(sim$timestamp, na.rm = TRUE),
-        max(sim$timestamp, na.rm = TRUE)
-      )
-      if (result$source != "local" && result$source != "fallback") {
-        shiny::showNotification(
-          sprintf("Donn\u00e9es CO2 r\u00e9cup\u00e9r\u00e9es via API (%s)", result$source),
-          type = "message", duration = 5)
-      }
-      result
-    })
+    # ---- CO2 data (reuse from sidebar) ----
+    co2_data <- sidebar$co2_data_r
 
     co2_15min_r <- shiny::reactive({
       shiny::req(sim_co2(), co2_data())
@@ -68,14 +55,12 @@ mod_co2_server <- function(id, sidebar) {
       compute_co2_impact(sim_co2(), co2_15min_r())
     })
 
-    # ---- KPIs ----
+    # ---- KPIs (reuse from sidebar — already includes CO2) ----
     output$co2_kpi_row <- shiny::renderUI({
-      shiny::req(co2_impact_r(), co2_15min_r(), sidebar$kpis_r())
-      sim <- sim_co2()
-      res <- sidebar$sim_result()
-      p <- if (!is.null(res$params_cible)) res$params_cible else sidebar$params_r()
-
-      k <- KPICalculator$new()$compute(sim, sim, p, co2_15min = co2_15min_r())
+      shiny::req(co2_impact_r())
+      k_cible <- sidebar$kpis_cible_r()
+      k <- if (!is.null(k_cible)) k_cible else sidebar$kpis_r()
+      shiny::req(k, k$co2_saved_kg)
 
       kpis <- list(
         kpi_card(sprintf("%.1f", k$co2_opti_kg),

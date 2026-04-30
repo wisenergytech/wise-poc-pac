@@ -1208,11 +1208,27 @@ mod_sidebar_server <- function(id, sim_state) {
       sim %>% dplyr::filter(timestamp >= d1, timestamp < d2)
     })
 
+    # ---- CO2 intensity (shared, used by kpis_r and mod_co2) ----
+    co2_data_r <- shiny::reactive({
+      shiny::req(sim_filtered())
+      sim <- sim_filtered()
+      tryCatch(
+        fetch_co2_intensity(min(sim$timestamp, na.rm = TRUE), max(sim$timestamp, na.rm = TRUE)),
+        error = function(e) NULL
+      )
+    })
+
+    co2_15min_r <- shiny::reactive({
+      shiny::req(sim_filtered(), co2_data_r())
+      interpolate_co2_15min(co2_data_r()$df, sim_filtered()$timestamp)
+    })
+
     # ---- Shared KPIs (computed once, consumed by all modules) ----
     kpis_r <- shiny::reactive({
       shiny::req(sim_filtered())
       sim <- sim_filtered(); p <- params_r()
-      KPICalculator$new()$compute(sim, sim, p)
+      co2 <- tryCatch(co2_15min_r(), error = function(e) NULL)
+      KPICalculator$new()$compute(sim, sim, p, co2_15min = co2)
     })
 
     # ---- Target contract: filtered sim + KPIs ----
@@ -1225,11 +1241,17 @@ mod_sidebar_server <- function(id, sim_state) {
       res$sim_cible %>% dplyr::filter(timestamp >= d1, timestamp < d2)
     })
 
+    co2_15min_cible_r <- shiny::reactive({
+      shiny::req(sim_filtered_cible(), co2_data_r())
+      interpolate_co2_15min(co2_data_r()$df, sim_filtered_cible()$timestamp)
+    })
+
     kpis_cible_r <- shiny::reactive({
       sim_c <- sim_filtered_cible()
       if (is.null(sim_c)) return(NULL)
       p_c <- sim_result()$params_cible
-      KPICalculator$new()$compute(sim_c, sim_c, p_c)
+      co2 <- tryCatch(co2_15min_cible_r(), error = function(e) NULL)
+      KPICalculator$new()$compute(sim_c, sim_c, p_c, co2_15min = co2)
     })
 
     # ---- Automagic ----
@@ -1386,6 +1408,8 @@ mod_sidebar_server <- function(id, sim_state) {
       sim_filtered_cible = sim_filtered_cible,
       kpis_r = kpis_r,
       kpis_cible_r = kpis_cible_r,
+      co2_data_r = co2_data_r,
+      co2_15min_r = co2_15min_r,
       switch_contrat = shiny::reactive(input$switch_contrat),
       type_contrat_cible = shiny::reactive(input$type_contrat_cible),
       volume_ballon_eff = volume_ballon_eff,

@@ -184,15 +184,15 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   # --- Baseline-only profile (constat slide) ---
   p_profil_baseline <- plot_profil_horaire(profil_bl, profil_prix)
 
-  # --- CO2 cumulative chart (optional, requires local CO2 data) ---
+  # --- CO2 cumulative chart ---
   p_co2_cumul <- tryCatch({
     co2_result <- fetch_co2_intensity(
       min(sim_data$timestamp, na.rm = TRUE),
       max(sim_data$timestamp, na.rm = TRUE)
     )
     co2_15min <- interpolate_co2_15min(co2_result$df, sim_data$timestamp)
-    impact <- compute_co2_impact(sim_data, co2_15min)
-    plot_co2_cumul(sim_data, impact)
+    co2_impact <- compute_co2_impact(sim_data, co2_15min)
+    plot_co2_cumul(sim_data, co2_impact)
   }, error = function(e) NULL)
 
   # Copy template + assets to a temp dir for rendering
