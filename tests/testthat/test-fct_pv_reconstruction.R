@@ -49,3 +49,37 @@ test_that("assess_pv_stability detects instability on Profondeville", {
   expect_false(result$stable)
   expect_gt(result$cv, 0.3)
 })
+
+test_that("compute_adaptive_kwc detects progressive commissioning", {
+  # Simulate 4 months: kWc growing from 10 to 40
+  timestamps <- seq(as.POSIXct("2025-12-01", tz = "UTC"),
+    as.POSIXct("2026-04-01", tz = "UTC"), by = "15 min")
+  months <- format(timestamps, "%Y-%m")
+
+  # Elia 1-kWc profile: simple sinusoidal (same shape each month)
+  hour <- as.integer(format(timestamps, "%H"))
+  pv_elia_1kwc <- pmax(0, sin((hour - 6) / 12 * pi) * 0.25) # peak ~0.25 kWh/qt at noon
+
+  # Real PV = Elia × growing kWc
+  kwc_by_month <- c("2025-12" = 10, "2026-01" = 15, "2026-02" = 25, "2026-03" = 40)
+  pv_reel <- pv_elia_1kwc * kwc_by_month[months]
+
+  result <- compute_adaptive_kwc(pv_reel, timestamps, pv_elia_1kwc)
+
+  expect_equal(nrow(result$monthly), 4)
+  # kWc should approximately match our input
+  expect_true(all(abs(result$monthly$kwc_equiv - c(10, 15, 25, 40)) < 1))
+  # Current kWc = median of last 2 months (25, 40) → ~32.5
+  expect_gt(result$kwc_current, 25)
+  expect_lt(result$kwc_current, 45)
+})
+
+test_that("scale_pv_adaptive applies per-month kWc", {
+  timestamps <- as.POSIXct(c("2026-01-15 12:00", "2026-02-15 12:00", "2026-03-15 12:00"), tz = "UTC")
+  pv_elia_1kwc <- c(0.2, 0.25, 0.3)  # kWh per timestep for 1 kWc
+  kwc_profile <- c("2026-01" = 10, "2026-02" = 20, "2026-03" = 30)
+
+  result <- scale_pv_adaptive(timestamps, pv_elia_1kwc, kwc_profile)
+
+  expect_equal(result, c(0.2 * 10, 0.25 * 20, 0.3 * 30))
+})

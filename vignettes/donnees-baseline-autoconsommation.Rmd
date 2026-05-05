@@ -161,6 +161,74 @@ instantanee de chaque onduleur, somme au pas de 5 minutes.
 **Limite** : necessite l'export CSV de votre portail de monitoring.
 Pas toujours disponible en historique long.
 
+#### Le kWc adaptatif : s'adapter a une installation qui evolue
+
+Quand une installation PV change de taille au fil du temps (mise en service
+progressive, ajout de panneaux, remplacement d'onduleur), un kWc fixe pour
+le scaling Elia est faux. L'app propose un mecanisme de **kWc adaptatif**
+qui detecte et s'adapte automatiquement.
+
+**Le principe** :
+
+Pour chaque mois, on connait :
+
+- Le PV reel reconstitue (bilan energetique) : ce que l'installation a
+  reellement produit
+- Le PV Elia normalise a 1 kWc : ce qu'aurait produit 1 kWc dans la
+  meme region
+
+Le ratio des deux donne le **kWc equivalent** du mois :
+
+```
+kWc_equiv(mois) = sum(PV_reel du mois) / sum(PV_Elia_1kWc du mois)
+```
+
+**Exemple (Profondeville)** :
+
+| Mois | PV reel | PV Elia 1 kWc | kWc equivalent |
+|------|---------|---------------|----------------|
+| Dec 2025 | 145 kWh | 22.5 kWh | 6 kWc |
+| Jan 2026 | 112 kWh | 20.7 kWh | 5 kWc |
+| Mar 2026 | 2 617 kWh | 83.0 kWh | 32 kWc |
+| Avr 2026 | 4 144 kWh | 97.6 kWh | 42 kWc |
+
+On voit la mise en service progressive : de 5 kWc a 42 kWc.
+
+**kWc stabilise** : la mediane des 2 derniers mois complets (ici ~37 kWc).
+C'est la meilleure estimation de la capacite actuelle.
+
+**Scaling adaptatif** : quand on veut produire un PV Elia corrige (pour
+remplacer un PV reconstitue pollue par des outliers), on applique le kWc
+de chaque mois :
+
+```
+PV_corrige(t) = PV_Elia_1kWc(t) × kWc_equiv(mois de t)
+```
+
+Cela donne un profil PV lisse (pas de spikes) qui respecte l'evolution
+de la puissance installee.
+
+**Scaling what-if** : pour simuler "et si j'avais 60 kWc ?", on scale
+simplement le profil Elia a 1 kWc :
+
+```
+PV_whatif(t) = PV_Elia_1kWc(t) × 60
+```
+
+Pas besoin du kWc adaptatif dans ce cas — on simule une installation
+hypothetique a capacite constante.
+
+**Pourquoi c'est robuste** : le calcul du kWc equivalent travaille sur des
+**totaux mensuels**. Les spikes ponctuels du compteur ORES (qui polluent le
+PV reconstitue pas-par-pas) sont noyes dans la somme mensuelle. Un spike
+de 1 374 kWh sur un mois de 4 000 kWh ne cause qu'une erreur de 3% sur
+le ratio — negligeable.
+
+**Implementation** : `R/fct_pv_reconstruction.R` — fonctions
+`compute_adaptive_kwc()` et `scale_pv_adaptive()`.
+
+---
+
 #### Resume : quelle source choisir ?
 
 ```
