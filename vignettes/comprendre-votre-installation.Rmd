@@ -1007,6 +1007,104 @@ what-if.
 
 ---
 
+## Comprendre le diagnostic d'import (onglet Donnees)
+
+Quand vous chargez vos deux fichiers CSV (installation + ORES), l'app execute
+une serie de tests automatiques et affiche les resultats dans l'onglet
+**Donnees**. Voici comment les interpreter.
+
+### Stabilite PV (CV = coefficient de variation)
+
+L'app reconstitue votre production PV reelle a partir du bilan energetique :
+
+> PV reel = Consommation installation - Soutirage reseau + Injection reseau
+
+Puis elle compare la production mensuelle entre les mois. Le **coefficient de
+variation (CV)** mesure l'ampleur de ces differences :
+
+- **CV < 30%** : production PV stable. Les variations sont normales
+  (saisonnalite, meteo). Le PV reconstitue est fiable.
+- **CV > 30%** : production PV instable. L'explication la plus probable est
+  une **mise en service progressive** des panneaux. Les premiers mois ont
+  une capacite installee plus faible que les derniers.
+
+**Exemple (Profondeville)** : en decembre 2025, la production est de 145 kWh.
+En avril 2026, elle est de 4 144 kWh. Ce n'est pas juste la saison — c'est
+que les panneaux ont ete raccordes progressivement entre novembre et avril.
+Le CV est de 140%, ce qui declenche l'alerte.
+
+**Que faire ?** Deux options :
+
+1. **Restreindre la periode** aux mois recents (ou la puissance PV est
+   stabilisee). Si tous les panneaux sont actifs depuis mars 2026, analysez
+   uniquement mars-avril.
+2. **Utiliser le PV Elia scale** (option proposee dans la sidebar) : l'app
+   utilise la production PV regionale Elia, mise a l'echelle avec un kWc que
+   vous renseignez.
+
+### Autoconsommation PV negative
+
+L'autoconsommation est calculee comme :
+
+> Taux = (PV reel - Injection) / PV reel x 100
+
+Un taux **negatif** (ex: -9.3%) signifie que l'injection mesuree depasse le
+PV reconstitue. C'est physiquement impossible — cela revele des
+**incoherences ponctuelles dans les donnees** :
+
+- **Spikes du compteur ORES** : l'index de comptage saute brutalement sur un
+  pas de temps (ex : +1 374 kWh en 15 minutes), ce qui gonfle artificiellement
+  l'injection ou le soutirage.
+- **Desynchronisation legere** : les deux capteurs (installation et ORES) ne
+  sont pas parfaitement alignes sur le meme quart d'heure, ce qui cree de
+  petits ecarts transitoires.
+
+**En realite**, votre autoconsommation est d'environ **0%** : le PV est
+presque entierement injecte sur le reseau. La valeur negative est un artefact
+de quelques outliers. L'app affiche un avertissement mais cela n'affecte pas
+la qualite de la simulation.
+
+**Cas ou l'autoconsommation est elevee (> 20%)** : cela signifie que le PV
+alimente directement l'installation (la PAC consomme une partie de la production
+avant injection). C'est le cas si le PV et la PAC sont sur le meme compteur
+avec un cablage favorisant l'autoconsommation.
+
+### Detection PAC (methode et metriques)
+
+L'app detecte automatiquement quelle part de la consommation electrique est
+attribuable a la PAC :
+
+| Methode | Signification | Fiabilite |
+|---------|---------------|-----------|
+| Sous-compteur (GSHP+ASHP) | Puissance PAC mesuree directement par le controleur | Excellente |
+| Heuristique COP | PAC separee du talon par le signal COP (0 = arretee, > 0 = active) | Bonne |
+| Fallback (total) | Impossible de separer — toute la conso est traitee comme PAC | Approximative |
+
+**Metriques affichees** :
+
+- **P95** : puissance au 95e percentile. Represente la puissance que la PAC
+  atteint dans les periodes de forte demande (hors pointes extremes). Doit
+  etre coherent avec la puissance nominale de votre PAC.
+- **Talon** : consommation permanente de l'installation quand la PAC est
+  arretee (eclairage, circulateurs, automate, veille). Typiquement 1-3 kW
+  pour une installation collective.
+
+### Coherence de perimetre (test nocturne)
+
+La nuit, quand le PV est nul, le bilan doit se verifier exactement :
+
+> Consommation installation = Soutirage - Injection
+
+Si l'ecart nocturne est quasi nul (< 0.05 kWh en mediane), cela confirme que
+le monitoring installation et le compteur ORES mesurent bien le **meme
+perimetre** (memes equipements, meme raccordement).
+
+Si l'ecart est significatif, cela peut indiquer que les deux compteurs ne
+couvrent pas les memes charges, ou qu'il y a un decalage temporel entre les
+sources.
+
+---
+
 ## Recapitulatif : les reglages par ordre d'importance
 
 Si vous ne deviez en regler que 3 :
