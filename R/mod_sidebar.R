@@ -663,6 +663,26 @@ mod_sidebar_server <- function(id, sim_state) {
         # Reconstruct PV from energy balance
         df$pv_kwh <- reconstruct_pv(df)
 
+        # Fetch Elia 1-kWc profile and compute adaptive kWc
+        adaptive_kwc_result <- tryCatch({
+          elia_data <- fetch_solar_elia(
+            format(min(df$timestamp), "%Y-%m-%d"),
+            format(max(df$timestamp), "%Y-%m-%d"),
+            region = "Namur")
+          if (!is.null(elia_data$df) && nrow(elia_data$df) > 0) {
+            scaled_1kwc <- scale_solar_to_local(elia_data$df, 1)
+            scaled_1kwc$timestamp <- lubridate::with_tz(scaled_1kwc$datetime, "Europe/Brussels")
+            # Join Elia to our timestamps
+            elia_joined <- dplyr::left_join(
+              data.frame(timestamp = df$timestamp),
+              scaled_1kwc[, c("timestamp", "pv_kwh")],
+              by = "timestamp"
+            )
+            pv_elia_1kwc <- dplyr::coalesce(elia_joined$pv_kwh, 0)
+            compute_adaptive_kwc(df$pv_kwh, df$timestamp, pv_elia_1kwc)
+          } else NULL
+        }, error = function(e) { message("[PV Elia] ", e$message); NULL })
+
         # Rename columns to match pipeline expectations
         names(df)[names(df) == "feedin_kwh"] <- "intake_kwh"
 
@@ -690,11 +710,21 @@ mod_sidebar_server <- function(id, sim_state) {
           report <- c(report, "", "&#128269; <b>Diagnostic \u00e9nerg\u00e9tique :</b>", diag_lines)
         }
 
-        # PV stability assessment
-        pv_stab <- assess_pv_stability(df$pv_kwh, df$timestamp)
+        # PV stability assessment (use Elia ratio if available)
+        pv_elia_for_stab <- if (!is.null(adaptive_kwc_result)) pv_elia_1kwc else NULL
+        pv_stab <- assess_pv_stability(df$pv_kwh, df$timestamp, pv_elia_for_stab)
         pv_total <- sum(df$pv_kwh, na.rm = TRUE)
         feedin_total <- sum(df$intake_kwh, na.rm = TRUE)
         pv_autocons_pct <- if (pv_total > 0) (pv_total - feedin_total) / pv_total * 100 else 0
+
+        # Adaptive kWc info + store Elia 1kWc for later use
+        kwc_current <- if (!is.null(adaptive_kwc_result)) adaptive_kwc_result$kwc_current else NA_real_
+        kwc_profile <- if (!is.null(adaptive_kwc_result)) adaptive_kwc_result$kwc_profile else NULL
+        if (exists("pv_elia_1kwc", inherits = FALSE)) {
+          pv_elia_1kwc_val(pv_elia_1kwc)
+        } else {
+          pv_elia_1kwc_val(NULL)
+        }
 
         # Store structured metadata for mod_donnees
         import_meta_val(list(
@@ -715,11 +745,27 @@ mod_sidebar_server <- function(id, sim_state) {
           pv_stable = pv_stab$stable,
           pv_stability_msg = pv_stab$msg,
           pv_autocons_pct = pv_autocons_pct,
+          kwc_current = kwc_current,
+          kwc_profile = kwc_profile,
           diag_lines = diag_lines
         ))
 
         # Store HTML report for sidebar compact banner
         import_report_content(shiny::HTML(paste(report, collapse = "<br>")))
+
+        # Apply PV source selection (if user changed it after first import)
+        pv_src_choice <- input$pv_source_csv
+        if (!is.null(pv_src_choice) && pv_src_choice != "reconstructed") {
+          elia_1kwc <- pv_elia_1kwc_val()
+          if (!is.null(elia_1kwc) && length(elia_1kwc) == nrow(df)) {
+            if (pv_src_choice == "elia_adaptive" && !is.null(kwc_profile)) {
+              df$pv_kwh <- scale_pv_adaptive(df$timestamp, elia_1kwc, kwc_profile)
+            } else if (pv_src_choice == "elia_fixed") {
+              kwc_fixed <- if (!is.null(input$pv_elia_kwc)) input$pv_elia_kwc else kwc_current
+              df$pv_kwh <- elia_1kwc * kwc_fixed
+            }
+          }
+        }
 
         # Success notification
         shiny::showNotification(
@@ -793,6 +839,7 @@ mod_sidebar_server <- function(id, sim_state) {
     csv_est_volume_l <- shiny::reactiveVal(NULL)
     import_report_content <- shiny::reactiveVal(NULL)
     import_meta_val <- shiny::reactiveVal(NULL)
+    pv_elia_1kwc_val <- shiny::reactiveVal(NULL)
 
     # ---- Import report rendering (dual CSV mode) — compact sidebar banner ----
     output$import_report <- shiny::renderUI({
@@ -885,23 +932,32 @@ mod_sidebar_server <- function(id, sim_state) {
       result <- pv_stability_result()
       if (is.null(result)) return(NULL)
       ns <- session$ns
+      meta <- import_meta_val()
+      kwc_suggest <- if (!is.null(meta) && !is.na(meta$kwc_current)) round(meta$kwc_current) else 30
 
       if (result$stable) {
         shiny::tags$div(
           style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.7rem;",
             cl$bg_card, cl$accent),
-          shiny::HTML(sprintf("&#9989; <b>PV reconstitu\u00e9</b> (bilan \u00e9nerg\u00e9tique) : %s", result$msg)))
+          shiny::HTML(sprintf("&#9989; <b>PV reconstitu\u00e9</b> (bilan \u00e9nerg\u00e9tique) : %s | kWc estim\u00e9 : %d",
+            result$msg, kwc_suggest)))
       } else {
         shiny::tagList(
           shiny::tags$div(
             style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.7rem;",
               cl$bg_card, "#e6a817"),
-            shiny::HTML(sprintf("&#9888; <b>PV reconstitu\u00e9</b> : %s", result$msg))),
+            shiny::HTML(sprintf("&#9888; <b>PV reconstitu\u00e9</b> : %s<br>kWc stabilis\u00e9 (derniers mois) : <b>%d kWc</b>",
+              result$msg, kwc_suggest))),
           shiny::radioButtons(ns("pv_source_csv"), NULL,
-            choices = c("PV reconstitu\u00e9 (bilan)" = "reconstructed", "PV Elia scal\u00e9" = "elia"),
-            selected = "reconstructed", inline = TRUE),
-          shiny::conditionalPanel(sprintf("input['%s']=='elia'", ns("pv_source_csv")),
-            shiny::numericInput(ns("pv_elia_kwc"), "Puissance PV (kWc)", 30, min = 1, max = 500, step = 1)))
+            choices = c("PV reconstitu\u00e9 (bilan)" = "reconstructed",
+              "PV Elia scal\u00e9 (adaptatif)" = "elia_adaptive",
+              "PV Elia scal\u00e9 (kWc fixe)" = "elia_fixed"),
+            selected = "reconstructed", inline = FALSE),
+          shiny::conditionalPanel(sprintf("input['%s']=='elia_fixed'", ns("pv_source_csv")),
+            shiny::numericInput(ns("pv_elia_kwc"), "Puissance PV (kWc)", kwc_suggest, min = 1, max = 500, step = 1)),
+          shiny::conditionalPanel(sprintf("input['%s']=='elia_adaptive'", ns("pv_source_csv")),
+            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
+              shiny::HTML("Scaling mensuel adaptatif : chaque mois utilise son kWc \u00e9quivalent d\u00e9tect\u00e9 automatiquement."))))
       }
     })
 
