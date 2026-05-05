@@ -683,7 +683,35 @@ mod_sidebar_server <- function(id, sim_state) {
           report <- c(report, "", "&#128269; <b>Diagnostic \u00e9nerg\u00e9tique :</b>", diag_lines)
         }
 
-        # Store report for UI rendering
+        # PV stability assessment
+        pv_stab <- assess_pv_stability(df$pv_kwh, df$timestamp)
+        pv_total <- sum(df$pv_kwh, na.rm = TRUE)
+        feedin_total <- sum(df$intake_kwh, na.rm = TRUE)
+        pv_autocons_pct <- if (pv_total > 0) (pv_total - feedin_total) / pv_total * 100 else 0
+
+        # Store structured metadata for mod_donnees
+        import_meta_val(list(
+          n_points = join_result$n_points,
+          date_start = join_result$date_start,
+          date_end = join_result$date_end,
+          summary_lines = c(
+            sprintf("<b>%d quarts d'heure joints</b> (%s &rarr; %s)",
+              join_result$n_points,
+              format(join_result$date_start, "%d/%m/%Y"),
+              format(join_result$date_end, "%d/%m/%Y")),
+            install_result$report, ores_result$report, join_result$report
+          ),
+          pac_method = pac_result$method,
+          pac_p95_kw = pac_result$p95_kw,
+          pac_talon_w = pac_result$talon_w,
+          pv_total_kwh = pv_total,
+          pv_stable = pv_stab$stable,
+          pv_stability_msg = pv_stab$msg,
+          pv_autocons_pct = pv_autocons_pct,
+          diag_lines = diag_lines
+        ))
+
+        # Store HTML report for sidebar compact banner
         import_report_content(shiny::HTML(paste(report, collapse = "<br>")))
       } else {
         shiny::req(input$date_range)
@@ -748,15 +776,23 @@ mod_sidebar_server <- function(id, sim_state) {
     csv_est_pac_th_kw <- shiny::reactiveVal(NULL)
     csv_est_volume_l <- shiny::reactiveVal(NULL)
     import_report_content <- shiny::reactiveVal(NULL)
+    import_meta_val <- shiny::reactiveVal(NULL)
 
-    # ---- Import report rendering (dual CSV mode) ----
+    # ---- Import report rendering (dual CSV mode) — compact sidebar banner ----
     output$import_report <- shiny::renderUI({
-      content <- import_report_content()
-      if (is.null(content)) return(NULL)
+      meta <- import_meta_val()
+      if (is.null(meta)) return(NULL)
+      # Compact one-liner for sidebar
+      status_icon <- if (length(meta$diag_lines) > 0 && any(grepl("&#9888;", meta$diag_lines))) "&#9888;" else "&#9989;"
+      pac_info <- if (!is.na(meta$pac_p95_kw)) sprintf("PAC: %.0f kW", meta$pac_p95_kw) else "PAC: ?"
       shiny::tags$div(
-        style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:10px;margin:8px 0;font-size:.7rem;line-height:1.5;max-height:300px;overflow-y:auto;",
-          cl$bg_card, cl$border),
-        content)
+        style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:8px 0;font-size:.7rem;line-height:1.5;",
+          cl$bg_card, cl$accent),
+        shiny::HTML(sprintf("%s <b>%d qt</b> | %s | PV: %s",
+          status_icon, meta$n_points, pac_info,
+          if (isTRUE(meta$pv_stable)) "bilan" else "instable")),
+        shiny::tags$div(style = "font-size:.6rem;color:gray;margin-top:2px;",
+          sprintf("D\u00e9tails dans l'onglet Donn\u00e9es")))
     })
 
     shiny::observe({
@@ -766,6 +802,7 @@ mod_sidebar_server <- function(id, sim_state) {
         csv_est_pac_th_kw(NULL)
         csv_est_volume_l(NULL)
         import_report_content(NULL)
+        import_meta_val(NULL)
         return()
       }
       df <- raw_data()
@@ -1385,6 +1422,7 @@ mod_sidebar_server <- function(id, sim_state) {
       run_automagic = shiny::reactive(input$run_automagic),
       apply_best = shiny::reactive(input$apply_best),
       # Expose session for tab switching etc.
+      import_meta = import_meta_val,
       session = session,
       parent_session = session
     )

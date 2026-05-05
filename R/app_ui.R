@@ -43,6 +43,8 @@ app_ui <- function(request) {
         mod_status_bar_ui("status_bar"),
 
         bslib::navset_card_tab(id = "main_tabs",
+          bslib::nav_panel(title = "Donn\u00e9es", icon = shiny::icon("database"),
+            mod_donnees_ui("donnees")),
           bslib::nav_panel(title = "Energie", icon = shiny::icon("bolt"),
             mod_energie_ui("energie")),
           bslib::nav_panel(title = "Finances", icon = shiny::icon("euro-sign"),
