@@ -623,6 +623,13 @@ mod_sidebar_server <- function(id, sim_state) {
     # via the observe below (ignoreInit = FALSE on input$date_range).
     compute_raw_data <- function() {
       if (input$data_source == "csv") {
+        # Show message if only one file uploaded
+        if (is.null(input$file_installation) && !is.null(input$file_ores)) {
+          shiny::showNotification("Veuillez charger le fichier installation (monitoring PAC)", type = "message", duration = 5)
+        }
+        if (!is.null(input$file_installation) && is.null(input$file_ores)) {
+          shiny::showNotification("Veuillez charger le fichier compteur ORES", type = "message", duration = 5)
+        }
         shiny::req(input$file_installation, input$file_ores)
 
         # Parse both CSV files
@@ -713,6 +720,15 @@ mod_sidebar_server <- function(id, sim_state) {
 
         # Store HTML report for sidebar compact banner
         import_report_content(shiny::HTML(paste(report, collapse = "<br>")))
+
+        # Success notification
+        shiny::showNotification(
+          shiny::HTML(sprintf("&#9989; <b>Import r\u00e9ussi</b> : %d qt (%s \u2192 %s) | PAC: %s | D\u00e9tails dans l'onglet Donn\u00e9es",
+            join_result$n_points,
+            format(join_result$date_start, "%d/%m/%Y"),
+            format(join_result$date_end, "%d/%m/%Y"),
+            pac_result$method)),
+          type = "message", duration = 8)
       } else {
         shiny::req(input$date_range)
 

@@ -44,19 +44,24 @@ mod_donnees_server <- function(id, sidebar) {
 
     # ---- Import summary ----
     output$import_summary <- shiny::renderUI({
-      shiny::req(sidebar$data_source() == "csv")
+      if (sidebar$data_source() != "csv") {
+        return(shiny::tags$div(style = "font-size:.85rem;color:gray;",
+          "Passez en mode CSV et chargez vos deux fichiers (installation + ORES) pour voir le diagnostic."))
+      }
       meta <- sidebar$import_meta()
-      shiny::req(meta)
-
+      if (is.null(meta)) {
+        return(shiny::tags$div(style = "font-size:.85rem;color:gray;",
+          "En attente du chargement des deux fichiers CSV..."))
+      }
       shiny::tags$div(style = "font-size:.85rem;line-height:1.8;",
         shiny::HTML(paste(meta$summary_lines, collapse = "<br>")))
     })
 
     # ---- PAC detection ----
     output$pac_detection <- shiny::renderUI({
-      shiny::req(sidebar$data_source() == "csv")
+      if (sidebar$data_source() != "csv") return(NULL)
       meta <- sidebar$import_meta()
-      shiny::req(meta, meta$pac_method)
+      if (is.null(meta) || is.null(meta$pac_method)) return(NULL)
 
       lines <- sprintf("<b>M\u00e9thode</b> : %s", meta$pac_method)
       if (!is.na(meta$pac_p95_kw)) {
@@ -71,9 +76,9 @@ mod_donnees_server <- function(id, sidebar) {
 
     # ---- PV status ----
     output$pv_status <- shiny::renderUI({
-      shiny::req(sidebar$data_source() == "csv")
+      if (sidebar$data_source() != "csv") return(NULL)
       meta <- sidebar$import_meta()
-      shiny::req(meta)
+      if (is.null(meta)) return(NULL)
 
       lines <- character(0)
       if (!is.null(meta$pv_total_kwh)) {
@@ -92,9 +97,9 @@ mod_donnees_server <- function(id, sidebar) {
 
     # ---- Diagnostic ----
     output$diagnostic <- shiny::renderUI({
-      shiny::req(sidebar$data_source() == "csv")
+      if (sidebar$data_source() != "csv") return(NULL)
       meta <- sidebar$import_meta()
-      shiny::req(meta, meta$diag_lines)
+      if (is.null(meta) || is.null(meta$diag_lines)) return(NULL)
 
       shiny::tags$div(style = "font-size:.8rem;line-height:1.8;",
         shiny::HTML(paste(meta$diag_lines, collapse = "<br>")))
@@ -102,9 +107,9 @@ mod_donnees_server <- function(id, sidebar) {
 
     # ---- Data preview ----
     output$data_preview <- DT::renderDT({
-      shiny::req(sidebar$data_source() == "csv")
-      df <- sidebar$sim_filtered()
-      shiny::req(df)
+      if (sidebar$data_source() != "csv") return(NULL)
+      df <- tryCatch(sidebar$sim_filtered(), error = function(e) NULL)
+      if (is.null(df)) return(NULL)
       preview <- utils::head(df, 20)
       # Round numeric columns for readability
       num_cols <- sapply(preview, is.numeric)
