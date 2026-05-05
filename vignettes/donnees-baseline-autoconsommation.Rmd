@@ -73,6 +73,137 @@ Quand vous basculez la source PV, voici ce qui se passe concretement :
 synthetiques**, quel que soit le mode. Seuls le PV, les prix, les temperatures
 et le CO2 changent.
 
+### Le PV : 3 sources, 3 logiques differentes
+
+C'est le point le plus confus du systeme. Il y a **trois facons** d'obtenir la
+production PV dans l'app, et elles ne mesurent pas la meme chose.
+
+#### Source 1 : PV reconstitue par bilan energetique (defaut en mode CSV)
+
+Quand vous chargez vos deux fichiers (installation + ORES), l'app calcule :
+
+```
+PV reel = Consommation installation - Soutirage reseau + Injection reseau
+```
+
+**Pourquoi ca marche** : la conservation de l'energie. Tout ce qui est consomme
+sur place vient soit du reseau (soutirage), soit du PV. Donc :
+
+```
+Consommation = Soutirage + PV autocons.
+PV total = PV autocons. + Injection
+=> PV total = Consommation - Soutirage + Injection
+```
+
+**Avantage** : c'est la production PV reelle de votre installation, pas une
+estimation. Pas besoin de connaitre la puissance crete.
+
+**Limite** : si votre installation PV a ete mise en service progressivement
+(ex: 10 panneaux en novembre, 40 en avril), le PV reconstitue varie
+enormement d'un mois a l'autre. L'app le detecte (CV > 30%) et vous alerte.
+
+#### Source 2 : PV Elia scale (fallback ou what-if)
+
+Elia publie la production PV reelle de toute la Belgique, par province,
+toutes les 15 minutes. C'est la somme des milliers d'installations PV
+de la region.
+
+**Le principe du scaling** : si les 449 000 kWc de la province de Namur
+produisent X kWh a un instant t, alors vos 30 kWc produisent environ :
+
+```
+PV local = X × (30 / 449 000)
+```
+
+C'est une regle de trois. On suppose que votre installation subit les memes
+conditions meteo que la moyenne de la province.
+
+**Avantage** : disponible pour n'importe quelle periode depuis 2020, meme si
+vous n'avez pas encore d'installation PV (outil de dimensionnement).
+
+**Limite** : c'est une moyenne regionale. Votre installation peut differer
+(orientation atypique, ombrage local, salissure). Et surtout, le scaling
+suppose un **kWc constant** — ce qui est faux si la puissance installee
+change au fil du temps.
+
+#### Le probleme du kWc qui change dans le temps
+
+Sur Profondeville, les panneaux ont ete raccordes entre novembre 2025 et
+avril 2026. Quand on compare le PV reconstitue (reel) au PV Elia scale
+avec un facteur fixe (65 kWc), on observe :
+
+| Mois | PV reel | PV Elia (65 kWc) | kWc equivalent |
+|------|---------|------------------|----------------|
+| Dec 2025 | 145 kWh | 1 464 kWh | 6 kWc |
+| Jan 2026 | 112 kWh | 1 348 kWh | 5 kWc |
+| Mar 2026 | 2 617 kWh | 5 398 kWh | 32 kWc |
+| Avr 2026 | 4 144 kWh | 6 345 kWh | 43 kWc |
+
+Le "kWc equivalent" monte de 5 a 43 — ce n'est pas la meteo, c'est la mise
+en service progressive.
+
+**Consequence** : on ne peut PAS utiliser un scaling Elia avec un kWc fixe
+sur toute la periode. Deux solutions :
+
+1. **Restreindre la periode** aux mois ou l'installation est complete
+   (mars-avril dans cet exemple)
+2. **Utiliser le PV reconstitue** (bilan) — il reflete exactement ce qui
+   s'est passe, mise en service incluse
+
+#### Source 3 : PV FusionSolar (mesure directe)
+
+Si vous avez acces aux exports de votre onduleur (Huawei FusionSolar,
+SolarEdge, Fronius...), c'est la mesure la plus precise : la puissance
+instantanee de chaque onduleur, somme au pas de 5 minutes.
+
+**Avantage** : precision maximale, pas d'hypothese.
+
+**Limite** : necessite l'export CSV de votre portail de monitoring.
+Pas toujours disponible en historique long.
+
+#### Resume : quelle source choisir ?
+
+```
+                    ┌──────────────────────���──────────────────────────┐
+                    │ Ai-je les deux CSV (installation + ORES) ?      │
+                    └───────────────────────┬─────────────────────────┘
+                                           OUI
+                                            │
+                    ┌───────────────────────▼─────────────────────────┐
+                    │ Le PV reconstitue est-il stable (CV < 30%) ?    │
+                    └───────────┬───────────────────────┬─────────────┘
+                               OUI                     NON
+                                │                       │
+                    ┌───────────▼──────┐    ┌─────��─────▼──────────────┐
+                    │ Utiliser le PV   │    │ Restreindre la periode   │
+                    │ reconstitue      │    │ OU utiliser Elia scale   │
+                    │ (le plus fiable) │    │ (avec le bon kWc)        ��
+                    └──────────────────┘    └──────────────────────────┘
+```
+
+#### Les flux PV : produire, injecter, autoconsommer
+
+```
+                     Panneaux PV
+                         │
+                    Production PV totale
+                         │
+              ┌──────────┴──────────┐
+              ▼                     ▼
+        Autoconsommation       Injection reseau
+        (consomme sur place)   (surplus → compteur ORES)
+              │                     │
+              ▼                     ▼
+         Installation          Reseau electrique
+         (PAC, eclairage...)   (vous etes paye)
+```
+
+Sur Profondeville, l'autoconsommation est quasi nulle (~0%) : tout le PV
+est injecte. Cela suggere que le PV et la PAC sont sur des circuits
+independants, ou que la PAC s'arrete systematiquement quand le PV produit.
+
+---
+
 ### Exemple chiffre : une journee du 15 juillet
 
 Prenons une installation de 60 kW PAC, 33 kWc PV, ballon de 36 000 L.
