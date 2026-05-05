@@ -108,7 +108,7 @@ mod_donnees_server <- function(id, sidebar) {
     # ---- Data preview ----
     output$data_preview <- DT::renderDT({
       if (sidebar$data_source() != "csv") return(NULL)
-      df <- tryCatch(sidebar$sim_filtered(), error = function(e) NULL)
+      df <- tryCatch(sidebar$raw_data(), error = function(e) NULL)
       if (is.null(df)) return(NULL)
       preview <- utils::head(df, 20)
       # Round numeric columns for readability
