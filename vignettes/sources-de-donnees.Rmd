@@ -334,29 +334,37 @@ Deux tables sont utilisees :
 Le script `scripts/fetch_bigquery_pac.R` produit deux variantes selon la
 source PV :
 
-| Fichier | Source PV | Description |
-|---------|-----------|-------------|
-| `data/bq_k0001_elia.csv` | Elia ODS032 (region Namur, scalee a 65 kWc) | PV estimee depuis la production regionale |
-| `data/bq_k0001_fusion.csv` | FusionSolar (3 onduleurs locaux) | PV mesuree directement sur site |
+### Workflow d'import dans l'application (depuis 006-dual-csv-import)
 
-La variante **elia** utilise le scaling PV regional decrit en section 4.
-La puissance crete de reference (65 kWc) a ete calibree pour minimiser les
-incoherences de bilan energetique (`feedin > offtake + pv`) a moins de 1%.
+L'application attend **deux fichiers CSV separes** :
 
-**Attention** : le scaling a 65 kWc surestime la production PV reelle d'un
-facteur ~2 (voir section 5.1). Le kWc equivalent reel varie dans le temps
-a cause de la mise en service progressive des panneaux.
+1. **CSV Installation** (`inst/extdata/bq_k0001_raw.csv`) : monitoring PAC
+2. **CSV ORES** (`inst/extdata/bq_k0001_ores_raw.csv`) : compteur reseau
 
-### Transformations
+Les fichiers pre-combines (`bq_k0001_elia.csv`, `bq_k0001_fusion.csv`) ne sont
+plus utilises — ils sont supprimes du repo et regenerables via
+`data-raw/fetch_bigquery_pac.R`.
 
-1. **Aggregation 5 min -> 15 min** : les mesures 5-minutaires sont agregees
-   au quart d'heure — somme pour les energies (pac, offtake, feedin), moyenne
-   pour la temperature du ballon.
-2. **Delta d'index ORES** : le compteur ORES fournit des index cumulatifs
-   (kWh). Le soutirage et l'injection par quart d'heure sont calcules par
-   difference d'index consecutifs, avec un plancher a 0.
-3. **Exclusion des jours incomplets** : les jours contenant des NA sur
-   `pac_kwh` ou `offtake_kwh` sont exclus du CSV final.
+### Pipeline de traitement (R/fct_csv_parser.R)
+
+1. **Detection du pas de temps** : mediane des 10 premiers ecarts (5 min, 15 min, etc.)
+2. **Aggregation 5 min -> 15 min** : somme pour energies/puissances, moyenne pour T et COP
+3. **Delta d'index ORES** : `delta = index[t] - index[t-1]`, plancher a 0
+4. **Jointure** : inner join par timestamp sur la periode commune
+
+### Detection PAC (R/fct_pac_detection.R)
+
+Cascade de priorites :
+
+1. **GSHP_power + ASHP_power** si non nuls → conso PAC directe
+2. **Heuristique COP** : talon = mediane(Elec quand COP=0), PAC = Elec - talon quand COP > 0
+3. **Fallback** : Elec_consumption en totalite (warning)
+
+### PV reconstitue (R/fct_pv_reconstruction.R)
+
+Par defaut : `pv_reel = max(0, Elec_consumption - offtake + feedin)`.
+Si le diagnostic de stabilite detecte un CV mensuel > 30% (mise en service
+progressive), l'utilisateur peut basculer sur le PV Elia scale.
 
 ### 5.1 Bilan energetique et qualite des donnees
 

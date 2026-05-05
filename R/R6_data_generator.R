@@ -313,9 +313,12 @@ DataGenerator <- R6::R6Class("DataGenerator",
       if (has_conso_base) {
         # Synthetic demo data: conso_base_kwh provided directly
         df <- df %>% dplyr::mutate(conso_hors_pac = conso_base_kwh)
+      } else if ("conso_hors_pac" %in% names(df)) {
+        # New dual-CSV pipeline: conso_hors_pac already computed by import pipeline
+        message(sprintf("[prepare_df] conso_hors_pac pre-calcule (moy=%.3f kWh/qt)",
+          mean(df$conso_hors_pac, na.rm = TRUE)))
       } else if (has_pac_kwh) {
-        # Real measured data with sub-metered PAC consumption
-        # conso_totale = offtake + pv - injection ; conso_hors_pac = conso_totale - pac_kwh
+        # Legacy: pac_kwh from energy balance (single-CSV mode)
         df <- df %>% dplyr::mutate(
           conso_hors_pac = pmax(0, offtake_kwh + pv_kwh_original - intake_kwh - pac_kwh)
         )
