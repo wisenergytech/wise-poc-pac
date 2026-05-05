@@ -165,6 +165,8 @@ mod_sidebar_ui <- function(id) {
       shiny::tags$div(style = "display:none;",
         shiny::numericInput(ns("pv_kwc_ref"), NULL, 6, min = 1, max = 200, step = 0.5)),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
+        shiny::uiOutput(ns("pv_stability_ui"))),
+      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_kwc_ref_banner"))),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_kwc_custom_ui"))),
@@ -815,6 +817,41 @@ mod_sidebar_server <- function(id, sim_state) {
       NULL
     })
 
+    # ---- PV stability UI (dual CSV mode) ----
+    pv_stability_result <- shiny::reactiveVal(NULL)
+
+    shiny::observe({
+      shiny::req(input$data_source == "csv", input$file_installation, input$file_ores)
+      df <- raw_data()
+      shiny::req("pv_kwh" %in% names(df), "timestamp" %in% names(df))
+      result <- assess_pv_stability(df$pv_kwh, df$timestamp)
+      pv_stability_result(result)
+    })
+
+    output$pv_stability_ui <- shiny::renderUI({
+      result <- pv_stability_result()
+      if (is.null(result)) return(NULL)
+      ns <- session$ns
+
+      if (result$stable) {
+        shiny::tags$div(
+          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.7rem;",
+            cl$bg_card, cl$accent),
+          shiny::HTML(sprintf("&#9989; <b>PV reconstitu\u00e9</b> (bilan \u00e9nerg\u00e9tique) : %s", result$msg)))
+      } else {
+        shiny::tagList(
+          shiny::tags$div(
+            style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.7rem;",
+              cl$bg_card, "#e6a817"),
+            shiny::HTML(sprintf("&#9888; <b>PV reconstitu\u00e9</b> : %s", result$msg))),
+          shiny::radioButtons(ns("pv_source_csv"), NULL,
+            choices = c("PV reconstitu\u00e9 (bilan)" = "reconstructed", "PV Elia scal\u00e9" = "elia"),
+            selected = "reconstructed", inline = TRUE),
+          shiny::conditionalPanel(sprintf("input['%s']=='elia'", ns("pv_source_csv")),
+            shiny::numericInput(ns("pv_elia_kwc"), "Puissance PV (kWc)", 30, min = 1, max = 500, step = 1)))
+      }
+    })
+
     # ---- PV kWc banner (CSV mode) ----
     output$pv_kwc_ref_banner <- shiny::renderUI({
       shiny::req(input$data_source == "csv", input$pv_kwc_ref)
@@ -1329,7 +1366,7 @@ mod_sidebar_server <- function(id, sim_state) {
       baseline_alpha = baseline_alpha,
       ac_bounds = ac_bounds,
       csv_measured_eligible = csv_measured_eligible,
-      csv_filename = shiny::reactive(if (!is.null(input$csv_file)) input$csv_file$name else NULL),
+      csv_filename = shiny::reactive(if (!is.null(input$file_installation)) input$file_installation$name else NULL),
       pv_whatif = shiny::reactive(input$pv_whatif),
       # Expose individual inputs needed by other modules/status bar
       date_range = shiny::reactive(input$date_range),

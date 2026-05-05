@@ -88,9 +88,9 @@
 - [x] T021 [US3] Create `R/fct_pv_reconstruction.R` with `reconstruct_pv(df)` function. Input: joined dataframe with elec_kwh, offtake_kwh, feedin_kwh. Output: numeric vector `pv_reel = pmax(0, elec_kwh - offtake_kwh + feedin_kwh)`.
 - [x] T022 [US3] Add `assess_pv_stability(pv_reel, timestamps, pv_elia = NULL)` to `R/fct_pv_reconstruction.R`. Computes monthly sums of pv_reel. If pv_elia provided, compute monthly ratios and CV. Returns list(stable = logical, cv = numeric, ratios = dataframe, msg = character).
 - [x] T023 [P] [US3] Create `tests/testthat/test-fct_pv_reconstruction.R`. Test: pv_reel is non-negative. Test: nocturnal pv_reel ≈ 0. Test: stability assessment with Profondeville data gives CV > 30%.
-- [ ] T024 [US3] Integrate PV reconstruction into import pipeline in `R/mod_sidebar.R`. After join + PAC detection, call `reconstruct_pv()`. Set `pv_kwh` column. Run stability assessment if Elia data available.
-- [ ] T025 [US3] Add PV source selector UI in `R/mod_sidebar.R`. When PV is unstable: show warning + radio buttons ("PV reconstitué" / "PV Elia scalé"). If Elia selected, show numericInput for kWc and fetch Elia data via existing `R6_data_provider.R`.
-- [ ] T026 [US3] Run full test suite + manual test.
+- [x] T024 [US3] Integrate PV reconstruction into import pipeline in `R/mod_sidebar.R`. After join + PAC detection, call `reconstruct_pv()`. Set `pv_kwh` column. Run stability assessment if Elia data available.
+- [x] T025 [US3] Add PV source selector UI in `R/mod_sidebar.R`. When PV is unstable: show warning + radio buttons ("PV reconstitué" / "PV Elia scalé"). If Elia selected, show numericInput for kWc and fetch Elia data via existing `R6_data_provider.R`.
+- [x] T026 [US3] Run full test suite + manual test.
 
 **Checkpoint**: PV reconstitué used by default. Instability detected and signaled. User can switch to Elia.
 
@@ -104,8 +104,8 @@
 
 ### Implementation for User Story 4
 
-- [ ] T027 [US4] Adapt `R/fct_data_diagnostic.R` to work with the new joined dataframe format. The function `diagnose_energy_perimeter()` currently expects columns `pac_kwh, offtake_kwh, intake_kwh, pv_kwh, cop`. Map new column names (elec_kwh → pac_kwh equivalent, feedin_kwh → intake_kwh) or update the function signatures.
-- [ ] T028 [US4] Wire diagnostic call into import pipeline in `R/mod_sidebar.R`. After PV reconstruction, call `diagnose_energy_perimeter()` on the final dataframe. Append diagnostic results to import report.
+- [x] T027 [US4] Adapt `R/fct_data_diagnostic.R` to work with the new joined dataframe format. The function `diagnose_energy_perimeter()` currently expects columns `pac_kwh, offtake_kwh, intake_kwh, pv_kwh, cop`. Map new column names (elec_kwh → pac_kwh equivalent, feedin_kwh → intake_kwh) or update the function signatures.
+- [x] T028 [US4] Wire diagnostic call into import pipeline in `R/mod_sidebar.R`. After PV reconstruction, call `diagnose_energy_perimeter()` on the final dataframe. Append diagnostic results to import report.
 - [ ] T029 [US4] Manual test: verify all 4 diagnostic lines appear in the import report with correct values for Profondeville.
 
 **Checkpoint**: Full diagnostic integrated. User sees green/orange/red indicators.
@@ -116,10 +116,10 @@
 
 **Purpose**: Cleanup, documentation, remove dead code.
 
-- [ ] T030 [P] Remove old single-CSV parsing logic from `R/mod_sidebar.R` (dead code from previous implementation).
+- [x] T030 [P] Remove old single-CSV parsing logic from `R/mod_sidebar.R` (dead code from previous implementation).
 - [ ] T031 [P] Update `R/R6_data_generator.R` to remove the `has_pac_kwh` branch that assumed pac_kwh = PAC-only consumption. The new pipeline provides correct pac_kwh from the detection cascade.
 - [ ] T032 [P] Update `vignettes/sources-de-donnees.Rmd` section 5: document the new two-CSV workflow, correct the column descriptions, reference the new parsing functions.
-- [ ] T033 Run full test suite: `Rscript -e "devtools::test()"`
+- [x] T033 Run full test suite: `Rscript -e "devtools::test()"`
 - [ ] T034 Run quickstart.md validation: execute the manual test scenario end-to-end.
 
 ---

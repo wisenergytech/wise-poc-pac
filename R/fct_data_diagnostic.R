@@ -9,7 +9,12 @@
 #' @return Character vector of HTML diagnostic lines (empty if pac_kwh absent).
 #' @noRd
 diagnose_energy_perimeter <- function(df) {
-  if (!"pac_kwh" %in% names(df)) return(character(0))
+  # Use elec_kwh (total installation) if available, otherwise pac_kwh (legacy)
+  elec_col <- if ("elec_kwh" %in% names(df)) "elec_kwh" else if ("pac_kwh" %in% names(df)) "pac_kwh" else NULL
+  if (is.null(elec_col)) return(character(0))
+
+  # Temporarily set pac_kwh to the total installation column for sub-functions
+  if (elec_col != "pac_kwh") df[["pac_kwh"]] <- df[[elec_col]]
 
   lines <- character(0)
   hour_col <- as.integer(format(df$timestamp, "%H"))
