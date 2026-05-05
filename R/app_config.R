@@ -32,6 +32,7 @@ get_ui_config <- function() {
       show_battery = TRUE,
       strategies = list(tou = TRUE, curtailment = TRUE),
       simple_mode = FALSE,
+      show_optimizer_choice = TRUE,
       show_documentation = TRUE
     ))
   }

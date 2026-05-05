@@ -25,6 +25,10 @@ default:
     # Simple mode: hide optimizer/strategy controls, force LP 24h penalty 2.5 ToU
     simple_mode: true
 
+    # Show optimizer choice (LP/MILP/QP) even in simple mode
+    # true = user can pick optimizer, false = forced to LP
+    show_optimizer_choice: true
+
     # Show Documentation tab
     show_documentation: true
 
@@ -45,5 +49,7 @@ profondeville:
       curtailment: false
 
     simple_mode: true
+
+    show_optimizer_choice: false
 
     show_documentation: false

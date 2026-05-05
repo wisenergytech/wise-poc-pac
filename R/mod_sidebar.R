@@ -194,8 +194,8 @@ mod_sidebar_ui <- function(id) {
           "Rendement = part de l'energie recuperee apres un cycle charge/decharge (pertes thermiques). Plage SoC = limites min/max pour proteger la duree de vie."))),
 
     # ---- Optimisation ----
-    if (isTRUE(ui_cfg$simple_mode)) {
-      # Simple mode: force LP 24h, penalty 2.5, ToU on — show only TOU info
+    if (isTRUE(ui_cfg$simple_mode) && identical(ui_cfg$show_optimizer_choice, FALSE)) {
+      # Simple mode without optimizer choice: force LP 24h, penalty 2.5, ToU on
       shiny::tagList(
         shiny::tags$div(style = "display:none;",
           shiny::radioButtons(ns("approche"), NULL, choices = c("LP" = "optimiseur_lp"), selected = "optimiseur_lp"),
