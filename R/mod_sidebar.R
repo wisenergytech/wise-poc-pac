@@ -23,25 +23,24 @@ mod_sidebar_ui <- function(id) {
 
     # ---- Data source ----
     shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Source de donn\u00e9es", tip("Mode Demo : donnees synthetiques generees automatiquement. Mode CSV : importez vos propres mesures (compteur + PAC + PV).")),
+      shiny::tags$div(class = "section-title", "Source de donn\u00e9es", tip("Mode Demo : donnees synthetiques generees automatiquement. Mode CSV : importez vos mesures (2 fichiers : installation + compteur ORES).")),
       shiny::radioButtons(ns("data_source"), NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::fileInput(ns("csv_file"), NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv"),
-        shiny::downloadButton(ns("download_template"), "T\u00e9l\u00e9charger le template CSV", class = "btn-outline-secondary btn-sm w-100 mb-2"),
+        shiny::fileInput(ns("file_installation"), "Donn\u00e9es installation (monitoring PAC)", accept = ".csv", buttonLabel = "Parcourir", placeholder = "installation.csv"),
+        shiny::fileInput(ns("file_ores"), "Donn\u00e9es compteur ORES", accept = ".csv", buttonLabel = "Parcourir", placeholder = "ores.csv"),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.4;", cl$text_muted),
           shiny::HTML(paste0(
-            "<b>Colonnes requises :</b><br>",
-            "<code>timestamp</code> &mdash; horodatage ISO 8601 (pas de 15 min)<br>",
-            "<code>pv_kwh</code> &mdash; production PV mesur\u00e9e (onduleur)<br>",
-            "<code>pac_kwh</code> &mdash; conso \u00e9lectrique PAC (sous-compteur)<br>",
-            "<code>offtake_kwh</code> &mdash; soutirage r\u00e9seau (compteur)<br>",
-            "<code>feedin_kwh</code> &mdash; injection r\u00e9seau (compteur)<br>",
-            "<br><b>Optionnelles :</b><br>",
-            "<code>t_ext</code> &mdash; temp\u00e9rature ext\u00e9rieure (\u00b0C)<br>",
-            "<code>t_ballon</code> &mdash; temp\u00e9rature du ballon (\u00b0C, pour estimer les soutirages ECS)<br>",
-            "<br>La colonne <code>pac_kwh</code> permet de d\u00e9duire exactement la consommation hors PAC ",
-            "(<code>conso_hors_pac = offtake + pv - injection - pac</code>). ",
-            "Sans elle, l'app <b>estime</b> la r\u00e9partition (moins pr\u00e9cis)."))))),
+            "<b>Installation (monitoring PAC) :</b><br>",
+            "<code>time</code> &mdash; horodatage<br>",
+            "<code>Elec_consumption</code> &mdash; conso \u00e9lectrique totale (kWh/pas)<br>",
+            "<code>COP</code> &mdash; coefficient de performance (0 = PAC arr\u00eat\u00e9e)<br>",
+            "<code>T_tankUp</code> &mdash; temp\u00e9rature ballon (\u00b0C, optionnel)<br>",
+            "<code>GSHP_power</code> / <code>ASHP_power</code> &mdash; puissance PAC (kW, optionnel)<br>",
+            "<br><b>Compteur ORES :</b><br>",
+            "<code>time</code> &mdash; horodatage<br>",
+            "<code>Consumption_index_kWh</code> &mdash; index cumulatif soutirage<br>",
+            "<code>Injection_index_kWh</code> &mdash; index cumulatif injection"))),
+        shiny::uiOutput(ns("import_report")))),
     shiny::tags$div(style = "display:none;",
       shiny::selectInput(ns("baseline_type"), NULL,
         choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
@@ -622,144 +621,68 @@ mod_sidebar_server <- function(id, sim_state) {
     # via the observe below (ignoreInit = FALSE on input$date_range).
     compute_raw_data <- function() {
       if (input$data_source == "csv") {
-        shiny::req(input$csv_file)
-        df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE)
-        if (!inherits(df$timestamp, "POSIXct")) {
-          df$timestamp <- dplyr::coalesce(
-            lubridate::ymd_hms(df$timestamp, quiet = TRUE),
-            lubridate::ymd(df$timestamp, quiet = TRUE))
-        }
+        shiny::req(input$file_installation, input$file_ores)
 
-        # Normalize column names early so the rest of the app uses consistent names
-        if ("feedin_kwh" %in% names(df) && !"intake_kwh" %in% names(df)) {
-          df <- dplyr::rename(df, intake_kwh = feedin_kwh)
-        }
+        # Parse both CSV files
+        install_result <- parse_installation_csv(input$file_installation$datapath)
+        ores_result <- parse_ores_csv(input$file_ores$datapath)
 
-        # Validate required columns
-        required <- c("timestamp", "pv_kwh", "offtake_kwh", "intake_kwh")
-        missing <- setdiff(required, names(df))
-        if (length(missing) > 0) {
-          shiny::showNotification(
-            sprintf("Colonnes manquantes dans le CSV : %s", paste(missing, collapse = ", ")),
-            type = "error", duration = 10)
-          shiny::req(FALSE)
-        }
+        # Join sources
+        join_result <- join_sources(install_result$df, ores_result$df)
+        df <- join_result$df
 
-        # --- CSV Import Report ---
-        report <- character(0)
-        warn_lines <- character(0)
-        n_pts <- nrow(df)
-        n_jours <- round(as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")), 1)
+        # --- Build import report ---
+        report <- c(
+          sprintf("<b>%d quarts d'heure joints</b> (%s &rarr; %s)",
+            join_result$n_points,
+            format(join_result$date_start, "%d/%m/%Y"),
+            format(join_result$date_end, "%d/%m/%Y")),
+          "", install_result$report, "", ores_result$report, "", join_result$report
+        )
 
-        # Header
-        report <- c(report, sprintf("<b>%d points charg\u00e9s</b> (%.1f jours, %s &rarr; %s)",
-          n_pts, n_jours,
-          format(min(df$timestamp), "%d/%m/%Y"),
-          format(max(df$timestamp), "%d/%m/%Y")))
-
-        # Required columns (already validated above)
+        # Detect PAC consumption
+        pac_result <- detect_pac_consumption(df)
+        df$pac_kwh <- pac_result$pac_kwh
+        df$conso_hors_pac <- pmax(0, df$elec_kwh - df$pac_kwh)
         report <- c(report, "",
-          sprintf("&#9989; <code>pv_kwh</code> &mdash; production PV"),
-          sprintf("&#9989; <code>offtake_kwh</code> &mdash; soutirage r\u00e9seau"),
-          sprintf("&#9989; <code>intake_kwh</code> &mdash; injection r\u00e9seau"))
-
-        # Optional: pac_kwh
-        if ("pac_kwh" %in% names(df)) {
-          report <- c(report, sprintf("&#9989; <code>pac_kwh</code> &mdash; conso PAC mesur\u00e9e &rarr; <b>conso hors PAC exacte</b>"))
-        } else {
-          report <- c(report, sprintf("&#10060; <code>pac_kwh</code> absent &rarr; r\u00e9partition PAC/autre <b>estim\u00e9e par heuristique</b> (soutirage > 50%% P_pac)"))
+          sprintf("&#128268; <b>D\u00e9tection PAC</b> : %s", pac_result$method))
+        if (!is.na(pac_result$p95_kw)) {
+          report <- c(report, sprintf("&nbsp;&nbsp;P95 = %.1f kW | Talon = %.0f W",
+            pac_result$p95_kw, pac_result$talon_w))
         }
 
-        # Optional: t_ballon
-        if ("t_ballon" %in% names(df)) {
-          report <- c(report, sprintf("&#9989; <code>t_ballon</code> &mdash; temp\u00e9rature ballon &rarr; <b>soutirages ECS d\u00e9duits des chutes de T</b>"))
-        } else {
-          report <- c(report, sprintf("&#10060; <code>t_ballon</code> absent &rarr; soutirages ECS <b>distribu\u00e9s selon profil type</b> (pics matin/soir)"))
-        }
+        # Reconstruct PV from energy balance
+        df$pv_kwh <- reconstruct_pv(df)
 
-        # Optional: cop (measured COP from BigQuery)
-        if ("cop" %in% names(df) && any(!is.na(df$cop))) {
-          n_cop <- sum(!is.na(df$cop))
-          report <- c(report, sprintf("&#9989; <code>cop</code> &mdash; COP mesur\u00e9 (%d/%d pas de temps) &rarr; <b>utilis\u00e9 directement</b>", n_cop, n_pts))
-        } else {
-          report <- c(report, sprintf("&#10060; <code>cop</code> absent &rarr; COP <b>estim\u00e9 depuis T_ext</b> (mod\u00e8le lin\u00e9aire)"))
-        }
+        # Rename columns to match pipeline expectations
+        names(df)[names(df) == "feedin_kwh"] <- "intake_kwh"
 
-        # Optional: t_ext
-        if ("t_ext" %in% names(df)) {
-          report <- c(report, sprintf("&#9989; <code>t_ext</code> &mdash; temp\u00e9rature ext\u00e9rieure"))
-        } else {
+        # Fetch t_ext from Open-Meteo if not in installation data
+        if (!"t_ext" %in% names(df)) {
           dp <- DataProvider$new()
           t_ext_meteo <- tryCatch({
-            df_temp <- dp$get_temperature(min(as.Date(df$timestamp)), max(as.Date(df$timestamp)))
+            df_temp <- dp$get_temperature(as.Date(min(df$timestamp)), as.Date(max(df$timestamp)))
             if (!is.null(df_temp) && nrow(df_temp) > 0) {
               dp$interpolate_temperature(df_temp, df$timestamp)
             } else NULL
           }, error = function(e) NULL)
           if (!is.null(t_ext_meteo)) {
             df$t_ext <- t_ext_meteo
-            report <- c(report, sprintf("&#9881; <code>t_ext</code> absent &rarr; <b>r\u00e9cup\u00e9r\u00e9 via Open-Meteo</b> (Profondeville)"))
+            report <- c(report, "", "&#9881; <code>t_ext</code> r\u00e9cup\u00e9r\u00e9 via Open-Meteo")
           } else {
             df$t_ext <- 10
-            report <- c(report, sprintf("&#9888; <code>t_ext</code> absent, Open-Meteo indisponible &rarr; <b>valeur fixe 10\u00b0C</b>"))
+            report <- c(report, "", "&#9888; <code>t_ext</code> indisponible, valeur fixe 10\u00b0C")
           }
         }
 
-        # Temporal coverage analysis
-        dt_s <- as.numeric(difftime(df$timestamp[2], df$timestamp[1], units = "secs"))
-        if (!is.na(dt_s) && dt_s > 0) {
-          expected_pts <- as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "secs")) / dt_s + 1
-          n_missing <- round(expected_pts) - n_pts
-          pct_coverage <- round(n_pts / expected_pts * 100, 1)
-          if (n_missing > 0) {
-            missing_h <- round(n_missing * dt_s / 3600, 1)
-            warn_lines <- c(warn_lines, sprintf(
-              "Couverture temporelle : %s%% (%s h manquantes sur %.0f jours)",
-              pct_coverage, missing_h, n_jours))
-          }
-        }
-
-        # Energy balance validation
-        energy_cols <- c("pv_kwh", "offtake_kwh", "intake_kwh")
-        if ("pac_kwh" %in% names(df)) energy_cols <- c(energy_cols, "pac_kwh")
-
-        for (col in energy_cols) {
-          n_neg <- sum(df[[col]] < 0, na.rm = TRUE)
-          if (n_neg > 0) {
-            warn_lines <- c(warn_lines, sprintf("<code>%s</code> : %d valeurs n\u00e9gatives", col, n_neg))
-          }
-        }
-
-        conso_est <- df[["offtake_kwh"]] + df[["pv_kwh"]] - df[["intake_kwh"]]
-        n_neg_conso <- sum(conso_est < -0.01, na.rm = TRUE)
-        if (n_neg_conso > n_pts * 0.05) {
-          warn_lines <- c(warn_lines, sprintf("Bilan : offtake + pv &lt; injection sur %d pas de temps (%.0f%%)",
-            n_neg_conso, 100 * n_neg_conso / n_pts))
-        }
-
-        if ("pac_kwh" %in% names(df)) {
-          available <- df[["offtake_kwh"]] + df[["pv_kwh"]]
-          n_pac_excess <- sum(df[["pac_kwh"]] > available + 0.01, na.rm = TRUE)
-          if (n_pac_excess > n_pts * 0.02) {
-            warn_lines <- c(warn_lines, sprintf("pac_kwh &gt; offtake + pv sur %d pas de temps", n_pac_excess))
-          }
-        }
-
-        # --- Energy perimeter diagnostic (pac_kwh vs ORES) ---
+        # Energy perimeter diagnostic
         diag_lines <- diagnose_energy_perimeter(df)
         if (length(diag_lines) > 0) {
           report <- c(report, "", "&#128269; <b>Diagnostic \u00e9nerg\u00e9tique :</b>", diag_lines)
         }
 
-        if (length(warn_lines) > 0) {
-          report <- c(report, "", "&#9888; <b>Avertissements :</b>", warn_lines)
-        }
-
-        # Show the full report as a single notification
-        shiny::showNotification(
-          shiny::HTML(paste(report, collapse = "<br>")),
-          type = if (length(warn_lines) > 0) "warning" else "message",
-          duration = 20)
+        # Store report for UI rendering
+        import_report_content(shiny::HTML(paste(report, collapse = "<br>")))
       } else {
         shiny::req(input$date_range)
 
@@ -803,7 +726,7 @@ mod_sidebar_server <- function(id, sim_state) {
       # Inject real Belpex prices (CSV only)
       if (input$data_source == "csv") {
         api_key <- Sys.getenv("ENTSOE_API_KEY", Sys.getenv("ENTSO-E_API_KEY", ""))
-        df_with_belpex <- inject_belpex_prices(df, api_key = api_key, data_dir = "data")
+        df_with_belpex <- inject_belpex_prices(df, api_key = api_key, data_dir = "inst/extdata")
         n_matched <- sum(!is.na(df_with_belpex$prix_eur_kwh) & df_with_belpex$prix_eur_kwh != 0)
         if (n_matched > 0) {
           message(sprintf("[Belpex] %d/%d quarts d'heure avec prix reels", n_matched, nrow(df)))
@@ -822,53 +745,42 @@ mod_sidebar_server <- function(id, sim_state) {
     csv_has_t_ballon <- shiny::reactiveVal(FALSE)
     csv_est_pac_th_kw <- shiny::reactiveVal(NULL)
     csv_est_volume_l <- shiny::reactiveVal(NULL)
+    import_report_content <- shiny::reactiveVal(NULL)
+
+    # ---- Import report rendering (dual CSV mode) ----
+    output$import_report <- shiny::renderUI({
+      content <- import_report_content()
+      if (is.null(content)) return(NULL)
+      shiny::tags$div(
+        style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:10px;margin:8px 0;font-size:.7rem;line-height:1.5;max-height:300px;overflow-y:auto;",
+          cl$bg_card, cl$border),
+        content)
+    })
 
     shiny::observe({
-      if (input$data_source != "csv" || is.null(input$csv_file)) {
+      if (input$data_source != "csv" || is.null(input$file_installation) || is.null(input$file_ores)) {
         csv_measured_eligible(FALSE)
         csv_has_t_ballon(FALSE)
         csv_est_pac_th_kw(NULL)
         csv_est_volume_l(NULL)
+        import_report_content(NULL)
         return()
       }
       df <- raw_data()
       has_pac <- "pac_kwh" %in% names(df)
-      has_meter <- "offtake_kwh" %in% names(df) &&
-        "intake_kwh" %in% names(df)
+      has_meter <- "offtake_kwh" %in% names(df) && "intake_kwh" %in% names(df)
       has_tbal <- "t_ballon" %in% names(df)
       pac_na_rate <- if (has_pac) sum(is.na(df$pac_kwh)) / nrow(df) else 1
       csv_measured_eligible(has_pac && has_meter && pac_na_rate < 0.10)
       csv_has_t_ballon(has_tbal)
 
-      # Pre-fill pv_kwc_ref from energy balance heuristic
-      if ("pv_kwh" %in% names(df)) {
-        est_kwc <- estimate_pv_kwc(df)
-        shiny::updateNumericInput(session, "pv_kwc_ref", value = est_kwc)
-      }
-
-      # Estimate PAC thermal power (suggestion only, not pre-filled)
+      # Estimate PAC thermal power from detected pac_kwh
       if (has_pac) {
         cop_est <- input$cop_nominal %||% 3.5
-        est_pac_elec_kw <- max(df$pac_kwh, na.rm = TRUE) / 0.25
+        est_pac_elec_kw <- stats::quantile(df$pac_kwh[df$pac_kwh > 0], 0.95, na.rm = TRUE) / 0.25
         est_pac_th_kw <- round(est_pac_elec_kw * cop_est)
         est_pac_th_kw <- max(1, min(500, est_pac_th_kw))
         csv_est_pac_th_kw(est_pac_th_kw)
-      }
-
-      # Estimate ballon volume (suggestion only, not pre-filled)
-      if (has_pac && has_tbal) {
-        delta_t <- diff(df$t_ballon)
-        pac_vals <- df$pac_kwh[-1]
-        heating <- which(pac_vals > 0.5 & delta_t > 0.1)
-        if (length(heating) > 5) {
-          cop_est <- input$cop_nominal %||% 3.5
-          vol_estimates <- pac_vals[heating] * cop_est / (delta_t[heating] * 0.001163)
-          est_vol <- round(stats::median(vol_estimates, na.rm = TRUE) / 100) * 100
-          est_vol <- max(50, min(100000, est_vol))
-          csv_est_volume_l(est_vol)
-          message(sprintf("[CSV] Volume ballon estime (suggestion): %d L (mediane sur %d creneaux de chauffe)",
-            est_vol, length(heating)))
-        }
       }
 
       # Update date range to match CSV coverage
