@@ -16,7 +16,7 @@ ENTSOE_DOMAIN_BE <- "10YBE----------2"
 # -----------------------------------------------------------------------------
 # 1. Charger les prix : .rda package data -> CSV fallback
 # -----------------------------------------------------------------------------
-load_local_belpex <- function(data_dir = "data") {
+load_local_belpex <- function(data_dir = "inst/extdata") {
   # Priorite 1 : objet package (lazy-loaded, instantane)
   if (exists("entsoe_prices", where = asNamespace("wisepocpac"), inherits = FALSE)) {
     obj <- get("entsoe_prices", envir = asNamespace("wisepocpac"))
@@ -181,7 +181,7 @@ to_quarter_hourly <- function(df) {
 # -----------------------------------------------------------------------------
 # 6. Fonction principale : charger les prix Belpex
 # -----------------------------------------------------------------------------
-load_belpex_prices <- function(start_date, end_date, api_key = NULL, data_dir = "data") {
+load_belpex_prices <- function(start_date, end_date, api_key = NULL, data_dir = "inst/extdata") {
   source_used <- "none"
   local_filtered <- NULL
 

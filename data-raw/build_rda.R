@@ -13,7 +13,7 @@ library(readr)
 library(dplyr)
 library(lubridate)
 
-data_dir <- "data"
+data_dir <- "inst/extdata"
 
 # ---------------------------------------------------------------------------
 # 1. ENTSO-E prices

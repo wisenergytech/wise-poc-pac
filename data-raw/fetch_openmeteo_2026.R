@@ -50,7 +50,7 @@ df <- df[!is.na(df$timestamp) & !is.na(df$t_ext), ]
 
 cat(sprintf("  -> %d hourly records\n", nrow(df)))
 
-out_file <- "data/openmeteo_temperature_2026.csv"
+out_file <- "inst/extdata/openmeteo_temperature_2026.csv"
 write_csv(df, out_file)
 cat(sprintf("  -> Saved to %s\n", out_file))
 

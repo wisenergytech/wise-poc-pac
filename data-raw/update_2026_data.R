@@ -28,7 +28,7 @@ if (file.exists(".env")) {
 # =============================================================================
 cat("=== Updating ENTSO-E prices 2026 ===\n")
 
-entsoe_file <- "data/entsoe_prices_2026.csv"
+entsoe_file <- "inst/extdata/entsoe_prices_2026.csv"
 existing_entsoe <- read_csv(entsoe_file, show_col_types = FALSE)
 last_entsoe <- max(as.POSIXct(existing_entsoe$datetime, tz = "UTC"))
 cat(sprintf("  Last existing: %s\n", format(last_entsoe, "%Y-%m-%d %H:%M")))
@@ -117,7 +117,7 @@ if (status_code(resp) != 200) {
 # =============================================================================
 cat("\n=== Updating Open-Meteo temperature 2026 ===\n")
 
-meteo_file <- "data/openmeteo_temperature_2026.csv"
+meteo_file <- "inst/extdata/openmeteo_temperature_2026.csv"
 existing_meteo <- read_csv(meteo_file, show_col_types = FALSE)
 last_meteo <- max(as.POSIXct(existing_meteo$timestamp, tz = "Europe/Brussels"))
 cat(sprintf("  Last existing: %s\n", format(last_meteo, "%Y-%m-%d %H:%M")))
@@ -178,7 +178,7 @@ if (meteo_start > meteo_end) {
 # =============================================================================
 cat("\n=== Updating Elia CO2 intensity 2026 ===\n")
 
-co2_file <- "data/elia_co2_2026.csv"
+co2_file <- "inst/extdata/elia_co2_2026.csv"
 existing_co2 <- read_csv(co2_file, show_col_types = FALSE,
   col_types = cols(datetime = col_character()))
 existing_co2$datetime_parsed <- as.POSIXct(

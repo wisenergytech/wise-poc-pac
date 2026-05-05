@@ -32,7 +32,7 @@ library(readr)
 # --- Configuration ---
 BQ_PROJECT <- "karno-410708"
 BQ_DATASET <- "wise"
-DATA_DIR   <- "data"
+DATA_DIR   <- "inst/extdata"
 TMP_DIR    <- tempdir()
 
 # PV capacity for Elia scaling (kWc de l'installation Profondeville)
@@ -166,7 +166,7 @@ message(sprintf("  -> %d quarts d'heure (%s -> %s)", nrow(df_base),
 # =============================================================================
 message("[PV Elia] Fetching & scaling...")
 
-source("R/data_elia_solar.R")
+source("R/fct_fetch_elia_solar.R")
 
 elia <- fetch_solar_elia(DATE_START, DATE_END, region = "Namur")
 

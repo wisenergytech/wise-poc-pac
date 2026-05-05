@@ -16,7 +16,7 @@ library(lubridate)
 library(readr)
 
 # --- 1. Charger les donnees mesurees (= baseline) ---
-df <- read_csv("data/bq_k0001_elia.csv", show_col_types = FALSE)
+df <- read_csv("inst/extdata/bq_k0001_elia.csv", show_col_types = FALSE)
 df$timestamp <- ymd_hms(df$timestamp, tz = "Europe/Brussels")
 
 cat("=== DONNEES KARNO PROFONDEVILLE ===\n")

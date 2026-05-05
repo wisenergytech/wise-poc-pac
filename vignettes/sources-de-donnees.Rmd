@@ -29,10 +29,10 @@ convention `<type>_historical_YYYY.csv`. Les fichiers R correspondants sont dans
 
 | Mesure | Source | Fichier R | Resolution native | Resolution simulation | Couverture |
 |--------|--------|-----------|-------------------|-----------------------|------------|
-| Prix electricite | ENTSO-E Transparency | `data_entsoe_prices.R` | Horaire ou 15 min | 15 min | 2015+ |
-| Temperature | Open-Meteo Archive | `data_openmeteo_temperature.R` | Horaire | 15 min (interpolee) | 2020+ |
-| Intensite CO2 | Elia Open Data | `data_elia_co2.R` | Horaire | 15 min (interpolee) | 2020+ |
-| Production PV | Elia Open Data | `data_elia_solar.R` | 15 min | 15 min | 2020+ |
+| Prix electricite | ENTSO-E Transparency | `fct_fetch_entsoe_prices.R` | Horaire ou 15 min | 15 min | 2015+ |
+| Temperature | Open-Meteo Archive | `fct_fetch_openmeteo_temperature.R` | Horaire | 15 min (interpolee) | 2020+ |
+| Intensite CO2 | Elia Open Data | `fct_fetch_elia_co2.R` | Horaire | 15 min (interpolee) | 2020+ |
+| Production PV | Elia Open Data | `fct_fetch_elia_solar.R` | 15 min | 15 min | 2020+ |
 
 ---
 
@@ -314,10 +314,20 @@ Deux tables sont utilisees :
 
 | Champ BigQuery | Colonne CSV | Description | Unite |
 |----------------|-------------|-------------|-------|
-| `Elec_consumption` | `pac_kwh` | Consommation electrique de la PAC (somme par quart d'heure) | kWh |
+| `Elec_consumption` | `pac_kwh` | Consommation electrique de **toute l'installation technique** (PAC + eclairage + auxiliaires + circulateurs) — pas uniquement la PAC (somme par quart d'heure) | kWh |
 | `T_tankUp` | `t_ballon` | Temperature en haut du ballon (moyenne par quart d'heure) | degres C |
+| `COP` | `cop` | COP mesure de la PAC (moyenne par quart d'heure). 0 = PAC arretee | sans unite |
 | `Consumption_index_kWh` | `offtake_kwh` | Soutirage reseau (delta d'index par quart d'heure) | kWh |
 | `Injection_index_kWh` | `feedin_kwh` | Injection reseau (delta d'index par quart d'heure) | kWh |
+
+**Important — perimetre des compteurs** :
+
+- Le compteur ORES (`k0001_ores`) et le champ `Elec_consumption` (`k0001`)
+  mesurent le **meme perimetre** : toute l'installation technique commune
+  (PAC + eclairage commun + auxiliaires), **sans** les logements (qui ont
+  chacun leur compteur individuel).
+- La colonne CSV `pac_kwh` est donc un abus de nom : elle contient la
+  consommation totale de l'installation, pas uniquement la PAC.
 
 ### Jeux de donnees produits
 
@@ -333,6 +343,10 @@ La variante **elia** utilise le scaling PV regional decrit en section 4.
 La puissance crete de reference (65 kWc) a ete calibree pour minimiser les
 incoherences de bilan energetique (`feedin > offtake + pv`) a moins de 1%.
 
+**Attention** : le scaling a 65 kWc surestime la production PV reelle d'un
+facteur ~2 (voir section 5.1). Le kWc equivalent reel varie dans le temps
+a cause de la mise en service progressive des panneaux.
+
 ### Transformations
 
 1. **Aggregation 5 min -> 15 min** : les mesures 5-minutaires sont agregees
@@ -343,6 +357,85 @@ incoherences de bilan energetique (`feedin > offtake + pv`) a moins de 1%.
    difference d'index consecutifs, avec un plancher a 0.
 3. **Exclusion des jours incomplets** : les jours contenant des NA sur
    `pac_kwh` ou `offtake_kwh` sont exclus du CSV final.
+
+### 5.1 Bilan energetique et qualite des donnees
+
+L'analyse detaillee du bilan energetique (script `scripts/analyse_bq_energy_balance.R`)
+revele plusieurs constats importants :
+
+#### Synchronisation k0001 vs ORES
+
+Les deux sources sont bien synchronisees (pas de decalage temporel). Le test
+nocturne (22h-5h, quand PV = 0) montre que `Elec_consumption - offtake + feedin`
+est quasi nul (mediane = 0, cross-correlation maximale a lag 0). Les rares ecarts
+(3.5% des pas nocturnes depassent 0.01 kWh) sont dus a des spikes ponctuels du
+compteur ORES (un cas extreme a 1374 kWh en un quart d'heure).
+
+#### Reconstitution du PV reel
+
+Puisque k0001 et ORES mesurent le meme perimetre, le PV reel se deduit par
+bilan energetique :
+
+```
+pv_reel = Elec_consumption - offtake + feedin
+```
+
+Resultats sur la periode nov 2025 — avr 2026 :
+
+- PV reel total : ~7 500 kWh
+- Injection totale (feedin) : ~7 465 kWh
+- **Autoconsommation PV quasi nulle** (~14 kWh, soit < 0.2%)
+
+Cela signifie que la production PV est presque integralement injectee sur le
+reseau. Le PV et l'installation technique (PAC) semblent fonctionner de maniere
+independante.
+
+#### Surestimation du PV Elia scale
+
+Le ratio PV reel / PV Elia varie fortement dans le temps :
+
+| Mois | PV reel (kWh) | PV Elia 65 kWc (kWh) | Ratio | kWc equivalent |
+|------|---:|---:|---:|---:|
+| Nov 2025 | 80 | 417 | 0.19 | 12.5 |
+| Dec 2025 | 145 | 1464 | 0.10 | 6.5 |
+| Jan 2026 | 112 | 1348 | 0.08 | 5.4 |
+| Fev 2026 | 380 | 1314 | 0.29 | 18.8 |
+| Mar 2026 | 2617 | 5398 | 0.49 | 31.5 |
+| Avr 2026 | 4144 | 6345 | 0.65 | 42.5 |
+
+La progression reguliere du kWc equivalent indique une **mise en service
+progressive des panneaux PV** entre novembre 2025 et avril 2026. En
+consequence, un facteur d'echelle fixe (comme les 65 kWc utilises) n'est pas
+applicable sur cette periode.
+
+#### Separation PAC / talon par heuristique COP
+
+Le champ `COP` de `wise.k0001` permet de distinguer les periodes ou la PAC
+est active (COP > 0) de celles ou elle est a l'arret (COP = 0). En mesurant
+la consommation quand COP = 0, on obtient le **talon** de l'installation
+(eclairage, circulateurs, automate...) :
+
+| Metrique | Valeur |
+|----------|--------|
+| Talon median (COP=0) | ~0.3–0.6 kWh/qt selon l'heure (~2 kW) |
+| Conso PAC pure (COP>0 - talon) | 8 236 kWh = 68% de la conso totale |
+| Puissance PAC mediane | 3 kW |
+| Puissance PAC P95 | 12.8 kW |
+| Puissance PAC max | 20 kW |
+
+La puissance maximale de 20 kW confirme que seule la PAC de 20 kW est
+instrumentee dans `wise.k0001` (pas la 40 kW).
+
+#### Impact sur les KPI de l'application
+
+- Le KPI `part_pac` affiche 54.4% — c'est un artefact du PV Elia surestime
+  (le denominateur `offtake + pv_elia - feedin` est gonfle).
+- Avec l'heuristique COP, la vraie part PAC est de **68%** de la conso de
+  l'installation technique.
+- Le calcul `conso_hors_pac = offtake + pv - injection - pac_kwh` donne
+  quasi zero car pac_kwh ≈ conso totale du meme compteur ORES.
+
+---
 
 ### Donnees externes ajoutees par l'application
 
@@ -438,23 +531,35 @@ Les prix manquants apres jointure sont remplaces par la mediane de la serie.
 
 ```
 R/
-  data_entsoe_prices.R          # Prix day-ahead (ENTSO-E API)
-  data_openmeteo_temperature.R  # Temperature (Open-Meteo Archive API)
-  data_elia_co2.R               # Intensite CO2 (Elia ODS192/191/201)
-  data_elia_solar.R             # Production PV (Elia ODS032/087)
-  fct_data.R                    # Helpers (inject_belpex_prices)
-  R6_data_provider.R            # Classe R6 unifiant les sources
+  fct_fetch_entsoe_prices.R       # Prix day-ahead (ENTSO-E API)
+  fct_fetch_openmeteo_temperature.R # Temperature (Open-Meteo Archive API)
+  fct_fetch_elia_co2.R            # Intensite CO2 (Elia ODS192/191/201)
+  fct_fetch_elia_solar.R          # Production PV (Elia ODS032/087)
+  fct_data.R                      # Helpers (inject_belpex_prices)
+  fct_data_diagnostic.R           # Diagnostic energetique au chargement CSV
+  R6_data_provider.R              # Classe R6 unifiant les sources
 
 data/
-  entsoe_prices_YYYY.csv          # Cache local prix
+  entsoe_prices.rda               # Prix (lazy-loaded par le package)
+  openmeteo_temperature.rda       # Temperature (lazy-loaded)
+  elia_co2.rda                    # CO2 (lazy-loaded)
+  elia_solar.rda                  # PV (lazy-loaded)
+
+inst/extdata/
+  entsoe_prices_YYYY.csv          # Cache local prix (CSV source)
   openmeteo_temperature_YYYY.csv  # Cache local temperature
   elia_co2_YYYY.csv               # Cache local CO2
   elia_solar_YYYY.csv             # Cache local production PV
   bq_k0001_elia.csv               # Donnees terrain + PV Elia scalee
   bq_k0001_fusion.csv             # Donnees terrain + PV FusionSolar
+  test_csv_complet.csv            # CSV de test (complet)
+  test_csv_complet_partial.csv    # CSV de test (partiel)
 
-scripts/
+data-raw/
+  build_rda.R                     # CSV -> .rda (package data)
+  update_2026_data.R              # MAJ CSV 2026 via APIs
   fetch_bigquery_pac.R            # Export BigQuery -> CSV (PAC + ORES + PV)
+  fetch_fusionsolar.R             # Export FusionSolar -> CSV
 ```
 
 ### Convention de nommage

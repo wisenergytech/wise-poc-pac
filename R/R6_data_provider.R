@@ -3,7 +3,7 @@
 # =============================================================================
 # Wraps the existing data loading functions for Belpex prices, Open-Meteo
 # temperature, and Elia CO2 intensity. Delegates to the standalone functions
-# in R/data_entsoe_prices.R, R/data_openmeteo_temperature.R, R/data_elia_co2.R.
+# in R/fct_fetch_entsoe_prices.R, R/fct_fetch_openmeteo_temperature.R, R/fct_fetch_elia_co2.R.
 # =============================================================================
 
 #' @title Data Provider
@@ -13,8 +13,8 @@
 DataProvider <- R6::R6Class("DataProvider",
   public = list(
     #' @description Create a new DataProvider.
-    #' @param data_dir Directory containing local data files (default "data")
-    initialize = function(data_dir = "data") {
+    #' @param data_dir Directory containing local CSV data files (default "inst/extdata")
+    initialize = function(data_dir = "inst/extdata") {
       private$data_dir <- data_dir
     },
 

@@ -130,7 +130,7 @@ cat(sprintf("Autoconsommation: %.1f%%\n", ac))
 output_path <- if (length(commandArgs(trailingOnly = TRUE)) > 0) {
   commandArgs(trailingOnly = TRUE)[1]
 } else {
-  "data/test_csv_complet.csv"
+  "inst/extdata/test_csv_complet.csv"
 }
 
 readr::write_csv(df_csv, output_path)

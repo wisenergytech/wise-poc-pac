@@ -81,7 +81,7 @@ ELIA_TIMEOUT <- 12
 # ---------------------------------------------------------------------------
 # Charger les donnees CO2 : .rda package data -> CSV fallback
 # ---------------------------------------------------------------------------
-load_local_co2 <- function(data_dir = "data") {
+load_local_co2 <- function(data_dir = "inst/extdata") {
   # Priorite 1 : objet package (lazy-loaded, instantane)
   if (exists("elia_co2", where = asNamespace("wisepocpac"), inherits = FALSE)) {
     obj <- get("elia_co2", envir = asNamespace("wisepocpac"))

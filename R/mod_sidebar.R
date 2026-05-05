@@ -745,6 +745,12 @@ mod_sidebar_server <- function(id, sim_state) {
           }
         }
 
+        # --- Energy perimeter diagnostic (pac_kwh vs ORES) ---
+        diag_lines <- diagnose_energy_perimeter(df)
+        if (length(diag_lines) > 0) {
+          report <- c(report, "", "&#128269; <b>Diagnostic \u00e9nerg\u00e9tique :</b>", diag_lines)
+        }
+
         if (length(warn_lines) > 0) {
           report <- c(report, "", "&#9888; <b>Avertissements :</b>", warn_lines)
         }

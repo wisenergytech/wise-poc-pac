@@ -45,7 +45,7 @@ params <- SimulationParams$new(
 # --- Load and enrich CSV (same as mod_sidebar.R does) ---
 message("=== Loading and enriching data ===")
 
-df_raw <- read_csv("data/bq_k0001_elia.csv", show_col_types = FALSE)
+df_raw <- read_csv("inst/extdata/bq_k0001_elia.csv", show_col_types = FALSE)
 df_raw$timestamp <- as.POSIXct(df_raw$timestamp, tz = "Europe/Brussels")
 
 # Add t_ext from Open-Meteo (or fallback to 10C)

@@ -18,7 +18,7 @@ library(lubridate)
 library(readr)
 
 # --- Charger les donnees mesurees ---
-df <- read_csv("data/bq_k0001_fusion.csv", show_col_types = FALSE)
+df <- read_csv("inst/extdata/bq_k0001_fusion.csv", show_col_types = FALSE)
 df$timestamp <- with_tz(df$timestamp, tzone = "Europe/Brussels")
 
 cat("=== ANALYSE BELIX — PILOTAGE OU THERMOSTAT ? ===\n\n")

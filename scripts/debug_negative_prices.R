@@ -16,7 +16,7 @@ if (exists("calc_cop", envir = .GlobalEnv)) rm("calc_cop", envir = .GlobalEnv)
 if (exists("auto_aggregate", envir = .GlobalEnv)) rm("auto_aggregate", envir = .GlobalEnv)
 
 # --- 1. Charger le CSV comme le fait l'app ---
-csv_path <- "data/bq_k0001_elia.csv"
+csv_path <- "inst/extdata/bq_k0001_elia.csv"
 df <- readr::read_csv(csv_path, show_col_types = FALSE)
 # Le CSV a des timestamps format "2025-11-20 00:00:00" — ymd_hms les parse en UTC
 if (!inherits(df$timestamp, "POSIXct")) {

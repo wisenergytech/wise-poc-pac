@@ -20,7 +20,7 @@ OPENMETEO_DEFAULT_LON <- 4.86
 #' @param latitude Latitude du site (default Profondeville)
 #' @param longitude Longitude du site (default Profondeville)
 #' @return tibble avec colonnes: timestamp (POSIXct, Europe/Brussels), t_ext (°C)
-load_openmeteo_temperature <- function(start_date, end_date, data_dir = "data",
+load_openmeteo_temperature <- function(start_date, end_date, data_dir = "inst/extdata",
                                        latitude = OPENMETEO_DEFAULT_LAT,
                                        longitude = OPENMETEO_DEFAULT_LON) {
 
