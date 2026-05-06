@@ -65,3 +65,36 @@ test_that("join_sources produces expected result", {
   expect_true("offtake_kwh" %in% names(result$df))
   expect_true("feedin_kwh" %in% names(result$df))
 })
+
+test_that("filter_outliers_iqr replaces extreme values", {
+  x <- c(rep(1, 100), 500, rep(1.5, 100), 800)
+  result <- filter_outliers_iqr(x, k = 3)
+  expect_equal(result$n_replaced, 2)
+  # Outliers should be replaced with local median (close to 1-1.5)
+  expect_lt(result$filtered[101], 10)
+  expect_lt(result$filtered[202], 10)
+})
+
+test_that("filter_outliers_iqr does not touch normal data", {
+  x <- rnorm(100, mean = 5, sd = 1)
+  result <- filter_outliers_iqr(x, k = 3)
+  # With k=3, very few points should be flagged in normal data
+  expect_lt(result$n_replaced, 3)
+})
+
+test_that("parse_ores_csv with outlier_filter removes spikes", {
+  skip_if_not(file.exists(file.path(project_root, "inst/extdata/bq_k0001_ores_raw.csv")))
+
+  # Without filter
+  no_filt <- parse_ores_csv(file.path(project_root, "inst/extdata/bq_k0001_ores_raw.csv"),
+    outlier_filter = FALSE)
+  # With filter
+  with_filt <- parse_ores_csv(file.path(project_root, "inst/extdata/bq_k0001_ores_raw.csv"),
+    outlier_filter = TRUE)
+
+  # Max should be lower with filter (the 1374 kWh spike is gone)
+  expect_lt(max(with_filt$df$offtake_kwh, na.rm = TRUE),
+    max(no_filt$df$offtake_kwh, na.rm = TRUE))
+  # Same number of rows
+  expect_equal(nrow(with_filt$df), nrow(no_filt$df))
+})

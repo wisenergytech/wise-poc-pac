@@ -104,15 +104,52 @@ parse_installation_csv <- function(file_path) {
   list(df = df, timestep = timestep, report = report)
 }
 
+#' Filter outliers using Tukey's IQR fences
+#'
+#' Replaces values beyond Q1 - k*IQR or Q3 + k*IQR with the local median
+#' (rolling window). Standard method: k=3 for far outliers (conservative),
+#' k=1.5 for mild outliers (aggressive).
+#'
+#' @param x Numeric vector
+#' @param k Multiplier for IQR (default 3 = far outliers only)
+#' @return List with: filtered (numeric vector), n_replaced (integer), threshold_upper (numeric)
+#' @noRd
+filter_outliers_iqr <- function(x, k = 3) {
+  q <- stats::quantile(x, c(0.25, 0.75), na.rm = TRUE)
+  iqr <- q[2] - q[1]
+  lower <- q[1] - k * iqr
+  upper <- q[2] + k * iqr
+
+  is_outlier <- !is.na(x) & (x < lower | x > upper)
+  n_replaced <- sum(is_outlier)
+
+  if (n_replaced > 0) {
+    # Replace outliers with local median (window of 7 neighbors)
+    filtered <- x
+    outlier_idx <- which(is_outlier)
+    for (i in outlier_idx) {
+      window <- max(1, i - 3):min(length(x), i + 3)
+      neighbors <- x[window[!window %in% i]]
+      neighbors <- neighbors[!is.na(neighbors) & neighbors >= lower & neighbors <= upper]
+      filtered[i] <- if (length(neighbors) > 0) stats::median(neighbors) else stats::median(x[!is_outlier], na.rm = TRUE)
+    }
+    list(filtered = filtered, n_replaced = n_replaced, threshold_upper = upper)
+  } else {
+    list(filtered = x, n_replaced = 0L, threshold_upper = upper)
+  }
+}
+
 #' Parse ORES CSV (meter data with cumulative indexes)
 #'
 #' Reads the CSV, detects timestep, aggregates to 15 min, converts
 #' cumulative indexes to per-period deltas.
 #'
 #' @param file_path Path to CSV file
+#' @param outlier_filter Logical, whether to apply IQR-based outlier filtering on deltas (default FALSE)
+#' @param outlier_k IQR multiplier for outlier detection (default 3 = far outliers)
 #' @return List with: df (dataframe at 15-min with offtake_kwh, feedin_kwh), timestep, report
 #' @noRd
-parse_ores_csv <- function(file_path) {
+parse_ores_csv <- function(file_path, outlier_filter = FALSE, outlier_k = 3) {
   df <- readr::read_csv(file_path, show_col_types = FALSE)
   report <- character(0)
 
@@ -156,6 +193,24 @@ parse_ores_csv <- function(file_path) {
   n_neg <- sum(raw_deltas < 0, na.rm = TRUE)
   if (n_neg > 0) {
     report <- c(report, sprintf("Warning : %d deltas n\u00e9gatifs (index d\u00e9croissant) mis \u00e0 0", n_neg))
+  }
+
+  # Outlier filtering (Tukey IQR method)
+  if (isTRUE(outlier_filter)) {
+    offtake_filt <- filter_outliers_iqr(df_agg$offtake_kwh, k = outlier_k)
+    feedin_filt <- filter_outliers_iqr(df_agg$feedin_kwh, k = outlier_k)
+    df_agg$offtake_kwh <- offtake_filt$filtered
+    df_agg$feedin_kwh <- feedin_filt$filtered
+    n_total_outliers <- offtake_filt$n_replaced + feedin_filt$n_replaced
+    if (n_total_outliers > 0) {
+      report <- c(report, sprintf(
+        "Filtre outliers (IQR \u00d7 %.1f) : %d points remplac\u00e9s (offtake: %d, feedin: %d | seuils: %.1f / %.1f kWh)",
+        outlier_k, n_total_outliers,
+        offtake_filt$n_replaced, feedin_filt$n_replaced,
+        offtake_filt$threshold_upper, feedin_filt$threshold_upper))
+    } else {
+      report <- c(report, "Filtre outliers actif : aucun outlier d\u00e9tect\u00e9")
+    }
   }
 
   if (timestep != "15min") {

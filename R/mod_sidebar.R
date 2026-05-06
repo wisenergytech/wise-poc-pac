@@ -40,6 +40,7 @@ mod_sidebar_ui <- function(id) {
             "<code>time</code> &mdash; horodatage<br>",
             "<code>Consumption_index_kWh</code> &mdash; index cumulatif soutirage<br>",
             "<code>Injection_index_kWh</code> &mdash; index cumulatif injection"))),
+        shiny::checkboxInput(ns("outlier_filter"), "Filtrer les outliers ORES (IQR \u00d7 3)", value = FALSE),
         shiny::uiOutput(ns("import_report")))),
     shiny::tags$div(style = "display:none;",
       shiny::selectInput(ns("baseline_type"), NULL,
@@ -634,7 +635,8 @@ mod_sidebar_server <- function(id, sim_state) {
 
         # Parse both CSV files
         install_result <- parse_installation_csv(input$file_installation$datapath)
-        ores_result <- parse_ores_csv(input$file_ores$datapath)
+        ores_result <- parse_ores_csv(input$file_ores$datapath,
+          outlier_filter = isTRUE(input$outlier_filter))
 
         # Join sources
         join_result <- join_sources(install_result$df, ores_result$df)
