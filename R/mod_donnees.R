@@ -20,7 +20,7 @@ mod_donnees_ui <- function(id) {
       ),
       # Right column: PV + Diagnostic
       shiny::tagList(
-        bslib::card(
+        bslib::card(full_screen = TRUE,
           bslib::card_header(shiny::tags$strong("PV reconstitu\u00e9")),
           bslib::card_body(
             shiny::uiOutput(ns("pv_status")),
