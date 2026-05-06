@@ -1,7 +1,7 @@
 # ADR-002 : Nettoyage de l'optimiseur après le split diagnostic
 
 **Date** : 2026-05-06
-**Statut** : Planifié
+**Statut** : Fait
 **Branche** : `007-cleanup-optimizer` (depuis `006-dual-csv-import`)
 **Contexte** : Suite à ADR-001, le diagnostic PV est maintenant dans `wise-poc-diagnostic`
 
