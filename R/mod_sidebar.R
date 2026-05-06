@@ -756,6 +756,7 @@ mod_sidebar_server <- function(id, sim_state) {
           pv_autocons_pct = pv_autocons_pct,
           kwc_current = kwc_current,
           kwc_profile = kwc_profile,
+          robust_kwc = adaptive_kwc_result$robust,
           diag_lines = diag_lines
         ))
 

@@ -103,26 +103,69 @@ mod_donnees_server <- function(id, sidebar) {
       meta <- sidebar$import_meta()
       if (is.null(meta) || is.null(meta$kwc_profile)) return(NULL)
 
+      kwc_stable <- if (!is.na(meta$kwc_current)) meta$kwc_current else NULL
+
+      # Use robust daily curve if available
+      robust <- meta$robust_kwc
+      if (!is.null(robust) && !is.null(robust$daily)) {
+        daily <- robust$daily[!is.na(robust$daily$kwc_rolling), ]
+        if (nrow(daily) >= 2) {
+          # Daily rolling median curve
+          p <- plotly::plot_ly(daily, x = ~date, y = ~kwc_rolling, type = "scatter",
+            mode = "lines", name = "kWc (m\u00e9diane glissante 30j)",
+            line = list(color = "#1D4345", width = 2.5),
+            hovertemplate = "%{x|%d %b %Y}: <b>%{y:.1f} kWc</b><extra></extra>")
+
+          # Add clear-sky day ratios as scatter points
+          clear_days <- robust$daily[robust$daily$is_clear & !is.na(robust$daily$ratio), ]
+          if (nrow(clear_days) > 0) {
+            p <- p %>% plotly::add_trace(data = clear_days, x = ~date, y = ~ratio,
+              type = "scatter", mode = "markers",
+              name = "Ratio journalier (jours clairs)",
+              marker = list(color = "#1D4345", size = 4, opacity = 0.3),
+              hovertemplate = "%{x|%d %b}: %{y:.1f} kWc<extra></extra>")
+          }
+
+          # Stabilized line
+          if (!is.null(kwc_stable)) {
+            p <- p %>% plotly::add_trace(
+              x = range(daily$date), y = rep(kwc_stable, 2),
+              type = "scatter", mode = "lines",
+              line = list(color = "#e6a817", width = 2, dash = "dash"),
+              name = sprintf("kWc actuel (%d)", round(kwc_stable)),
+              hovertemplate = sprintf("kWc actuel: <b>%d</b><extra></extra>", round(kwc_stable)))
+          }
+
+          return(p %>% plotly::layout(
+            title = list(text = "kWc \u00e9quivalent (m\u00e9diane glissante sur jours clairs)", font = list(size = 12)),
+            xaxis = list(title = ""),
+            yaxis = list(title = "kWc", rangemode = "tozero"),
+            showlegend = TRUE,
+            legend = list(orientation = "h", y = -0.15),
+            margin = list(t = 30, b = 50, l = 40, r = 10)))
+        }
+      }
+
+      # Fallback: monthly bars
       kwc_df <- data.frame(
         month = as.Date(paste0(names(meta$kwc_profile), "-01")),
         kwc = as.numeric(meta$kwc_profile)
       )
       if (nrow(kwc_df) < 2) return(NULL)
 
-      kwc_stable <- if (!is.na(meta$kwc_current)) meta$kwc_current else NULL
-
       p <- plotly::plot_ly(kwc_df, x = ~month, y = ~kwc, type = "scatter",
-        mode = "lines+markers", name = "kWc mesur\u00e9",
+        mode = "lines+markers", name = "kWc mensuel",
         line = list(color = "#1D4345", width = 2),
         marker = list(color = "#1D4345", size = 8),
         hovertemplate = "%{x|%b %Y}: <b>%{y:.0f} kWc</b><extra></extra>")
 
       if (!is.null(kwc_stable)) {
         p <- p %>% plotly::add_trace(
-          y = rep(kwc_stable, nrow(kwc_df)),
-          mode = "lines", line = list(color = "#e6a817", width = 2, dash = "dash"),
-          name = sprintf("kWc stabilis\u00e9 (%d)", round(kwc_stable)),
-          hovertemplate = sprintf("kWc stabilis\u00e9: <b>%d</b><extra></extra>", round(kwc_stable)))
+          x = range(kwc_df$month), y = rep(kwc_stable, 2),
+          type = "scatter", mode = "lines",
+          line = list(color = "#e6a817", width = 2, dash = "dash"),
+          name = sprintf("kWc actuel (%d)", round(kwc_stable)),
+          hovertemplate = sprintf("kWc actuel: <b>%d</b><extra></extra>", round(kwc_stable)))
       }
 
       p %>% plotly::layout(
@@ -130,8 +173,8 @@ mod_donnees_server <- function(id, sidebar) {
         xaxis = list(title = "", tickformat = "%b %Y"),
         yaxis = list(title = "kWc", rangemode = "tozero"),
         showlegend = !is.null(kwc_stable),
-        legend = list(orientation = "h", y = -0.2),
-        margin = list(t = 30, b = 40, l = 40, r = 10))
+        legend = list(orientation = "h", y = -0.15),
+        margin = list(t = 30, b = 50, l = 40, r = 10))
     })
 
     # ---- Diagnostic ----

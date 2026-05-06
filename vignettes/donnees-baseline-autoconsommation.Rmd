@@ -227,6 +227,60 @@ le ratio — negligeable.
 **Implementation** : `R/fct_pv_reconstruction.R` — fonctions
 `compute_adaptive_kwc()` et `scale_pv_adaptive()`.
 
+#### Methode robuste : mediane glissante sur jours clairs
+
+Le ratio mensuel est fragile en hiver (petit signal / petit signal = bruit).
+L'app utilise une methode plus robuste pour estimer le kWc au jour le jour :
+
+**Etape 1 — Agregation journaliere** : on calcule la production PV totale
+de chaque jour (reelle et Elia 1 kWc). Cela lisse les spikes ORES
+sous-horaires.
+
+**Etape 2 — Filtre jours clairs** : on ne garde que les jours ou la
+production Elia est superieure ou egale a la mediane du mois. Les jours
+nuageux (ou le signal est faible et bruite) sont exclus. On obtient
+typiquement 50% des jours — les plus ensoleilles, ou le ratio est fiable.
+
+**Etape 3 — Ratio journalier** : pour chaque jour clair retenu :
+```
+kWc_jour = PV_reel_jour / PV_elia_1kwc_jour
+```
+
+**Etape 4 — Mediane glissante (30 jours)** : on calcule la mediane des
+ratios journaliers sur une fenetre de 30 jours. La mediane est insensible
+aux outliers : meme si 5 jours sur 30 sont aberrants (spike ORES, panne
+onduleur), les 10-15 jours clairs restants donnent une estimation fiable.
+
+**Resultat** : une courbe lisse de kWc qui monte progressivement de 5 a
+42 kWc, sans les dents de scie du ratio mensuel. Le graphique dans l'onglet
+Donnees montre :
+
+- Les **points gris** : ratios journaliers individuels (jours clairs)
+- La **courbe foncee** : mediane glissante 30 jours (= kWc estime)
+- La **ligne pointillee jaune** : kWc actuel (derniere valeur de la courbe)
+
+**Proprietes de robustesse** :
+
+| Source de bruit | Impact sur la methode |
+|-----------------|----------------------|
+| Spike ORES (1374 kWh en 15 min) | Dilue dans le total journalier (~100 kWh), mediane glissante l'ignore |
+| Jour nuageux (PV tres faible) | Exclu par le filtre jours clairs |
+| Saisonnalite (jours courts en hiver) | Elia subit la meme saisonnalite, ratio stable |
+| Neige sur les panneaux | Reduit le ratio sur 1-3 jours, mediane l'ignore |
+| Faible production hivernale | Moins de jours qualifiants, mais ceux qui restent sont fiables |
+
+**Comparaison avec le ratio mensuel simple** :
+
+| Methode | Avantage | Inconvenient |
+|---------|----------|--------------|
+| Ratio mensuel | Simple, 1 valeur par mois | Instable en hiver (petits nombres) |
+| Mediane glissante | Lisse, robuste, resolution journaliere | Necessite 30 jours de donnees minimum |
+
+**Implementation** : `R/fct_pv_reconstruction.R` — fonction
+`estimate_kwc_robust()`. Utilisee automatiquement par `compute_adaptive_kwc()`
+quand assez de donnees sont disponibles, avec fallback sur le ratio mensuel
+sinon.
+
 ---
 
 #### Resume : quelle source choisir ?

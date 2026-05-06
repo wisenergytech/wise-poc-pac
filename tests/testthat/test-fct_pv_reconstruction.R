@@ -74,6 +74,62 @@ test_that("compute_adaptive_kwc detects progressive commissioning", {
   expect_lt(result$kwc_current, 45)
 })
 
+test_that("estimate_kwc_robust produces smooth curve on synthetic data", {
+  # 120 days, kWc growing from 10 to 40
+  n_days <- 120
+  dates <- seq(as.Date("2025-12-01"), by = "day", length.out = n_days)
+  timestamps <- rep(as.POSIXct(dates, tz = "UTC"), each = 96) +
+    rep(seq(0, 95) * 900, times = n_days)
+  hour <- as.integer(format(timestamps, "%H"))
+
+  # Elia 1-kWc: solar bell curve
+  elia_1kwc <- pmax(0, sin((hour - 6) / 12 * pi) * 0.20)
+  elia_1kwc[hour < 7 | hour > 19] <- 0
+
+  # Real PV = Elia × growing kWc + noise
+  day_num <- as.integer(as.Date(timestamps) - as.Date("2025-12-01"))
+  kwc_true <- 10 + day_num * 0.25  # 10 → 40 over 120 days
+  set.seed(42)
+  pv_reel <- elia_1kwc * kwc_true * (1 + rnorm(length(elia_1kwc), 0, 0.05))
+  pv_reel <- pmax(0, pv_reel)
+
+  result <- estimate_kwc_robust(pv_reel, timestamps, elia_1kwc)
+
+  expect_true(!is.null(result$daily))
+  expect_true(!is.na(result$kwc_current))
+  # Final kWc should be close to 40
+  expect_gt(result$kwc_current, 30)
+  expect_lt(result$kwc_current, 50)
+  # Should have clear-sky days
+  expect_gt(sum(result$daily$is_clear), 20)
+})
+
+test_that("estimate_kwc_robust is resistant to outliers", {
+  n_days <- 90
+  dates <- seq(as.Date("2026-01-01"), by = "day", length.out = n_days)
+  timestamps <- rep(as.POSIXct(dates, tz = "UTC"), each = 96) +
+    rep(seq(0, 95) * 900, times = n_days)
+  hour <- as.integer(format(timestamps, "%H"))
+
+  elia_1kwc <- pmax(0, sin((hour - 6) / 12 * pi) * 0.20)
+  elia_1kwc[hour < 7 | hour > 19] <- 0
+
+  # Constant 30 kWc
+  pv_reel <- elia_1kwc * 30
+  # Inject 5 outlier days with 10x spike
+  spike_days <- c(10, 30, 50, 70, 85)
+  for (d in spike_days) {
+    idx <- ((d - 1) * 96 + 1):(d * 96)
+    pv_reel[idx] <- pv_reel[idx] * 10
+  }
+
+  result <- estimate_kwc_robust(pv_reel, timestamps, elia_1kwc)
+
+  # kWc should still be close to 30 despite 5 outlier days
+  expect_gt(result$kwc_current, 25)
+  expect_lt(result$kwc_current, 35)
+})
+
 test_that("scale_pv_adaptive applies per-month kWc", {
   timestamps <- as.POSIXct(c("2026-01-15 12:00", "2026-02-15 12:00", "2026-03-15 12:00"), tz = "UTC")
   pv_elia_1kwc <- c(0.2, 0.25, 0.3)  # kWh per timestep for 1 kWc
