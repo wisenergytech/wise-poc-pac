@@ -16,7 +16,8 @@ test_that("detect_timestep identifies 60-min data", {
 })
 
 test_that("detect_timestep returns irregular for random timestamps", {
-  ts <- as.POSIXct("2025-01-01", tz = "UTC") + sort(sample(1:10000, 10))
+  # Diffs of 7, 13, 42, 3, 91, 120, 5, 8, 200 seconds — no standard step
+  ts <- as.POSIXct("2025-01-01", tz = "UTC") + cumsum(c(0, 7, 13, 42, 3, 91, 120, 5, 8, 200))
   expect_equal(detect_timestep(ts), "irregular")
 })
 

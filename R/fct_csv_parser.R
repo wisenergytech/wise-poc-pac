@@ -104,23 +104,29 @@ parse_installation_csv <- function(file_path) {
   list(df = df, timestep = timestep, report = report)
 }
 
-#' Filter outliers using Tukey's IQR fences
+#' Filter outliers using Tukey's IQR fences on positive values only
 #'
-#' Replaces values beyond Q1 - k*IQR or Q3 + k*IQR with the local median
-#' (rolling window). Standard method: k=3 for far outliers (conservative),
-#' k=1.5 for mild outliers (aggressive).
+#' For energy data with many zeros (e.g. feedin at night), the IQR is computed
+#' only on positive values to avoid flagging normal production as outliers.
+#' Replaces values beyond Q3 + k*IQR with the local median (rolling window).
 #'
 #' @param x Numeric vector
 #' @param k Multiplier for IQR (default 3 = far outliers only)
 #' @return List with: filtered (numeric vector), n_replaced (integer), threshold_upper (numeric)
 #' @noRd
 filter_outliers_iqr <- function(x, k = 3) {
-  q <- stats::quantile(x, c(0.25, 0.75), na.rm = TRUE)
+  # Compute IQR on positive values only (avoids zero-inflated skew)
+  x_pos <- x[!is.na(x) & x > 0]
+  if (length(x_pos) < 10) {
+    return(list(filtered = x, n_replaced = 0L, threshold_upper = NA_real_))
+  }
+
+  q <- stats::quantile(x_pos, c(0.25, 0.75), na.rm = TRUE)
   iqr <- q[2] - q[1]
-  lower <- q[1] - k * iqr
   upper <- q[2] + k * iqr
 
-  is_outlier <- !is.na(x) & (x < lower | x > upper)
+  # Only flag upper outliers (lower bound not meaningful for energy deltas)
+  is_outlier <- !is.na(x) & x > upper
   n_replaced <- sum(is_outlier)
 
   if (n_replaced > 0) {
@@ -130,8 +136,8 @@ filter_outliers_iqr <- function(x, k = 3) {
     for (i in outlier_idx) {
       window <- max(1, i - 3):min(length(x), i + 3)
       neighbors <- x[window[!window %in% i]]
-      neighbors <- neighbors[!is.na(neighbors) & neighbors >= lower & neighbors <= upper]
-      filtered[i] <- if (length(neighbors) > 0) stats::median(neighbors) else stats::median(x[!is_outlier], na.rm = TRUE)
+      neighbors <- neighbors[!is.na(neighbors) & neighbors <= upper]
+      filtered[i] <- if (length(neighbors) > 0) stats::median(neighbors) else stats::median(x_pos, na.rm = TRUE)
     }
     list(filtered = filtered, n_replaced = n_replaced, threshold_upper = upper)
   } else {

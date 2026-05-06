@@ -112,7 +112,7 @@ mod_donnees_server <- function(id, sidebar) {
       kwc_stable <- if (!is.na(meta$kwc_current)) meta$kwc_current else NULL
 
       p <- plotly::plot_ly(kwc_df, x = ~month, y = ~kwc, type = "scatter",
-        mode = "lines+markers",
+        mode = "lines+markers", name = "kWc mesur\u00e9",
         line = list(color = "#1D4345", width = 2),
         marker = list(color = "#1D4345", size = 8),
         hovertemplate = "%{x|%b %Y}: <b>%{y:.0f} kWc</b><extra></extra>")
