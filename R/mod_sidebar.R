@@ -140,19 +140,15 @@ mod_sidebar_ui <- function(id) {
       shiny::conditionalPanel(sprintf("!output['%s']", ns("csv_measured")),
         {
           all_pv <- c("Synth\u00e9tique" = "synthetic",
-                       "R\u00e9el Elia (Namur)" = "real_elia",
-                       "R\u00e9el Delaunoy (2024)" = "real_delaunoy")
+                       "R\u00e9el Elia (Namur)" = "real_elia")
           pv_choices <- all_pv[all_pv %in% ui_cfg$pv_sources]
           pv_selected <- if (ui_cfg$pv_sources[1] %in% pv_choices) ui_cfg$pv_sources[1] else pv_choices[1]
-          shiny::radioButtons(ns("pv_data_source"), "Source PV",
+          shiny::radioButtons(ns("pv_data_source"), "Source PV (D\u00e9mo)",
             choices = pv_choices, selected = pv_selected, inline = FALSE)
         },
         shiny::conditionalPanel(sprintf("input['%s']=='real_elia'", ns("pv_data_source")),
           shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
             shiny::HTML("Production PV r\u00e9elle du parc namurois (Elia ODS032), mise \u00e0 l'\u00e9chelle selon votre kWc."))),
-        shiny::conditionalPanel(sprintf("input['%s']=='real_delaunoy'", ns("pv_data_source")),
-          shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;margin-bottom:6px;", cl$text_muted),
-            shiny::HTML("Donn\u00e9es mesur\u00e9es d'une installation r\u00e9elle en Wallonie (16 kWc, 2024), mises \u00e0 l'\u00e9chelle selon votre kWc."))),
         shiny::checkboxInput(ns("pv_auto"), "PV auto (couvre la PAC)", value = TRUE),
         shiny::conditionalPanel(sprintf("input['%s']", ns("pv_auto")),
           shiny::uiOutput(ns("pv_auto_display"))),
@@ -385,11 +381,7 @@ mod_sidebar_server <- function(id, sim_state) {
     rda_end <- as.Date("2026-04-20")
 
     shiny::observeEvent(input$pv_data_source, {
-      if (input$pv_data_source == "real_delaunoy") {
-        shiny::updateDateRangeInput(session, "date_range",
-          min = as.Date("2024-01-01"), max = as.Date("2024-12-31"),
-          start = as.Date("2024-06-01"), end = as.Date("2024-09-30"))
-      } else if (input$pv_data_source == "real_elia") {
+      if (input$pv_data_source == "real_elia") {
         shiny::updateDateRangeInput(session, "date_range",
           min = as.Date("2020-04-01"), max = Sys.Date(),
           start = rda_start, end = rda_end)
@@ -708,11 +700,6 @@ mod_sidebar_server <- function(id, sim_state) {
 
         gen <- DataGenerator$new()
         pv_src <- input$pv_data_source
-        delaunoy_path <- "../delaunoy/data/inverters_data_delaunoy.xlsx"
-        if (!is.null(pv_src) && pv_src == "real_delaunoy" && !file.exists(delaunoy_path)) {
-          shiny::showNotification("Fichier Delaunoy introuvable \u2014 donn\u00e9es synth\u00e9tiques utilis\u00e9es", type = "warning", duration = 8)
-          pv_src <- "synthetic"
-        }
         df <- gen$generate_demo(
           date_start = input$date_range[1], date_end = input$date_range[2],
           p_pac_kw = p_pac_kw_eff(), volume_ballon_l = volume_ballon_eff(),
@@ -720,7 +707,6 @@ mod_sidebar_server <- function(id, sim_state) {
           ecs_kwh_jour = input$ecs_kwh_jour,
           building_type = if (!is.null(input$building_type)) input$building_type else "standard",
           pv_data_source = if (!is.null(pv_src)) pv_src else "synthetic",
-          delaunoy_file_path = if (!is.null(pv_src) && pv_src == "real_delaunoy") delaunoy_path else NULL,
           solar_region = "Namur")
       }
 

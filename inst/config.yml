@@ -7,12 +7,11 @@ default:
       - optimiseur_lp
       - optimiseur_qp
 
-    # PV data sources available
-    # Options: synthetic, real_elia, real_delaunoy
+    # PV data sources available in Demo mode
+    # Options: synthetic, real_elia
     pv_sources:
       - synthetic
       - real_elia
-      - real_delaunoy
 
     # Show battery section in sidebar
     show_battery: true
@@ -40,7 +39,6 @@ profondeville:
 
     pv_sources:
       - real_elia
-      - synthetic
 
     show_battery: false
 

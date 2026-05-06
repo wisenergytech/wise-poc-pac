@@ -287,12 +287,8 @@ $$PV_{\text{local}}(t) = kWc_{\text{cible}} \times loadfactor(t) / 100$$
   pertes par cablage a grande echelle, et les effets de temperature sur le
   rendement des panneaux ne sont pas modelises. Pour un POC, cette
   approximation est conservative et suffisante.
-- **Meme principe que le scaling Delaunoy**. L'alternative "Reel Delaunoy"
-  utilise exactement le meme raisonnement : `pv_kwh = mesure * (cible_kwc
-  / ref_kwc)`. La difference est que Delaunoy est une seule installation
-  (16 kWc) tandis qu'Elia est un parc regional (~449 000 kWc). Le profil
-  Elia est donc plus lisse (effet de foisonnement) mais disponible pour
-  n'importe quelle periode depuis 2020.
+- Le profil Elia est lisse (effet de foisonnement du parc regional
+  ~449 000 kWc) et disponible pour n'importe quelle periode depuis 2020.
 
 ---
 
