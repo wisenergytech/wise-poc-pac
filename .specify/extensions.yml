@@ -1,0 +1,12 @@
+hooks:
+  after_specify:
+    - extension: "wise-constitution"
+      command: "artifacts-check"
+      description: "Generate constitution-required artifacts (business-logic.md)"
+      optional: false
+
+  after_plan:
+    - extension: "wise-constitution"
+      command: "artifacts-check"
+      description: "Generate constitution-required artifacts (flows.md, ADR, transversal docs)"
+      optional: false

@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.6.42">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>Diagnostic solaire : arbre de decision</title>
+<style>
+code{white-space: pre-wrap;}
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: min(4vw, 1.5em);}
+div.column{flex: auto; overflow-x: auto;}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+</style>
+
+
+<script src="diagnostic-solaire_files/libs/clipboard/clipboard.min.js"></script>
+<script src="diagnostic-solaire_files/libs/quarto-html/quarto.js"></script>
+<script src="diagnostic-solaire_files/libs/quarto-html/popper.min.js"></script>
+<script src="diagnostic-solaire_files/libs/quarto-html/tippy.umd.min.js"></script>
+<script src="diagnostic-solaire_files/libs/quarto-html/anchor.min.js"></script>
+<link href="diagnostic-solaire_files/libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="diagnostic-solaire_files/libs/quarto-html/quarto-syntax-highlighting-2f5df379a58b258e96c21c0638c20c03.css" rel="stylesheet" id="quarto-text-highlighting-styles">
+<script src="diagnostic-solaire_files/libs/bootstrap/bootstrap.min.js"></script>
+<link href="diagnostic-solaire_files/libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="diagnostic-solaire_files/libs/bootstrap/bootstrap-2ed61aebdeeed762475702b9ba66c4d3.min.css" rel="stylesheet" append-hash="true" id="quarto-bootstrap" data-mode="light">
+<script src="diagnostic-solaire_files/libs/quarto-diagram/mermaid.min.js"></script>
+<script src="diagnostic-solaire_files/libs/quarto-diagram/mermaid-init.js"></script>
+<link href="diagnostic-solaire_files/libs/quarto-diagram/mermaid.css" rel="stylesheet">
+
+
+</head>
+
+<body class="fullcontent">
+
+<div id="quarto-content" class="page-columns page-rows-contents page-layout-article">
+
+<main class="content" id="quarto-document-content">
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title">Diagnostic solaire : arbre de decision</h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="objectif" class="level2">
+<h2 class="anchored" data-anchor-id="objectif">Objectif</h2>
+<p>Quand on charge les donnees d’une installation, l’app doit determiner <strong>comment obtenir une serie temporelle PV fiable</strong>. Plusieurs sources existent, plusieurs tests permettent de valider leur coherence, et les resultats de ces tests orientent vers la bonne strategie.</p>
+<p>Ce document presente l’arbre de decision complet sous forme de diagramme Mermaid, suivi des explications detaillees de chaque test et de chaque deduction.</p>
+<hr>
+</section>
+<section id="arbre-de-decision" class="level2">
+<h2 class="anchored" data-anchor-id="arbre-de-decision">Arbre de decision</h2>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart TD
+    START[Donnees chargees&lt;br&gt;Installation + ORES] --&gt; BILAN
+
+    %% --- Test 1 : Bilan nocturne ---
+    BILAN[Test nocturne&lt;br&gt;elec - offtake + feedin = 0 la nuit ?]
+    BILAN --&gt;|ecart median &lt; 0.05 kWh| PERIM_OK[Perimetre confirme&lt;br&gt;Meme compteur]
+    BILAN --&gt;|ecart median &gt; 0.05 kWh| PERIM_KO[Perimetres differents&lt;br&gt;Bilan non fiable]
+
+    %% --- Branche perimetre KO ---
+    PERIM_KO --&gt; ELIA_ONLY[Utiliser PV Elia scale&lt;br&gt;kWc renseigne par le user]
+
+    %% --- Branche perimetre OK ---
+    PERIM_OK --&gt; PV_REEL[Reconstituer PV par bilan&lt;br&gt;pv = elec - offtake + feedin]
+
+    PV_REEL --&gt; STAB[Test stabilite PV&lt;br&gt;CV mensuel du ratio&lt;br&gt;PV reel / Elia 1kWc]
+
+    STAB --&gt;|CV &lt; 30%| PV_STABLE[PV stable&lt;br&gt;Installation constante]
+    STAB --&gt;|CV &gt; 30%| PV_INSTABLE[PV instable&lt;br&gt;Mise en service progressive]
+
+    %% --- PV stable ---
+    PV_STABLE --&gt; KWC_STABLE[kWc = mediane glissante&lt;br&gt;valeur constante]
+    KWC_STABLE --&gt; USE_REEL[Utiliser PV reconstitue&lt;br&gt;directement dans la simulation]
+    KWC_STABLE --&gt; WHATIF[Option what-if :&lt;br&gt;Elia scale a kWc fixe]
+
+    %% --- PV instable ---
+    PV_INSTABLE --&gt; KWC_ADAPT[kWc adaptatif&lt;br&gt;mediane glissante 30j&lt;br&gt;sur jours clairs]
+    KWC_ADAPT --&gt; CHOIX_INSTABLE{Choix utilisateur}
+    CHOIX_INSTABLE --&gt;|PV reconstitue| USE_REEL_RESTRICT[Utiliser PV reconstitue&lt;br&gt;restreindre la periode&lt;br&gt;aux mois stables]
+    CHOIX_INSTABLE --&gt;|Elia adaptatif| ELIA_ADAPT[PV = Elia 1kWc * kWc mois&lt;br&gt;Scaling mensuel variable]
+    CHOIX_INSTABLE --&gt;|Elia fixe| ELIA_FIXE[PV = Elia 1kWc * kWc actuel&lt;br&gt;Derniere valeur stabilisee]
+
+    %% --- Test autocons ---
+    PV_REEL --&gt; AUTOCONS[Test autoconsommation&lt;br&gt;taux = 1 - feedin/pv_reel]
+    AUTOCONS --&gt;|taux &lt; 5%| AUTOCONS_ZERO[PV quasi integralement injecte&lt;br&gt;Circuits PV et PAC separes]
+    AUTOCONS --&gt;|taux &gt; 20%| AUTOCONS_OK[PV alimente l installation&lt;br&gt;Autoconsommation reelle]
+    AUTOCONS --&gt;|taux negatif| AUTOCONS_NEG[Artefact : spikes ORES&lt;br&gt;gonflent le feedin]
+
+    %% --- Styling ---
+    classDef test fill:#f0f4ff,stroke:#1D4345,stroke-width:2px
+    classDef result fill:#e8f5e9,stroke:#2e7d32
+    classDef warning fill:#fff3e0,stroke:#e65100
+    classDef action fill:#fce4ec,stroke:#c62828
+
+    class BILAN,STAB,AUTOCONS test
+    class PERIM_OK,PV_STABLE,KWC_STABLE,AUTOCONS_OK result
+    class PERIM_KO,PV_INSTABLE,AUTOCONS_ZERO,AUTOCONS_NEG warning
+    class USE_REEL,USE_REEL_RESTRICT,ELIA_ADAPT,ELIA_FIXE,ELIA_ONLY,WHATIF action
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<hr>
+</section>
+<section id="les-tests-un-par-un" class="level2">
+<h2 class="anchored" data-anchor-id="les-tests-un-par-un">Les tests, un par un</h2>
+<section id="test-1-coherence-de-perimetre-nocturne" class="level3">
+<h3 class="anchored" data-anchor-id="test-1-coherence-de-perimetre-nocturne">Test 1 : Coherence de perimetre (nocturne)</h3>
+<p><strong>Quoi</strong> : la nuit (22h-5h), il n’y a pas de PV. Le bilan energetique doit se verifier exactement :</p>
+<pre><code>elec_consumption = offtake - feedin   (la nuit)</code></pre>
+<p><strong>Comment</strong> : on calcule <code>ecart = elec - offtake + feedin</code> sur tous les pas nocturnes. La mediane de cet ecart doit etre proche de zero.</p>
+<p><strong>Deductions</strong> :</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 30%">
+<col style="width: 45%">
+<col style="width: 24%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Mediane &lt; 0.05 kWh</td>
+<td>Les deux sources mesurent le meme perimetre</td>
+<td>Le bilan PV est fiable</td>
+</tr>
+<tr class="even">
+<td>Mediane &gt; 0.05 kWh</td>
+<td>Perimetres differents ou desynchronisation</td>
+<td>Ne pas utiliser le PV par bilan, passer a Elia</td>
+</tr>
+<tr class="odd">
+<td>Quelques ecarts &gt; 1 kWh</td>
+<td>Spikes ORES ponctuels (pas un probleme de perimetre)</td>
+<td>Activer le filtre outliers</td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="test-2-stabilite-pv-ratio-mensuel" class="level3">
+<h3 class="anchored" data-anchor-id="test-2-stabilite-pv-ratio-mensuel">Test 2 : Stabilite PV (ratio mensuel)</h3>
+<p><strong>Quoi</strong> : si le perimetre est OK, on reconstitue le PV par bilan et on compare chaque mois au profil Elia (1 kWc). Le ratio donne le kWc equivalent.</p>
+<p><strong>Comment</strong> : coefficient de variation (CV) des ratios mensuels.</p>
+<p><strong>Deductions</strong> :</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 30%">
+<col style="width: 45%">
+<col style="width: 24%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CV &lt; 30%</td>
+<td>Installation PV a capacite constante</td>
+<td>kWc fixe, PV reconstitue fiable sur toute la periode</td>
+</tr>
+<tr class="even">
+<td>CV &gt; 30%</td>
+<td>Capacite PV a change dans le temps</td>
+<td>Utiliser kWc adaptatif (mediane glissante)</td>
+</tr>
+<tr class="odd">
+<td>kWc croissant mois apres mois</td>
+<td>Mise en service progressive</td>
+<td>Restreindre ou scaler par mois</td>
+</tr>
+<tr class="even">
+<td>kWc decroissant</td>
+<td>Degradation, ombrage saisonnier, ou panne partielle</td>
+<td>Investiguer</td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="test-3-autoconsommation-pv" class="level3">
+<h3 class="anchored" data-anchor-id="test-3-autoconsommation-pv">Test 3 : Autoconsommation PV</h3>
+<p><strong>Quoi</strong> : quelle part du PV produit est consommee sur place (vs injectee) ?</p>
+<p><strong>Comment</strong> : <code>taux = (PV_reel - feedin) / PV_reel</code></p>
+<p><strong>Deductions</strong> :</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 17%">
+<col style="width: 26%">
+<col style="width: 55%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Consequence pour la simulation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>~0%</td>
+<td>PV et PAC sur circuits separes, ou PAC s’arrete quand PV produit</td>
+<td>L’optimiseur a peu de marge pour augmenter l’autoconsommation</td>
+</tr>
+<tr class="even">
+<td>20-60%</td>
+<td>PV alimente partiellement l’installation</td>
+<td>L’optimiseur peut decaler la PAC vers les heures PV</td>
+</tr>
+<tr class="odd">
+<td>&gt; 80%</td>
+<td>Installation deja bien optimisee (surplus PV rare)</td>
+<td>Gains marginaux attendus</td>
+</tr>
+<tr class="even">
+<td>Negatif</td>
+<td>Artefact de spikes ORES (feedin surestime)</td>
+<td>Activer le filtre outliers</td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+<section id="test-4-puissance-pac-via-cop" class="level3">
+<h3 class="anchored" data-anchor-id="test-4-puissance-pac-via-cop">Test 4 : Puissance PAC (via COP)</h3>
+<p><strong>Quoi</strong> : en separant les periodes COP=0 (PAC off) et COP&gt;0 (PAC on), on estime la puissance de la PAC et le talon de l’installation.</p>
+<p><strong>Comment</strong> : <code>P95 = quantile(elec - talon quand COP&gt;0, 0.95) * 4</code></p>
+<p><strong>Deductions</strong> :</p>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 30%">
+<col style="width: 45%">
+<col style="width: 24%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>P95 coherent avec la plaque (±20%)</td>
+<td>Donnees fiables, bonne separation PAC/talon</td>
+<td>OK</td>
+</tr>
+<tr class="even">
+<td>P95 &gt;&gt; puissance nominale</td>
+<td>Elec_consumption inclut d’autres grosses charges</td>
+<td>Investiguer, le talon est sous-estime</td>
+</tr>
+<tr class="odd">
+<td>P95 &lt;&lt; puissance nominale</td>
+<td>La PAC tourne rarement a pleine puissance</td>
+<td>Normal en mi-saison</td>
+</tr>
+<tr class="even">
+<td>Talon &gt; 5 kW</td>
+<td>Installation avec charges permanentes elevees (eclairage, chaufferie)</td>
+<td>Normal pour du collectif</td>
+</tr>
+</tbody>
+</table>
+<hr>
+</section>
+</section>
+<section id="le-kwc-adaptatif-de-lestimation-a-la-serie-pv" class="level2">
+<h2 class="anchored" data-anchor-id="le-kwc-adaptatif-de-lestimation-a-la-serie-pv">Le kWc adaptatif : de l’estimation a la serie PV</h2>
+<p>Une fois le kWc estime (par la mediane glissante), on l’utilise pour produire la <strong>serie temporelle PV du site</strong> :</p>
+<pre><code>PV_site(t) = PV_elia_1kwc(t) * kWc(t)</code></pre>
+<p>Ou <code>kWc(t)</code> est la valeur de la mediane glissante au jour de <code>t</code>.</p>
+<p>Cela donne une serie : - <strong>Lisse</strong> (pas de spikes ORES) - <strong>Adaptee a la taille reelle</strong> de l’installation a chaque instant - <strong>Meteorologiquement correcte</strong> (Elia reflete les conditions reelles) - <strong>Utilisable pour la simulation</strong> sur toute la periode</p>
+<div class="cell" data-layout-align="default">
+<div class="cell-output-display">
+<div>
+<p></p><figure class="figure"><p></p>
+<div>
+<pre class="mermaid mermaid-js">flowchart LR
+    A[PV reel&lt;br&gt;bilan energetique] --&gt; B[Ratio journalier&lt;br&gt;PV_reel / Elia_1kwc]
+    C[PV Elia 1 kWc&lt;br&gt;profil regional] --&gt; B
+    B --&gt; D[Filtre jours clairs&lt;br&gt;Elia &gt;= mediane mensuelle]
+    D --&gt; E[Mediane glissante 30j&lt;br&gt;= kWc au jour le jour]
+    E --&gt; F[PV site = Elia_1kwc * kWc]
+    C --&gt; F
+    F --&gt; G[Serie PV finale&lt;br&gt;pour la simulation]
+</pre>
+</div>
+<p></p></figure><p></p>
+</div>
+</div>
+</div>
+<hr>
+</section>
+<section id="resume-des-sources-et-leur-fiabilite" class="level2">
+<h2 class="anchored" data-anchor-id="resume-des-sources-et-leur-fiabilite">Resume des sources et leur fiabilite</h2>
+<table class="caption-top table">
+<colgroup>
+<col style="width: 14%">
+<col style="width: 35%">
+<col style="width: 27%">
+<col style="width: 23%">
+</colgroup>
+<thead>
+<tr class="header">
+<th>Source PV</th>
+<th>Fiabilite par pas de 15 min</th>
+<th>Fiabilite mensuelle</th>
+<th>Quand l’utiliser</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PV reconstitue (bilan)</td>
+<td>Moyenne (sensible aux spikes ORES)</td>
+<td>Bonne (erreurs se compensent)</td>
+<td>Perimetre OK, installation stable</td>
+</tr>
+<tr class="even">
+<td>PV Elia adaptatif</td>
+<td>Bonne (profil lisse, kWc variable)</td>
+<td>Excellente</td>
+<td>Installation a capacite variable</td>
+</tr>
+<tr class="odd">
+<td>PV Elia fixe</td>
+<td>Bonne (profil lisse)</td>
+<td>Bonne si kWc correct</td>
+<td>What-if ou installation stable connue</td>
+</tr>
+<tr class="even">
+<td>PV FusionSolar</td>
+<td>Excellente (mesure directe)</td>
+<td>Excellente</td>
+<td>Si export onduleur disponible</td>
+</tr>
+</tbody>
+</table>
+</section>
+
+</main>
+<!-- /main column -->
+<script id="quarto-html-after-body" type="application/javascript">
+window.document.addEventListener("DOMContentLoaded", function (event) {
+  const toggleBodyColorMode = (bsSheetEl) => {
+    const mode = bsSheetEl.getAttribute("data-mode");
+    const bodyEl = window.document.querySelector("body");
+    if (mode === "dark") {
+      bodyEl.classList.add("quarto-dark");
+      bodyEl.classList.remove("quarto-light");
+    } else {
+      bodyEl.classList.add("quarto-light");
+      bodyEl.classList.remove("quarto-dark");
+    }
+  }
+  const toggleBodyColorPrimary = () => {
+    const bsSheetEl = window.document.querySelector("link#quarto-bootstrap");
+    if (bsSheetEl) {
+      toggleBodyColorMode(bsSheetEl);
+    }
+  }
+  toggleBodyColorPrimary();  
+  const icon = "";
+  const anchorJS = new window.AnchorJS();
+  anchorJS.options = {
+    placement: 'right',
+    icon: icon
+  };
+  anchorJS.add('.anchored');
+  const isCodeAnnotation = (el) => {
+    for (const clz of el.classList) {
+      if (clz.startsWith('code-annotation-')) {                     
+        return true;
+      }
+    }
+    return false;
+  }
+  const onCopySuccess = function(e) {
+    // button target
+    const button = e.trigger;
+    // don't keep focus
+    button.blur();
+    // flash "checked"
+    button.classList.add('code-copy-button-checked');
+    var currentTitle = button.getAttribute("title");
+    button.setAttribute("title", "Copied!");
+    let tooltip;
+    if (window.bootstrap) {
+      button.setAttribute("data-bs-toggle", "tooltip");
+      button.setAttribute("data-bs-placement", "left");
+      button.setAttribute("data-bs-title", "Copied!");
+      tooltip = new bootstrap.Tooltip(button, 
+        { trigger: "manual", 
+          customClass: "code-copy-button-tooltip",
+          offset: [0, -8]});
+      tooltip.show();    
+    }
+    setTimeout(function() {
+      if (tooltip) {
+        tooltip.hide();
+        button.removeAttribute("data-bs-title");
+        button.removeAttribute("data-bs-toggle");
+        button.removeAttribute("data-bs-placement");
+      }
+      button.setAttribute("title", currentTitle);
+      button.classList.remove('code-copy-button-checked');
+    }, 1000);
+    // clear code selection
+    e.clearSelection();
+  }
+  const getTextToCopy = function(trigger) {
+      const codeEl = trigger.previousElementSibling.cloneNode(true);
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+  }
+  const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+    text: getTextToCopy
+  });
+  clipboard.on('success', onCopySuccess);
+  if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+    const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+      text: getTextToCopy,
+      container: window.document.getElementById('quarto-embedded-source-code-modal')
+    });
+    clipboardModal.on('success', onCopySuccess);
+  }
+    var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+    var mailtoRegex = new RegExp(/^mailto:/);
+      var filterRegex = new RegExp('/' + window.location.host + '/');
+    var isInternal = (href) => {
+        return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+    }
+    // Inspect non-navigation links and adorn them if external
+ 	var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+    for (var i=0; i<links.length; i++) {
+      const link = links[i];
+      if (!isInternal(link.href)) {
+        // undo the damage that might have been done by quarto-nav.js in the case of
+        // links that we want to consider external
+        if (link.dataset.originalHref !== undefined) {
+          link.href = link.dataset.originalHref;
+        }
+      }
+    }
+  function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+    const config = {
+      allowHTML: true,
+      maxWidth: 500,
+      delay: 100,
+      arrow: false,
+      appendTo: function(el) {
+          return el.parentElement;
+      },
+      interactive: true,
+      interactiveBorder: 10,
+      theme: 'quarto',
+      placement: 'bottom-start',
+    };
+    if (contentFn) {
+      config.content = contentFn;
+    }
+    if (onTriggerFn) {
+      config.onTrigger = onTriggerFn;
+    }
+    if (onUntriggerFn) {
+      config.onUntrigger = onUntriggerFn;
+    }
+    window.tippy(el, config); 
+  }
+  const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+  for (var i=0; i<noterefs.length; i++) {
+    const ref = noterefs[i];
+    tippyHover(ref, function() {
+      // use id or data attribute instead here
+      let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+      try { href = new URL(href).hash; } catch {}
+      const id = href.replace(/^#\/?/, "");
+      const note = window.document.getElementById(id);
+      if (note) {
+        return note.innerHTML;
+      } else {
+        return "";
+      }
+    });
+  }
+  const xrefs = window.document.querySelectorAll('a.quarto-xref');
+  const processXRef = (id, note) => {
+    // Strip column container classes
+    const stripColumnClz = (el) => {
+      el.classList.remove("page-full", "page-columns");
+      if (el.children) {
+        for (const child of el.children) {
+          stripColumnClz(child);
+        }
+      }
+    }
+    stripColumnClz(note)
+    if (id === null || id.startsWith('sec-')) {
+      // Special case sections, only their first couple elements
+      const container = document.createElement("div");
+      if (note.children && note.children.length > 2) {
+        container.appendChild(note.children[0].cloneNode(true));
+        for (let i = 1; i < note.children.length; i++) {
+          const child = note.children[i];
+          if (child.tagName === "P" && child.innerText === "") {
+            continue;
+          } else {
+            container.appendChild(child.cloneNode(true));
+            break;
+          }
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(container);
+        }
+        return container.innerHTML
+      } else {
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        return note.innerHTML;
+      }
+    } else {
+      // Remove any anchor links if they are present
+      const anchorLink = note.querySelector('a.anchorjs-link');
+      if (anchorLink) {
+        anchorLink.remove();
+      }
+      if (window.Quarto?.typesetMath) {
+        window.Quarto.typesetMath(note);
+      }
+      if (note.classList.contains("callout")) {
+        return note.outerHTML;
+      } else {
+        return note.innerHTML;
+      }
+    }
+  }
+  for (var i=0; i<xrefs.length; i++) {
+    const xref = xrefs[i];
+    tippyHover(xref, undefined, function(instance) {
+      instance.disable();
+      let url = xref.getAttribute('href');
+      let hash = undefined; 
+      if (url.startsWith('#')) {
+        hash = url;
+      } else {
+        try { hash = new URL(url).hash; } catch {}
+      }
+      if (hash) {
+        const id = hash.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note !== null) {
+          try {
+            const html = processXRef(id, note.cloneNode(true));
+            instance.setContent(html);
+          } finally {
+            instance.enable();
+            instance.show();
+          }
+        } else {
+          // See if we can fetch this
+          fetch(url.split('#')[0])
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.getElementById(id);
+            if (note !== null) {
+              const html = processXRef(id, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      } else {
+        // See if we can fetch a full url (with no hash to target)
+        // This is a special case and we should probably do some content thinning / targeting
+        fetch(url)
+        .then(res => res.text())
+        .then(html => {
+          const parser = new DOMParser();
+          const htmlDoc = parser.parseFromString(html, "text/html");
+          const note = htmlDoc.querySelector('main.content');
+          if (note !== null) {
+            // This should only happen for chapter cross references
+            // (since there is no id in the URL)
+            // remove the first header
+            if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+              note.children[0].remove();
+            }
+            const html = processXRef(null, note);
+            instance.setContent(html);
+          } 
+        }).finally(() => {
+          instance.enable();
+          instance.show();
+        });
+      }
+    }, function(instance) {
+    });
+  }
+      let selectedAnnoteEl;
+      const selectorForAnnotation = ( cell, annotation) => {
+        let cellAttr = 'data-code-cell="' + cell + '"';
+        let lineAttr = 'data-code-annotation="' +  annotation + '"';
+        const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+        return selector;
+      }
+      const selectCodeLines = (annoteEl) => {
+        const doc = window.document;
+        const targetCell = annoteEl.getAttribute("data-target-cell");
+        const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+        const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+        const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+        const lineIds = lines.map((line) => {
+          return targetCell + "-" + line;
+        })
+        let top = null;
+        let height = null;
+        let parent = null;
+        if (lineIds.length > 0) {
+            //compute the position of the single el (top and bottom and make a div)
+            const el = window.document.getElementById(lineIds[0]);
+            top = el.offsetTop;
+            height = el.offsetHeight;
+            parent = el.parentElement.parentElement;
+          if (lineIds.length > 1) {
+            const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+            const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+            height = bottom - top;
+          }
+          if (top !== null && height !== null && parent !== null) {
+            // cook up a div (if necessary) and position it 
+            let div = window.document.getElementById("code-annotation-line-highlight");
+            if (div === null) {
+              div = window.document.createElement("div");
+              div.setAttribute("id", "code-annotation-line-highlight");
+              div.style.position = 'absolute';
+              parent.appendChild(div);
+            }
+            div.style.top = top - 2 + "px";
+            div.style.height = height + 4 + "px";
+            div.style.left = 0;
+            let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+            if (gutterDiv === null) {
+              gutterDiv = window.document.createElement("div");
+              gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+              gutterDiv.style.position = 'absolute';
+              const codeCell = window.document.getElementById(targetCell);
+              const gutter = codeCell.querySelector('.code-annotation-gutter');
+              gutter.appendChild(gutterDiv);
+            }
+            gutterDiv.style.top = top - 2 + "px";
+            gutterDiv.style.height = height + 4 + "px";
+          }
+          selectedAnnoteEl = annoteEl;
+        }
+      };
+      const unselectCodeLines = () => {
+        const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+        elementsIds.forEach((elId) => {
+          const div = window.document.getElementById(elId);
+          if (div) {
+            div.remove();
+          }
+        });
+        selectedAnnoteEl = undefined;
+      };
+        // Handle positioning of the toggle
+    window.addEventListener(
+      "resize",
+      throttle(() => {
+        elRect = undefined;
+        if (selectedAnnoteEl) {
+          selectCodeLines(selectedAnnoteEl);
+        }
+      }, 10)
+    );
+    function throttle(fn, ms) {
+    let throttle = false;
+    let timer;
+      return (...args) => {
+        if(!throttle) { // first call gets through
+            fn.apply(this, args);
+            throttle = true;
+        } else { // all the others get throttled
+            if(timer) clearTimeout(timer); // cancel #2
+            timer = setTimeout(() => {
+              fn.apply(this, args);
+              timer = throttle = false;
+            }, ms);
+        }
+      };
+    }
+      // Attach click handler to the DT
+      const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+      for (const annoteDlNode of annoteDls) {
+        annoteDlNode.addEventListener('click', (event) => {
+          const clickedEl = event.target;
+          if (clickedEl !== selectedAnnoteEl) {
+            unselectCodeLines();
+            const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+            if (activeEl) {
+              activeEl.classList.remove('code-annotation-active');
+            }
+            selectCodeLines(clickedEl);
+            clickedEl.classList.add('code-annotation-active');
+          } else {
+            // Unselect the line
+            unselectCodeLines();
+            clickedEl.classList.remove('code-annotation-active');
+          }
+        });
+      }
+  const findCites = (el) => {
+    const parentEl = el.parentElement;
+    if (parentEl) {
+      const cites = parentEl.dataset.cites;
+      if (cites) {
+        return {
+          el,
+          cites: cites.split(' ')
+        };
+      } else {
+        return findCites(el.parentElement)
+      }
+    } else {
+      return undefined;
+    }
+  };
+  var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+  for (var i=0; i<bibliorefs.length; i++) {
+    const ref = bibliorefs[i];
+    const citeInfo = findCites(ref);
+    if (citeInfo) {
+      tippyHover(citeInfo.el, function() {
+        var popup = window.document.createElement('div');
+        citeInfo.cites.forEach(function(cite) {
+          var citeDiv = window.document.createElement('div');
+          citeDiv.classList.add('hanging-indent');
+          citeDiv.classList.add('csl-entry');
+          var biblioDiv = window.document.getElementById('ref-' + cite);
+          if (biblioDiv) {
+            citeDiv.innerHTML = biblioDiv.innerHTML;
+          }
+          popup.appendChild(citeDiv);
+        });
+        return popup.innerHTML;
+      });
+    }
+  }
+});
+</script>
+</div> <!-- /content -->
+
+
+
+
+</body></html>

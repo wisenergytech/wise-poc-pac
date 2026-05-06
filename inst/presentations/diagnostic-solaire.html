@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Diagnostic solaire : arbre de decision</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+<script>// Hide empty <a> tag within highlighted CodeBlock for screen reader accessibility (see https://github.com/jgm/pandoc/issues/6352#issuecomment-626106786) -->
+// v0.0.1
+// Written by JooYoung Seo (jooyoung@psu.edu) and Atsushi Yasumoto on June 1st, 2020.
+
+document.addEventListener('DOMContentLoaded', function() {
+  const codeList = document.getElementsByClassName("sourceCode");
+  for (var i = 0; i < codeList.length; i++) {
+    var linkList = codeList[i].getElementsByTagName('a');
+    for (var j = 0; j < linkList.length; j++) {
+      if (linkList[j].innerHTML === "") {
+        linkList[j].setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+
+
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Diagnostic solaire : arbre de decision</h1>
+
+
+
+<div id="objectif" class="section level2">
+<h2>Objectif</h2>
+<p>Quand on charge les donnees d’une installation, l’app doit determiner <strong>comment obtenir une serie temporelle PV fiable</strong>. Plusieurs sources existent, plusieurs tests permettent de valider leur coherence, et les resultats de ces tests orientent vers la bonne strategie.</p>
+<p>Ce document presente l’arbre de decision complet sous forme de diagramme Mermaid, suivi des explications detaillees de chaque test et de chaque deduction.</p>
+<hr />
+</div>
+<div id="arbre-de-decision" class="section level2">
+<h2>Arbre de decision</h2>
+<pre class="mermaid"><code>flowchart TD
+    START[Donnees chargees&lt;br&gt;Installation + ORES] --&gt; BILAN
+
+    %% --- Test 1 : Bilan nocturne ---
+    BILAN[Test nocturne&lt;br&gt;elec - offtake + feedin = 0 la nuit ?]
+    BILAN --&gt;|ecart median &lt; 0.05 kWh| PERIM_OK[Perimetre confirme&lt;br&gt;Meme compteur]
+    BILAN --&gt;|ecart median &gt; 0.05 kWh| PERIM_KO[Perimetres differents&lt;br&gt;Bilan non fiable]
+
+    %% --- Branche perimetre KO ---
+    PERIM_KO --&gt; ELIA_ONLY[Utiliser PV Elia scale&lt;br&gt;kWc renseigne par le user]
+
+    %% --- Branche perimetre OK ---
+    PERIM_OK --&gt; PV_REEL[Reconstituer PV par bilan&lt;br&gt;pv = elec - offtake + feedin]
+
+    PV_REEL --&gt; STAB[Test stabilite PV&lt;br&gt;CV mensuel du ratio&lt;br&gt;PV reel / Elia 1kWc]
+
+    STAB --&gt;|CV &lt; 30%| PV_STABLE[PV stable&lt;br&gt;Installation constante]
+    STAB --&gt;|CV &gt; 30%| PV_INSTABLE[PV instable&lt;br&gt;Mise en service progressive]
+
+    %% --- PV stable ---
+    PV_STABLE --&gt; KWC_STABLE[kWc = mediane glissante&lt;br&gt;valeur constante]
+    KWC_STABLE --&gt; USE_REEL[Utiliser PV reconstitue&lt;br&gt;directement dans la simulation]
+    KWC_STABLE --&gt; WHATIF[Option what-if :&lt;br&gt;Elia scale a kWc fixe]
+
+    %% --- PV instable ---
+    PV_INSTABLE --&gt; KWC_ADAPT[kWc adaptatif&lt;br&gt;mediane glissante 30j&lt;br&gt;sur jours clairs]
+    KWC_ADAPT --&gt; CHOIX_INSTABLE{Choix utilisateur}
+    CHOIX_INSTABLE --&gt;|PV reconstitue| USE_REEL_RESTRICT[Utiliser PV reconstitue&lt;br&gt;restreindre la periode&lt;br&gt;aux mois stables]
+    CHOIX_INSTABLE --&gt;|Elia adaptatif| ELIA_ADAPT[PV = Elia 1kWc * kWc mois&lt;br&gt;Scaling mensuel variable]
+    CHOIX_INSTABLE --&gt;|Elia fixe| ELIA_FIXE[PV = Elia 1kWc * kWc actuel&lt;br&gt;Derniere valeur stabilisee]
+
+    %% --- Test autocons ---
+    PV_REEL --&gt; AUTOCONS[Test autoconsommation&lt;br&gt;taux = 1 - feedin/pv_reel]
+    AUTOCONS --&gt;|taux &lt; 5%| AUTOCONS_ZERO[PV quasi integralement injecte&lt;br&gt;Circuits PV et PAC separes]
+    AUTOCONS --&gt;|taux &gt; 20%| AUTOCONS_OK[PV alimente l installation&lt;br&gt;Autoconsommation reelle]
+    AUTOCONS --&gt;|taux negatif| AUTOCONS_NEG[Artefact : spikes ORES&lt;br&gt;gonflent le feedin]
+
+    %% --- Styling ---
+    classDef test fill:#f0f4ff,stroke:#1D4345,stroke-width:2px
+    classDef result fill:#e8f5e9,stroke:#2e7d32
+    classDef warning fill:#fff3e0,stroke:#e65100
+    classDef action fill:#fce4ec,stroke:#c62828
+
+    class BILAN,STAB,AUTOCONS test
+    class PERIM_OK,PV_STABLE,KWC_STABLE,AUTOCONS_OK result
+    class PERIM_KO,PV_INSTABLE,AUTOCONS_ZERO,AUTOCONS_NEG warning
+    class USE_REEL,USE_REEL_RESTRICT,ELIA_ADAPT,ELIA_FIXE,ELIA_ONLY,WHATIF action</code></pre>
+<hr />
+</div>
+<div id="les-tests-un-par-un" class="section level2">
+<h2>Les tests, un par un</h2>
+<div id="test-1-coherence-de-perimetre-nocturne" class="section level3">
+<h3>Test 1 : Coherence de perimetre (nocturne)</h3>
+<p><strong>Quoi</strong> : la nuit (22h-5h), il n’y a pas de PV. Le bilan energetique doit se verifier exactement :</p>
+<pre><code>elec_consumption = offtake - feedin   (la nuit)</code></pre>
+<p><strong>Comment</strong> : on calcule <code>ecart = elec - offtake + feedin</code> sur tous les pas nocturnes. La mediane de cet ecart doit etre proche de zero.</p>
+<p><strong>Deductions</strong> :</p>
+<table>
+<colgroup>
+<col width="30%"></col>
+<col width="45%"></col>
+<col width="24%"></col>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>Mediane &lt; 0.05 kWh</td>
+<td>Les deux sources mesurent le meme perimetre</td>
+<td>Le bilan PV est fiable</td>
+</tr>
+<tr class="even">
+<td>Mediane &gt; 0.05 kWh</td>
+<td>Perimetres differents ou desynchronisation</td>
+<td>Ne pas utiliser le PV par bilan, passer a Elia</td>
+</tr>
+<tr class="odd">
+<td>Quelques ecarts &gt; 1 kWh</td>
+<td>Spikes ORES ponctuels (pas un probleme de perimetre)</td>
+<td>Activer le filtre outliers</td>
+</tr>
+</tbody>
+</table>
+<hr />
+</div>
+<div id="test-2-stabilite-pv-ratio-mensuel" class="section level3">
+<h3>Test 2 : Stabilite PV (ratio mensuel)</h3>
+<p><strong>Quoi</strong> : si le perimetre est OK, on reconstitue le PV par bilan et on compare chaque mois au profil Elia (1 kWc). Le ratio donne le kWc equivalent.</p>
+<p><strong>Comment</strong> : coefficient de variation (CV) des ratios mensuels.</p>
+<p><strong>Deductions</strong> :</p>
+<table>
+<colgroup>
+<col width="30%"></col>
+<col width="45%"></col>
+<col width="24%"></col>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>CV &lt; 30%</td>
+<td>Installation PV a capacite constante</td>
+<td>kWc fixe, PV reconstitue fiable sur toute la periode</td>
+</tr>
+<tr class="even">
+<td>CV &gt; 30%</td>
+<td>Capacite PV a change dans le temps</td>
+<td>Utiliser kWc adaptatif (mediane glissante)</td>
+</tr>
+<tr class="odd">
+<td>kWc croissant mois apres mois</td>
+<td>Mise en service progressive</td>
+<td>Restreindre ou scaler par mois</td>
+</tr>
+<tr class="even">
+<td>kWc decroissant</td>
+<td>Degradation, ombrage saisonnier, ou panne partielle</td>
+<td>Investiguer</td>
+</tr>
+</tbody>
+</table>
+<hr />
+</div>
+<div id="test-3-autoconsommation-pv" class="section level3">
+<h3>Test 3 : Autoconsommation PV</h3>
+<p><strong>Quoi</strong> : quelle part du PV produit est consommee sur place (vs injectee) ?</p>
+<p><strong>Comment</strong> : <code>taux = (PV_reel - feedin) / PV_reel</code></p>
+<p><strong>Deductions</strong> :</p>
+<table>
+<colgroup>
+<col width="17%"></col>
+<col width="26%"></col>
+<col width="55%"></col>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Consequence pour la simulation</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>~0%</td>
+<td>PV et PAC sur circuits separes, ou PAC s’arrete quand PV produit</td>
+<td>L’optimiseur a peu de marge pour augmenter l’autoconsommation</td>
+</tr>
+<tr class="even">
+<td>20-60%</td>
+<td>PV alimente partiellement l’installation</td>
+<td>L’optimiseur peut decaler la PAC vers les heures PV</td>
+</tr>
+<tr class="odd">
+<td>&gt; 80%</td>
+<td>Installation deja bien optimisee (surplus PV rare)</td>
+<td>Gains marginaux attendus</td>
+</tr>
+<tr class="even">
+<td>Negatif</td>
+<td>Artefact de spikes ORES (feedin surestime)</td>
+<td>Activer le filtre outliers</td>
+</tr>
+</tbody>
+</table>
+<hr />
+</div>
+<div id="test-4-puissance-pac-via-cop" class="section level3">
+<h3>Test 4 : Puissance PAC (via COP)</h3>
+<p><strong>Quoi</strong> : en separant les periodes COP=0 (PAC off) et COP&gt;0 (PAC on), on estime la puissance de la PAC et le talon de l’installation.</p>
+<p><strong>Comment</strong> : <code>P95 = quantile(elec - talon quand COP&gt;0, 0.95) * 4</code></p>
+<p><strong>Deductions</strong> :</p>
+<table>
+<colgroup>
+<col width="30%"></col>
+<col width="45%"></col>
+<col width="24%"></col>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Resultat</th>
+<th>Interpretation</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>P95 coherent avec la plaque (±20%)</td>
+<td>Donnees fiables, bonne separation PAC/talon</td>
+<td>OK</td>
+</tr>
+<tr class="even">
+<td>P95 &gt;&gt; puissance nominale</td>
+<td>Elec_consumption inclut d’autres grosses charges</td>
+<td>Investiguer, le talon est sous-estime</td>
+</tr>
+<tr class="odd">
+<td>P95 &lt;&lt; puissance nominale</td>
+<td>La PAC tourne rarement a pleine puissance</td>
+<td>Normal en mi-saison</td>
+</tr>
+<tr class="even">
+<td>Talon &gt; 5 kW</td>
+<td>Installation avec charges permanentes elevees (eclairage, chaufferie)</td>
+<td>Normal pour du collectif</td>
+</tr>
+</tbody>
+</table>
+<hr />
+</div>
+</div>
+<div id="le-kwc-adaptatif-de-lestimation-a-la-serie-pv" class="section level2">
+<h2>Le kWc adaptatif : de l’estimation a la serie PV</h2>
+<p>Une fois le kWc estime (par la mediane glissante), on l’utilise pour produire la <strong>serie temporelle PV du site</strong> :</p>
+<pre><code>PV_site(t) = PV_elia_1kwc(t) * kWc(t)</code></pre>
+<p>Ou <code>kWc(t)</code> est la valeur de la mediane glissante au jour de <code>t</code>.</p>
+<p>Cela donne une serie : - <strong>Lisse</strong> (pas de spikes ORES) - <strong>Adaptee a la taille reelle</strong> de l’installation a chaque instant - <strong>Meteorologiquement correcte</strong> (Elia reflete les conditions reelles) - <strong>Utilisable pour la simulation</strong> sur toute la periode</p>
+<pre class="mermaid"><code>flowchart LR
+    A[PV reel&lt;br&gt;bilan energetique] --&gt; B[Ratio journalier&lt;br&gt;PV_reel / Elia_1kwc]
+    C[PV Elia 1 kWc&lt;br&gt;profil regional] --&gt; B
+    B --&gt; D[Filtre jours clairs&lt;br&gt;Elia &gt;= mediane mensuelle]
+    D --&gt; E[Mediane glissante 30j&lt;br&gt;= kWc au jour le jour]
+    E --&gt; F[PV site = Elia_1kwc * kWc]
+    C --&gt; F
+    F --&gt; G[Serie PV finale&lt;br&gt;pour la simulation]</code></pre>
+<hr />
+</div>
+<div id="resume-des-sources-et-leur-fiabilite" class="section level2">
+<h2>Resume des sources et leur fiabilite</h2>
+<table style="width:100%;">
+<colgroup>
+<col width="14%"></col>
+<col width="35%"></col>
+<col width="27%"></col>
+<col width="23%"></col>
+</colgroup>
+<thead>
+<tr class="header">
+<th>Source PV</th>
+<th>Fiabilite par pas de 15 min</th>
+<th>Fiabilite mensuelle</th>
+<th>Quand l’utiliser</th>
+</tr>
+</thead>
+<tbody>
+<tr class="odd">
+<td>PV reconstitue (bilan)</td>
+<td>Moyenne (sensible aux spikes ORES)</td>
+<td>Bonne (erreurs se compensent)</td>
+<td>Perimetre OK, installation stable</td>
+</tr>
+<tr class="even">
+<td>PV Elia adaptatif</td>
+<td>Bonne (profil lisse, kWc variable)</td>
+<td>Excellente</td>
+<td>Installation a capacite variable</td>
+</tr>
+<tr class="odd">
+<td>PV Elia fixe</td>
+<td>Bonne (profil lisse)</td>
+<td>Bonne si kWc correct</td>
+<td>What-if ou installation stable connue</td>
+</tr>
+<tr class="even">
+<td>PV FusionSolar</td>
+<td>Excellente (mesure directe)</td>
+<td>Excellente</td>
+<td>Si export onduleur disponible</td>
+</tr>
+</tbody>
+</table>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>
