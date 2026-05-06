@@ -22,7 +22,9 @@ mod_donnees_ui <- function(id) {
       shiny::tagList(
         bslib::card(
           bslib::card_header(shiny::tags$strong("PV reconstitu\u00e9")),
-          bslib::card_body(shiny::uiOutput(ns("pv_status")))),
+          bslib::card_body(
+            shiny::uiOutput(ns("pv_status")),
+            plotly::plotlyOutput(ns("plot_kwc_evolution"), height = "220px"))),
         bslib::card(
           bslib::card_header(shiny::tags$strong("Diagnostic \u00e9nerg\u00e9tique")),
           bslib::card_body(shiny::uiOutput(ns("diagnostic"))))
@@ -93,6 +95,43 @@ mod_donnees_server <- function(id, sidebar) {
       }
       shiny::tags$div(style = "font-size:.85rem;line-height:1.8;",
         shiny::HTML(paste(lines, collapse = "<br>")))
+    })
+
+    # ---- kWc evolution plot ----
+    output$plot_kwc_evolution <- plotly::renderPlotly({
+      if (sidebar$data_source() != "csv") return(NULL)
+      meta <- sidebar$import_meta()
+      if (is.null(meta) || is.null(meta$kwc_profile)) return(NULL)
+
+      kwc_df <- data.frame(
+        month = as.Date(paste0(names(meta$kwc_profile), "-01")),
+        kwc = as.numeric(meta$kwc_profile)
+      )
+      if (nrow(kwc_df) < 2) return(NULL)
+
+      kwc_stable <- if (!is.na(meta$kwc_current)) meta$kwc_current else NULL
+
+      p <- plotly::plot_ly(kwc_df, x = ~month, y = ~kwc, type = "scatter",
+        mode = "lines+markers",
+        line = list(color = "#1D4345", width = 2),
+        marker = list(color = "#1D4345", size = 8),
+        hovertemplate = "%{x|%b %Y}: <b>%{y:.0f} kWc</b><extra></extra>")
+
+      if (!is.null(kwc_stable)) {
+        p <- p %>% plotly::add_trace(
+          y = rep(kwc_stable, nrow(kwc_df)),
+          mode = "lines", line = list(color = "#e6a817", width = 2, dash = "dash"),
+          name = sprintf("kWc stabilis\u00e9 (%d)", round(kwc_stable)),
+          hovertemplate = sprintf("kWc stabilis\u00e9: <b>%d</b><extra></extra>", round(kwc_stable)))
+      }
+
+      p %>% plotly::layout(
+        title = list(text = "kWc \u00e9quivalent par mois", font = list(size = 12)),
+        xaxis = list(title = "", tickformat = "%b %Y"),
+        yaxis = list(title = "kWc", rangemode = "tozero"),
+        showlegend = !is.null(kwc_stable),
+        legend = list(orientation = "h", y = -0.2),
+        margin = list(t = 30, b = 40, l = 40, r = 10))
     })
 
     # ---- Diagnostic ----
