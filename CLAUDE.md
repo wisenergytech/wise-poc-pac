@@ -70,6 +70,8 @@ This updates guidelines, templates, CSS theme, CLAUDE.md, and constitution base 
 - R 4.5+ (Shiny) + golem, R6, shiny, bslib, dplyr, readxl (new), plotly, DT, ompr, CVXR, lubridate (004-real-solar-scaling)
 - Local CSV files (data/) + external Excel file (../delaunoy/data/) (004-real-solar-scaling)
 - R 4.5+ (Shiny) + golem, R6, shiny, bslib, dplyr, plotly (no new dependencies) (005-measured-baseline)
+- R 4.5+ (Shiny) + golem, R6, shiny, bslib, dplyr, lubridate, plotly (existants — aucune nouvelle dépendance) (006-dual-csv-import)
+- N/A (fichiers CSV uploadés en mémoire, pas de persistance) (006-dual-csv-import)
 
 ## Recent Changes
 - 001-milp-optimizer: Added R 4.5+ (Shiny) + ompr 1.0.4, ompr.roi 1.0.2, ROI.plugin.glpk 1.0-0 (nouveaux) + stack existante (shiny, bslib, dplyr, plotly, DT)
