@@ -314,28 +314,22 @@ DataGenerator <- R6::R6Class("DataGenerator",
         # Synthetic demo data: conso_base_kwh provided directly
         df <- df %>% dplyr::mutate(conso_hors_pac = conso_base_kwh)
       } else if ("conso_hors_pac" %in% names(df)) {
-        # New dual-CSV pipeline: conso_hors_pac already computed by import pipeline
+        # Standardised CSV: conso_hors_pac already computed by diagnostic pipeline
         message(sprintf("[prepare_df] conso_hors_pac pre-calcule (moy=%.3f kWh/qt)",
           mean(df$conso_hors_pac, na.rm = TRUE)))
-      } else if (has_pac_kwh) {
-        # Legacy: pac_kwh from energy balance (single-CSV mode)
+      } else if (has_pac_kwh && "intake_kwh" %in% names(df)) {
+        # pac_kwh present but no conso_hors_pac: derive from energy balance
         df <- df %>% dplyr::mutate(
           conso_hors_pac = pmax(0, offtake_kwh + pv_kwh_original - intake_kwh - pac_kwh)
         )
         message(sprintf("[prepare_df] pac_kwh detecte: conso_hors_pac deduite (moy=%.3f kWh/qt)",
           mean(df$conso_hors_pac, na.rm = TRUE)))
-      } else if (has_t_ballon) {
-        # Legacy: reverse-engineer from tank temperature changes
-        df <- df %>% dplyr::mutate(
-          pac_on_reel = as.integer(offtake_kwh > pq * 0.5),
-          conso_hors_pac = pmax(0, offtake_kwh - pac_on_reel * pq)
-        )
       } else {
         # Fallback: assume all offtake is non-PAC (PAC will be simulated)
         df <- df %>% dplyr::mutate(
           conso_hors_pac = pmax(0, offtake_kwh + pv_kwh_original - intake_kwh)
         )
-        warning("[prepare_df] Ni conso_base_kwh, ni pac_kwh, ni t_ballon: conso_hors_pac = conso_totale (approximatif)")
+        warning("[prepare_df] Ni conso_base_kwh, ni pac_kwh: conso_hors_pac = conso_totale (approximatif)")
       }
 
       # Apply prices based on contract type
@@ -384,18 +378,6 @@ DataGenerator <- R6::R6Class("DataGenerator",
         )
         message(sprintf("[prepare_df] soutirage back-calcule depuis pac_kwh: %.1f kWh_th/jour",
           sum(df$soutirage_estime_kwh, na.rm = TRUE) / max(1, as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")))))
-      } else if ("delta_t_mesure" %in% names(df)) {
-        # Estimate ECS draws from tank temperature drops (legacy t_ballon path)
-        pm <- df %>%
-          dplyr::filter(offtake_kwh < 0.05, delta_t_mesure < 0) %>%
-          dplyr::summarise(p = stats::median(delta_t_mesure, na.rm = TRUE)) %>%
-          dplyr::pull(p)
-        if (is.na(pm) || pm >= 0) pm <- -0.2
-        params$perte_kwh_par_qt <- abs(pm) * params$capacite_kwh_par_degre
-        df <- df %>% dplyr::mutate(soutirage_estime_kwh = dplyr::case_when(
-          offtake_kwh < 0.05 & delta_t_mesure < pm ~
-            (abs(delta_t_mesure) - abs(pm)) * params$capacite_kwh_par_degre,
-          TRUE ~ 0))
       } else {
         # No ECS data available (pac_kwh CSV or fallback path): use typical daily profile
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h

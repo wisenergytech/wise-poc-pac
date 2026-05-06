@@ -58,7 +58,6 @@ init_app_modules <- function(input, output, session) {
   mod_status_bar_server("status_bar", sidebar)
 
   # ---- Tab modules ----
-  mod_donnees_server("donnees", sidebar)
   mod_energie_server("energie", sidebar)
   mod_finances_server("finances", sidebar)
   mod_pac_server("pac", sidebar)

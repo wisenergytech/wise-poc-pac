@@ -23,25 +23,20 @@ mod_sidebar_ui <- function(id) {
 
     # ---- Data source ----
     shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Source de donn\u00e9es", tip("Mode Demo : donnees synthetiques generees automatiquement. Mode CSV : importez vos mesures (2 fichiers : installation + compteur ORES).")),
+      shiny::tags$div(class = "section-title", "Source de donn\u00e9es", tip("Mode Demo : donnees synthetiques generees automatiquement. Mode CSV : importez un fichier CSV standardise (issu du diagnostic ou prepare manuellement).")),
       shiny::radioButtons(ns("data_source"), NULL, choices = c("Demo" = "demo", "CSV" = "csv"), selected = "demo", inline = TRUE),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::fileInput(ns("file_installation"), "Donn\u00e9es installation (monitoring PAC)", accept = ".csv", buttonLabel = "Parcourir", placeholder = "installation.csv"),
-        shiny::fileInput(ns("file_ores"), "Donn\u00e9es compteur ORES", accept = ".csv", buttonLabel = "Parcourir", placeholder = "ores.csv"),
+        shiny::fileInput(ns("csv_file"), "CSV standardis\u00e9", accept = ".csv", buttonLabel = "Parcourir", placeholder = "standardise.csv"),
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.4;", cl$text_muted),
           shiny::HTML(paste0(
-            "<b>Installation (monitoring PAC) :</b><br>",
-            "<code>time</code> &mdash; horodatage<br>",
-            "<code>Elec_consumption</code> &mdash; conso \u00e9lectrique totale (kWh/pas)<br>",
-            "<code>COP</code> &mdash; coefficient de performance (0 = PAC arr\u00eat\u00e9e)<br>",
-            "<code>T_tankUp</code> &mdash; temp\u00e9rature ballon (\u00b0C, optionnel)<br>",
-            "<code>GSHP_power</code> / <code>ASHP_power</code> &mdash; puissance PAC (kW, optionnel)<br>",
-            "<br><b>Compteur ORES :</b><br>",
-            "<code>time</code> &mdash; horodatage<br>",
-            "<code>Consumption_index_kWh</code> &mdash; index cumulatif soutirage<br>",
-            "<code>Injection_index_kWh</code> &mdash; index cumulatif injection"))),
-        shiny::checkboxInput(ns("outlier_filter"), "Filtrer les outliers ORES (IQR \u00d7 3)", value = FALSE),
-        shiny::uiOutput(ns("import_report")))),
+            "<b>Colonnes obligatoires :</b><br>",
+            "<code>timestamp</code> &mdash; horodatage 15-min<br>",
+            "<code>pv_kwh</code> &mdash; production PV par qt<br>",
+            "<code>pac_kwh</code> &mdash; conso PAC par qt<br>",
+            "<code>offtake_kwh</code> &mdash; soutirage r\u00e9seau par qt<br>",
+            "<code>feedin_kwh</code> &mdash; injection r\u00e9seau par qt<br>",
+            "<code>conso_hors_pac</code> &mdash; conso hors PAC par qt<br>",
+            "<br><b>Optionnels :</b> <code>t_ballon</code>, <code>cop</code>, <code>t_ext</code>"))))),
     shiny::tags$div(style = "display:none;",
       shiny::selectInput(ns("baseline_type"), NULL,
         choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
@@ -165,12 +160,6 @@ mod_sidebar_ui <- function(id) {
           shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5))),
       shiny::tags$div(style = "display:none;",
         shiny::numericInput(ns("pv_kwc_ref"), NULL, 6, min = 1, max = 200, step = 0.5)),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::uiOutput(ns("pv_stability_ui"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::uiOutput(ns("pv_kwc_ref_banner"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::uiOutput(ns("pv_kwc_custom_ui"))),
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::uiOutput(ns("pv_whatif_toggle")))),
 
@@ -624,78 +613,49 @@ mod_sidebar_server <- function(id, sim_state) {
     # via the observe below (ignoreInit = FALSE on input$date_range).
     compute_raw_data <- function() {
       if (input$data_source == "csv") {
-        # Show message if only one file uploaded
-        if (is.null(input$file_installation) && !is.null(input$file_ores)) {
-          shiny::showNotification("Veuillez charger le fichier installation (monitoring PAC)", type = "message", duration = 5)
-        }
-        if (!is.null(input$file_installation) && is.null(input$file_ores)) {
-          shiny::showNotification("Veuillez charger le fichier compteur ORES", type = "message", duration = 5)
-        }
-        shiny::req(input$file_installation, input$file_ores)
+        shiny::req(input$csv_file)
 
-        # Parse both CSV files
-        install_result <- parse_installation_csv(input$file_installation$datapath)
-        ores_result <- parse_ores_csv(input$file_ores$datapath,
-          outlier_filter = isTRUE(input$outlier_filter))
+        # Read standardised CSV
+        df <- tryCatch(
+          utils::read.csv(input$csv_file$datapath, stringsAsFactors = FALSE),
+          error = function(e) {
+            shiny::showNotification(sprintf("Erreur lecture CSV : %s", e$message), type = "error")
+            return(NULL)
+          })
+        shiny::req(df)
 
-        # Join sources
-        join_result <- join_sources(install_result$df, ores_result$df)
-        df <- join_result$df
-
-        # --- Build import report ---
-        report <- c(
-          sprintf("<b>%d quarts d'heure joints</b> (%s &rarr; %s)",
-            join_result$n_points,
-            format(join_result$date_start, "%d/%m/%Y"),
-            format(join_result$date_end, "%d/%m/%Y")),
-          "", install_result$report, "", ores_result$report, "", join_result$report
-        )
-
-        # Detect PAC consumption
-        pac_result <- detect_pac_consumption(df)
-        df$pac_kwh <- pac_result$pac_kwh
-        df$conso_hors_pac <- pmax(0, df$elec_kwh - df$pac_kwh)
-        report <- c(report, "",
-          sprintf("&#128268; <b>D\u00e9tection PAC</b> : %s", pac_result$method))
-        if (!is.na(pac_result$p95_kw)) {
-          report <- c(report, sprintf("&nbsp;&nbsp;P95 = %.1f kW | Talon = %.0f W",
-            pac_result$p95_kw, pac_result$talon_w))
+        # Validate required columns
+        required_cols <- c("timestamp", "pv_kwh", "offtake_kwh", "feedin_kwh")
+        missing <- setdiff(required_cols, names(df))
+        if (length(missing) > 0) {
+          shiny::showNotification(
+            sprintf("Colonnes manquantes : %s", paste(missing, collapse = ", ")),
+            type = "error", duration = 10)
+          return(NULL)
         }
 
-        # Reconstruct PV from energy balance
-        df$pv_kwh <- reconstruct_pv(df)
+        # Parse timestamp
+        df$timestamp <- as.POSIXct(df$timestamp, tz = "Europe/Brussels")
+        df <- df[!is.na(df$timestamp), ]
+        df <- df[order(df$timestamp), ]
 
-        # Fetch Elia 1-kWc profile and compute adaptive kWc
-        adaptive_kwc_result <- tryCatch({
-          elia_data <- fetch_solar_elia(
-            format(min(df$timestamp), "%Y-%m-%d"),
-            format(max(df$timestamp), "%Y-%m-%d"),
-            region = "Namur")
-          if (!is.null(elia_data$df) && nrow(elia_data$df) > 0) {
-            scaled_1kwc <- scale_solar_to_local(elia_data$df, 1)
-            # Align timestamps: convert to Brussels, floor to 15 min
-            scaled_1kwc$timestamp <- lubridate::floor_date(
-              lubridate::with_tz(scaled_1kwc$datetime, "Europe/Brussels"),
-              unit = "15 minutes")
-            # Deduplicate (in case of DST transitions)
-            scaled_1kwc <- scaled_1kwc[!duplicated(scaled_1kwc$timestamp), ]
-            # Join Elia to our timestamps
-            elia_joined <- dplyr::left_join(
-              data.frame(timestamp = df$timestamp),
-              scaled_1kwc[, c("timestamp", "pv_kwh")],
-              by = "timestamp"
-            )
-            pv_elia_1kwc <- dplyr::coalesce(elia_joined$pv_kwh, 0)
-            n_matched <- sum(elia_joined$pv_kwh > 0, na.rm = TRUE)
-            message(sprintf("[PV Elia] %d/%d timestamps matched", n_matched, nrow(df)))
-            compute_adaptive_kwc(df$pv_kwh, df$timestamp, pv_elia_1kwc)
-          } else NULL
-        }, error = function(e) { message("[PV Elia] ", e$message); NULL })
+        # PAC detection: use pac_kwh + conso_hors_pac if present (diagnostic CSV),
+        # otherwise fallback to detect_pac_consumption() if elec_kwh + cop available
+        if (!"pac_kwh" %in% names(df) || !"conso_hors_pac" %in% names(df)) {
+          if ("elec_kwh" %in% names(df) && "cop" %in% names(df)) {
+            pac_result <- detect_pac_consumption(df)
+            df$pac_kwh <- pac_result$pac_kwh
+            df$conso_hors_pac <- pmax(0, df$elec_kwh - df$pac_kwh)
+            message(sprintf("[CSV] PAC detectee via fallback: %s", pac_result$method))
+          } else {
+            shiny::showNotification(
+              "Le CSV ne contient ni pac_kwh/conso_hors_pac ni elec_kwh/cop. V\u00e9rifiez le format.",
+              type = "error", duration = 10)
+            return(NULL)
+          }
+        }
 
-        # Rename columns to match pipeline expectations
-        names(df)[names(df) == "feedin_kwh"] <- "intake_kwh"
-
-        # Fetch t_ext from Open-Meteo if not in installation data
+        # Fetch t_ext from Open-Meteo if not in CSV
         if (!"t_ext" %in% names(df)) {
           dp <- DataProvider$new()
           t_ext_meteo <- tryCatch({
@@ -706,84 +666,23 @@ mod_sidebar_server <- function(id, sim_state) {
           }, error = function(e) NULL)
           if (!is.null(t_ext_meteo)) {
             df$t_ext <- t_ext_meteo
-            report <- c(report, "", "&#9881; <code>t_ext</code> r\u00e9cup\u00e9r\u00e9 via Open-Meteo")
           } else {
             df$t_ext <- 10
-            report <- c(report, "", "&#9888; <code>t_ext</code> indisponible, valeur fixe 10\u00b0C")
+            shiny::showNotification("t_ext indisponible, valeur fixe 10\u00b0C", type = "warning", duration = 5)
           }
         }
 
-        # Energy perimeter diagnostic
-        diag_lines <- diagnose_energy_perimeter(df)
-        if (length(diag_lines) > 0) {
-          report <- c(report, "", "&#128269; <b>Diagnostic \u00e9nerg\u00e9tique :</b>", diag_lines)
+        # Rename feedin_kwh -> intake_kwh for pipeline compatibility
+        if ("feedin_kwh" %in% names(df) && !"intake_kwh" %in% names(df)) {
+          names(df)[names(df) == "feedin_kwh"] <- "intake_kwh"
         }
 
-        # PV stability assessment (use Elia ratio if available)
-        pv_elia_for_stab <- if (!is.null(adaptive_kwc_result)) pv_elia_1kwc else NULL
-        pv_stab <- assess_pv_stability(df$pv_kwh, df$timestamp, pv_elia_for_stab)
-        pv_total <- sum(df$pv_kwh, na.rm = TRUE)
-        feedin_total <- sum(df$intake_kwh, na.rm = TRUE)
-        pv_autocons_pct <- if (pv_total > 0) (pv_total - feedin_total) / pv_total * 100 else 0
-
-        # Adaptive kWc info + store Elia 1kWc for later use
-        kwc_current <- if (!is.null(adaptive_kwc_result)) adaptive_kwc_result$kwc_current else NA_real_
-        kwc_profile <- if (!is.null(adaptive_kwc_result)) adaptive_kwc_result$kwc_profile else NULL
-        if (exists("pv_elia_1kwc", inherits = FALSE)) {
-          pv_elia_1kwc_val(pv_elia_1kwc)
-        } else {
-          pv_elia_1kwc_val(NULL)
-        }
-
-        # Store structured metadata for mod_donnees
-        import_meta_val(list(
-          n_points = join_result$n_points,
-          date_start = join_result$date_start,
-          date_end = join_result$date_end,
-          summary_lines = c(
-            sprintf("<b>%d quarts d'heure joints</b> (%s &rarr; %s)",
-              join_result$n_points,
-              format(join_result$date_start, "%d/%m/%Y"),
-              format(join_result$date_end, "%d/%m/%Y")),
-            install_result$report, ores_result$report, join_result$report
-          ),
-          pac_method = pac_result$method,
-          pac_p95_kw = pac_result$p95_kw,
-          pac_talon_w = pac_result$talon_w,
-          pv_total_kwh = pv_total,
-          pv_stable = pv_stab$stable,
-          pv_stability_msg = pv_stab$msg,
-          pv_autocons_pct = pv_autocons_pct,
-          kwc_current = kwc_current,
-          kwc_profile = kwc_profile,
-          robust_kwc = adaptive_kwc_result$robust,
-          diag_lines = diag_lines
-        ))
-
-        # Store HTML report for sidebar compact banner
-        import_report_content(shiny::HTML(paste(report, collapse = "<br>")))
-
-        # Apply PV source selection (if user changed it after first import)
-        pv_src_choice <- input$pv_source_csv
-        if (!is.null(pv_src_choice) && pv_src_choice != "reconstructed") {
-          elia_1kwc <- pv_elia_1kwc_val()
-          if (!is.null(elia_1kwc) && length(elia_1kwc) == nrow(df)) {
-            if (pv_src_choice == "elia_adaptive" && !is.null(kwc_profile)) {
-              df$pv_kwh <- scale_pv_adaptive(df$timestamp, elia_1kwc, kwc_profile)
-            } else if (pv_src_choice == "elia_fixed") {
-              kwc_fixed <- if (!is.null(input$pv_elia_kwc)) input$pv_elia_kwc else kwc_current
-              df$pv_kwh <- elia_1kwc * kwc_fixed
-            }
-          }
-        }
-
-        # Success notification
+        n_pts <- nrow(df)
         shiny::showNotification(
-          shiny::HTML(sprintf("&#9989; <b>Import r\u00e9ussi</b> : %d qt (%s \u2192 %s) | PAC: %s | D\u00e9tails dans l'onglet Donn\u00e9es",
-            join_result$n_points,
-            format(join_result$date_start, "%d/%m/%Y"),
-            format(join_result$date_end, "%d/%m/%Y"),
-            pac_result$method)),
+          shiny::HTML(sprintf("&#9989; <b>Import CSV</b> : %d qt (%s \u2192 %s)",
+            n_pts,
+            format(min(df$timestamp), "%d/%m/%Y"),
+            format(max(df$timestamp), "%d/%m/%Y"))),
           type = "message", duration = 8)
       } else {
         shiny::req(input$date_range)
@@ -847,35 +746,13 @@ mod_sidebar_server <- function(id, sim_state) {
     csv_has_t_ballon <- shiny::reactiveVal(FALSE)
     csv_est_pac_th_kw <- shiny::reactiveVal(NULL)
     csv_est_volume_l <- shiny::reactiveVal(NULL)
-    import_report_content <- shiny::reactiveVal(NULL)
-    import_meta_val <- shiny::reactiveVal(NULL)
-    pv_elia_1kwc_val <- shiny::reactiveVal(NULL)
-
-    # ---- Import report rendering (dual CSV mode) — compact sidebar banner ----
-    output$import_report <- shiny::renderUI({
-      meta <- import_meta_val()
-      if (is.null(meta)) return(NULL)
-      # Compact one-liner for sidebar
-      status_icon <- if (length(meta$diag_lines) > 0 && any(grepl("&#9888;", meta$diag_lines))) "&#9888;" else "&#9989;"
-      pac_info <- if (!is.na(meta$pac_p95_kw)) sprintf("PAC: %.0f kW", meta$pac_p95_kw) else "PAC: ?"
-      shiny::tags$div(
-        style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:8px 0;font-size:.7rem;line-height:1.5;",
-          cl$bg_card, cl$accent),
-        shiny::HTML(sprintf("%s <b>%d qt</b> | %s | PV: %s",
-          status_icon, meta$n_points, pac_info,
-          if (isTRUE(meta$pv_stable)) "bilan" else "instable")),
-        shiny::tags$div(style = "font-size:.6rem;color:gray;margin-top:2px;",
-          sprintf("D\u00e9tails dans l'onglet Donn\u00e9es")))
-    })
 
     shiny::observe({
-      if (input$data_source != "csv" || is.null(input$file_installation) || is.null(input$file_ores)) {
+      if (input$data_source != "csv" || is.null(input$csv_file)) {
         csv_measured_eligible(FALSE)
         csv_has_t_ballon(FALSE)
         csv_est_pac_th_kw(NULL)
         csv_est_volume_l(NULL)
-        import_report_content(NULL)
-        import_meta_val(NULL)
         return()
       }
       df <- raw_data()
@@ -927,130 +804,6 @@ mod_sidebar_server <- function(id, sim_state) {
       NULL
     })
 
-    # ---- PV stability UI (dual CSV mode) ----
-    # Uses the stability result already computed in import pipeline (import_meta_val)
-    pv_stability_result <- shiny::reactive({
-      meta <- import_meta_val()
-      if (is.null(meta)) return(NULL)
-      list(stable = meta$pv_stable, cv = NA_real_, msg = meta$pv_stability_msg)
-    })
-
-    output$pv_stability_ui <- shiny::renderUI({
-      result <- pv_stability_result()
-      if (is.null(result)) return(NULL)
-      ns <- session$ns
-      meta <- import_meta_val()
-      kwc_suggest <- if (!is.null(meta) && !is.na(meta$kwc_current)) round(meta$kwc_current) else 30
-
-      if (result$stable) {
-        shiny::tags$div(
-          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.7rem;",
-            cl$bg_card, cl$accent),
-          shiny::HTML(sprintf("&#9989; <b>PV reconstitu\u00e9</b> (bilan \u00e9nerg\u00e9tique) : %s | kWc estim\u00e9 : %d",
-            result$msg, kwc_suggest)))
-      } else {
-        shiny::tagList(
-          shiny::tags$div(
-            style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0;font-size:.7rem;",
-              cl$bg_card, "#e6a817"),
-            shiny::HTML(sprintf("&#9888; <b>PV reconstitu\u00e9</b> : %s<br>kWc stabilis\u00e9 (derniers mois) : <b>%d kWc</b>",
-              result$msg, kwc_suggest))),
-          shiny::radioButtons(ns("pv_source_csv"), NULL,
-            choices = c("PV reconstitu\u00e9 (bilan)" = "reconstructed",
-              "PV Elia scal\u00e9 (adaptatif)" = "elia_adaptive",
-              "PV Elia scal\u00e9 (kWc fixe)" = "elia_fixed"),
-            selected = "reconstructed", inline = FALSE),
-          shiny::conditionalPanel(sprintf("input['%s']=='elia_fixed'", ns("pv_source_csv")),
-            shiny::numericInput(ns("pv_elia_kwc"), "Puissance PV (kWc)", kwc_suggest, min = 1, max = 500, step = 1)),
-          shiny::conditionalPanel(sprintf("input['%s']=='elia_adaptive'", ns("pv_source_csv")),
-            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-              shiny::HTML("Scaling mensuel adaptatif : chaque mois utilise son kWc \u00e9quivalent d\u00e9tect\u00e9 automatiquement."))))
-      }
-    })
-
-    # ---- PV kWc banner (CSV mode) ----
-    output$pv_kwc_ref_banner <- shiny::renderUI({
-      shiny::req(input$data_source == "csv", input$pv_kwc_ref)
-      kwc <- input$pv_kwc_ref
-      shiny::tags$div(
-        style = sprintf(
-          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:6px 0 4px 0;font-size:.75rem;line-height:1.4;",
-          cl$bg_card, cl$accent),
-        shiny::HTML(sprintf(
-          "PV recommand\u00e9 (rescaling) : <b style='color:%s;'>%s kWc</b><br><span style='font-size:.65rem;color:%s;'>D\u00e9duit du bilan \u00e9nerg\u00e9tique du CSV</span>",
-          cl$accent, kwc, cl$text_muted)))
-    })
-
-    # ---- Custom PV kWc input (CSV mode) ----
-    output$pv_kwc_custom_ui <- shiny::renderUI({
-      shiny::req(input$data_source == "csv")
-      ns <- session$ns
-      shiny::tagList(
-        shiny::checkboxInput(ns("pv_kwc_custom_active"),
-          "Utiliser ma propre valeur PV (kWc)", value = FALSE),
-        shiny::conditionalPanel(
-          sprintf("input['%s']", ns("pv_kwc_custom_active")),
-          shiny::numericInput(ns("pv_kwc_custom"), "Puissance cr\u00eate r\u00e9elle (kWc)",
-            value = NULL, min = 1, max = 500, step = 0.1),
-          shiny::uiOutput(ns("pv_kwc_custom_balance"))
-        )
-      )
-    })
-
-    # Balance report when custom PV kWc is set
-    output$pv_kwc_custom_balance <- shiny::renderUI({
-      shiny::req(isTRUE(input$pv_kwc_custom_active), input$pv_kwc_custom)
-      custom_kwc <- input$pv_kwc_custom
-      ref_kwc <- input$pv_kwc_ref
-      shiny::req(custom_kwc > 0, ref_kwc > 0)
-
-      df <- tryCatch(raw_data(), error = function(e) NULL)
-      if (is.null(df)) return(NULL)
-
-      feedin_col <- if ("intake_kwh" %in% names(df)) "intake_kwh" else
-        if ("feedin_kwh" %in% names(df)) "feedin_kwh" else NULL
-      if (is.null(feedin_col) || !"pv_kwh" %in% names(df)) return(NULL)
-
-      # Re-scale PV with custom kWc + local performance correction
-      ratio <- custom_kwc / ref_kwc
-      pv_rescaled <- df$pv_kwh * ratio
-      local_factor <- compute_pv_local_factor(pv_rescaled, df[["offtake_kwh"]], df[[feedin_col]])
-      pv_corrected <- pv_rescaled * local_factor
-
-      conso_est <- df[["offtake_kwh"]] + pv_corrected - df[[feedin_col]]
-      n_bad <- sum(conso_est < -0.01, na.rm = TRUE)
-      n_pts <- nrow(df)
-      pct <- round(100 * n_bad / n_pts, 1)
-
-      factor_line <- if (local_factor > 1) {
-        sprintf("<br><span style='color:%s;'>Facteur perf. local : <b>%.2f</b> (%.1f kWc effectifs)</span>",
-          cl$text_muted, local_factor, custom_kwc * local_factor)
-      } else ""
-
-      if (n_bad > 0) {
-        col <- if (pct > 5) "#ef4444" else "#f59e0b"
-        shiny::tags$div(
-          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:6px 10px;margin:4px 0;font-size:.7rem;line-height:1.3;",
-            cl$bg_card, col),
-          shiny::HTML(sprintf(
-            "&#9888; <span style='color:%s;'>Bilan incoh\u00e9rent sur <b>%d</b> pas de temps (<b>%.1f%%</b>)</span>%s<br><span style='color:%s;'>offtake + pv &lt; injection</span>",
-            col, n_bad, pct, factor_line, cl$text_muted)))
-      } else {
-        shiny::tags$div(
-          style = sprintf("background:%s;border:1px solid %s;border-radius:6px;padding:6px 10px;margin:4px 0;font-size:.7rem;line-height:1.3;",
-            cl$bg_card, cl$success),
-          shiny::HTML(sprintf(
-            "&#9989; <span style='color:%s;'>Bilan \u00e9nerg\u00e9tique coh\u00e9rent</span>%s",
-            cl$success, factor_line)))
-      }
-    })
-
-    # Sync pv_kwc_manual with custom value (pv_kwc_ref stays at estimated)
-    shiny::observe({
-      if (isTRUE(input$pv_kwc_custom_active) && isTRUE(input$pv_kwc_custom > 0)) {
-        shiny::updateSliderInput(session, "pv_kwc_manual", value = input$pv_kwc_custom)
-      }
-    })
 
     # ---- What-if PV toggle (visible only when CSV eligible) ----
     output$pv_whatif_toggle <- shiny::renderUI({
@@ -1068,7 +821,7 @@ mod_sidebar_server <- function(id, sim_state) {
       if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
         shiny::updateCheckboxInput(session, "pv_auto", value = FALSE)
         shiny::updateCheckboxInput(session, "volume_auto", value = FALSE)
-        if (!isTRUE(input$pv_kwc_custom_active) && !is.null(input$pv_kwc_ref)) {
+        if (!is.null(input$pv_kwc_ref)) {
           shiny::updateSliderInput(session, "pv_kwc_manual", value = input$pv_kwc_ref)
         }
       }
@@ -1482,7 +1235,7 @@ mod_sidebar_server <- function(id, sim_state) {
       baseline_alpha = baseline_alpha,
       ac_bounds = ac_bounds,
       csv_measured_eligible = csv_measured_eligible,
-      csv_filename = shiny::reactive(if (!is.null(input$file_installation)) input$file_installation$name else NULL),
+      csv_filename = shiny::reactive(if (!is.null(input$csv_file)) input$csv_file$name else NULL),
       pv_whatif = shiny::reactive(input$pv_whatif),
       # Expose individual inputs needed by other modules/status bar
       date_range = shiny::reactive(input$date_range),
@@ -1501,7 +1254,6 @@ mod_sidebar_server <- function(id, sim_state) {
       run_automagic = shiny::reactive(input$run_automagic),
       apply_best = shiny::reactive(input$apply_best),
       # Expose session for tab switching etc.
-      import_meta = import_meta_val,
       session = session,
       parent_session = session
     )
