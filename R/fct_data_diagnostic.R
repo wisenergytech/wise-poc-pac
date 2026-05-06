@@ -28,9 +28,8 @@ diagnose_energy_perimeter <- function(df) {
   pac_power <- diagnose_pac_power(df)
   if (!is.null(pac_power)) lines <- c(lines, pac_power)
 
-  n_jours <- as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days"))
-  pv_stab <- diagnose_pv_stability(df, n_jours)
-  if (!is.null(pv_stab)) lines <- c(lines, pv_stab)
+  # PV stability is now handled by assess_pv_stability() in fct_pv_reconstruction.R
+  # and displayed in the Données tab / sidebar. Not duplicated here.
 
   lines
 }

@@ -673,7 +673,12 @@ mod_sidebar_server <- function(id, sim_state) {
             region = "Namur")
           if (!is.null(elia_data$df) && nrow(elia_data$df) > 0) {
             scaled_1kwc <- scale_solar_to_local(elia_data$df, 1)
-            scaled_1kwc$timestamp <- lubridate::with_tz(scaled_1kwc$datetime, "Europe/Brussels")
+            # Align timestamps: convert to Brussels, floor to 15 min
+            scaled_1kwc$timestamp <- lubridate::floor_date(
+              lubridate::with_tz(scaled_1kwc$datetime, "Europe/Brussels"),
+              unit = "15 minutes")
+            # Deduplicate (in case of DST transitions)
+            scaled_1kwc <- scaled_1kwc[!duplicated(scaled_1kwc$timestamp), ]
             # Join Elia to our timestamps
             elia_joined <- dplyr::left_join(
               data.frame(timestamp = df$timestamp),
@@ -681,6 +686,8 @@ mod_sidebar_server <- function(id, sim_state) {
               by = "timestamp"
             )
             pv_elia_1kwc <- dplyr::coalesce(elia_joined$pv_kwh, 0)
+            n_matched <- sum(elia_joined$pv_kwh > 0, na.rm = TRUE)
+            message(sprintf("[PV Elia] %d/%d timestamps matched", n_matched, nrow(df)))
             compute_adaptive_kwc(df$pv_kwh, df$timestamp, pv_elia_1kwc)
           } else NULL
         }, error = function(e) { message("[PV Elia] ", e$message); NULL })
@@ -920,14 +927,11 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- PV stability UI (dual CSV mode) ----
-    pv_stability_result <- shiny::reactiveVal(NULL)
-
-    shiny::observe({
-      shiny::req(input$data_source == "csv", input$file_installation, input$file_ores)
-      df <- raw_data()
-      shiny::req("pv_kwh" %in% names(df), "timestamp" %in% names(df))
-      result <- assess_pv_stability(df$pv_kwh, df$timestamp)
-      pv_stability_result(result)
+    # Uses the stability result already computed in import pipeline (import_meta_val)
+    pv_stability_result <- shiny::reactive({
+      meta <- import_meta_val()
+      if (is.null(meta)) return(NULL)
+      list(stable = meta$pv_stable, cv = NA_real_, msg = meta$pv_stability_msg)
     })
 
     output$pv_stability_ui <- shiny::renderUI({
