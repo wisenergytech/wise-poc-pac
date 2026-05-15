@@ -290,7 +290,8 @@ mod_sidebar_ui <- function(id) {
       ns = function(x) x,
       shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download")),
       shiny::downloadButton(ns("download_rds"), "Exporter simulation (.rds)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-export")),
-      shiny::downloadButton(ns("download_presentation"), "Exporter presentation (.html)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-code"))),
+      shiny::downloadButton(ns("download_presentation"), "Exporter presentation (.html)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-code")),
+      shiny::downloadButton(ns("download_markdown"), "Exporter rapport (.md)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-lines"))),
     shiny::fileInput(ns("import_rds"), NULL, accept = ".rds", buttonLabel = "Importer .rds", placeholder = "simulation.rds"),
     # Automagic button (masque temporairement)
     # shiny::tags$hr(style = sprintf("border-color:%s;margin:12px 0 8px 0;", cl$grid)),
@@ -1335,6 +1336,26 @@ mod_sidebar_server <- function(id, sim_state) {
       }
     )
 
+    # ---- Markdown Export ----
+    output$download_markdown <- shiny::downloadHandler(
+      filename = function() {
+        paste0("pac_rapport_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".md")
+      },
+      content = function(file) {
+        shiny::req(sim_filtered(), kpis_r())
+        shiny::withProgress(message = "Generation du rapport markdown...", value = 0.3, {
+          render_markdown(
+            kpis = kpis_r(),
+            params = params_r(),
+            sim_data = sim_filtered(),
+            output_file = file,
+            kpis_cible = kpis_cible_r(),
+            params_cible = sim_result()$params_cible
+          )
+        })
+      }
+    )
+
     # ---- RDS Import ----
     shiny::observeEvent(input$import_rds, {
       shiny::req(input$import_rds)
@@ -1355,6 +1376,55 @@ mod_sidebar_server <- function(id, sim_state) {
           start = as.Date(min(sim_df$timestamp)),
           end = as.Date(max(sim_df$timestamp)))
       }
+
+      # Restore sidebar inputs from saved params
+      p <- bundle$sim_result$params
+      if (!is.null(p)) {
+        if (!is.null(p$p_pac_th_kw)) shiny::updateNumericInput(session, "p_pac_th_kw", value = p$p_pac_th_kw)
+        if (!is.null(p$cop_nominal)) shiny::updateNumericInput(session, "cop_nominal", value = p$cop_nominal)
+        if (!is.null(p$t_consigne)) shiny::updateNumericInput(session, "t_consigne", value = p$t_consigne)
+        if (!is.null(p$t_tolerance)) shiny::updateSliderInput(session, "t_tolerance", value = p$t_tolerance)
+        if (!is.null(p$volume_ballon_l)) {
+          shiny::updateCheckboxInput(session, "volume_auto", value = FALSE)
+          shiny::updateNumericInput(session, "volume_ballon_manual", value = p$volume_ballon_l)
+        }
+        if (!is.null(p$type_contrat)) shiny::updateRadioButtons(session, "type_contrat", selected = p$type_contrat)
+        if (!is.null(p$pv_kwc_ref)) shiny::updateNumericInput(session, "pv_kwc_ref", value = p$pv_kwc_ref)
+        # PV
+        if (!is.null(p$pv_kwc)) {
+          shiny::updateCheckboxInput(session, "pv_auto", value = FALSE)
+          shiny::updateSliderInput(session, "pv_kwc_manual", value = p$pv_kwc)
+        }
+        if (!is.null(p$pv_data_source)) shiny::updateRadioButtons(session, "pv_data_source", selected = p$pv_data_source)
+        # Contract-specific params
+        if (!is.null(p$prix_fixe_offtake)) shiny::updateNumericInput(session, "prix_fixe_offtake", value = p$prix_fixe_offtake)
+        if (!is.null(p$prix_fixe_injection)) shiny::updateNumericInput(session, "prix_fixe_injection", value = p$prix_fixe_injection)
+        if (!is.null(p$belix_m_eur_mwh)) shiny::updateNumericInput(session, "belix_m", value = p$belix_m_eur_mwh)
+        if (!is.null(p$belix_r_eur_mwh)) shiny::updateNumericInput(session, "belix_r", value = p$belix_r_eur_mwh)
+        if (!is.null(p$belix_t_eur_mwh)) shiny::updateNumericInput(session, "belix_t", value = p$belix_t_eur_mwh)
+        if (!is.null(p$belix_injection_fixe)) shiny::updateNumericInput(session, "belix_injection_fixe", value = p$belix_injection_fixe)
+        if (!is.null(p$taxe_transport_eur_kwh)) shiny::updateNumericInput(session, "taxe_transport", value = p$taxe_transport_eur_kwh)
+        if (!is.null(p$coeff_injection)) shiny::updateNumericInput(session, "coeff_injection", value = p$coeff_injection)
+        # Optimizer params
+        if (!is.null(p$slack_penalty)) shiny::updateSliderInput(session, "slack_penalty", value = p$slack_penalty)
+        if (!is.null(p$optim_bloc_h)) shiny::updateSliderInput(session, "optim_bloc_h", value = p$optim_bloc_h)
+        # Battery
+        if (!is.null(p$batterie_active)) shiny::updateCheckboxInput(session, "batterie_active", value = p$batterie_active)
+        if (!is.null(p$batt_kwh)) shiny::updateNumericInput(session, "batt_kwh", value = p$batt_kwh)
+        if (!is.null(p$batt_kw)) shiny::updateNumericInput(session, "batt_kw", value = p$batt_kw)
+        if (!is.null(p$batt_rendement)) shiny::updateSliderInput(session, "batt_rendement", value = round(p$batt_rendement * 100))
+        if (!is.null(p$batt_soc_min) && !is.null(p$batt_soc_max)) {
+          shiny::updateSliderInput(session, "batt_soc_range", value = c(round(p$batt_soc_min * 100), round(p$batt_soc_max * 100)))
+        }
+        # Curtailment
+        if (!is.null(p$curtailment_active)) shiny::updateCheckboxInput(session, "curtailment_active", value = p$curtailment_active)
+        if (!is.null(p$curtail_kwh_per_qt) && is.finite(p$curtail_kwh_per_qt)) {
+          shiny::updateNumericInput(session, "curtail_kw", value = p$curtail_kwh_per_qt / 0.25)
+        }
+        # TOU
+        if (!is.null(p$tou_active)) shiny::updateCheckboxInput(session, "tou_active", value = p$tou_active)
+      }
+
       v <- if (!is.null(bundle$metadata$app_version)) bundle$metadata$app_version else "inconnue"
       shiny::showNotification(
         sprintf("Simulation importee (version %s, %d points)", v, nrow(sim_df)),

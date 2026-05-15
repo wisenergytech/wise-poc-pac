@@ -11,7 +11,7 @@ params:
   n_immeubles: 4
   surface_m2: 2000
   conso_chauffage_mwh_an: 198
-  co2_évité_20ans_t: 717
+  co2_evite_20ans_t: 717
   # Technical
   pac_kw: 60
   pv_kwc: 42
