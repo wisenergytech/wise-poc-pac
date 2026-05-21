@@ -89,16 +89,15 @@ En tant qu'utilisateur, je veux voir la ventilation de la consommation et du cou
   - Variables continues pour les PAC inverter (p[t] in [0, 1])
   - Contraintes de rampe pour le lissage des PAC inverter (|Delta p| <= ramp_max)
   - Contrainte thermique couplee (un seul ballon, deux sources de chaleur)
-- **FR-004**: Le systeme DOIT implementer deux fonctions COP distinctes :
-  - `calc_cop_ashp(T_ext, T_ballon)` : COP air/eau, sensible a T_ext (existant = `calc_cop`)
-  - `calc_cop_gshp(T_sol, T_ballon)` : COP eau/eau, source = temperature du sol, plus stable
+- **FR-004**: Le systeme DOIT utiliser deux fonctions COP distinctes :
+  - `calc_cop()` existant (R/fct_helpers.R:14) pour les PAC air/eau (ASHP)
+  - `calc_cop_gshp(T_sol, T_ballon)` a creer dans R/fct_helpers.R pour les PAC eau/eau (GSHP), avec sensibilite +0.08/°C, COP nominal 4.5, bornes [2.0, 6.0]
 - **FR-005**: Le raffinement COP iteratif (2 passes) DOIT mettre a jour les deux COP independamment apres la premiere passe.
 - **FR-006**: Le guard anti-regression DOIT comparer le cout dual au cout mono-PAC baseline et revert si le dual est plus cher.
 - **FR-007**: Le systeme DOIT produire des resultats dans le meme format que les solveurs existants (sim_offtake, sim_intake, sim_t_ballon, sim_cop) avec des colonnes supplementaires : sim_pac1_on, sim_pac2_load, sim_pac1_kwh, sim_pac2_kwh.
 - **FR-008**: Une nouvelle classe R6 `DualOptimizer` DOIT heriter de `BaseOptimizer` et surcharger `solve_block()` pour deleguer a `optimizer_dual.R`.
-- **FR-009**: Le `ThermalModel` DOIT etre etendu avec une methode `thermal_step_dual()` prenant deux termes de production thermique.
-- **FR-010**: La temperature du sol (`T_sol`) DOIT etre estimee par un proxy saisonnier derive de T_ext quand aucune mesure n'est disponible.
-- **FR-011**: Les 3 solveurs existants (MILP, LP, QP) DOIVENT rester inchanges et fonctionnels.
+- **FR-009**: La temperature du sol (`T_sol`) DOIT etre estimee par un proxy saisonnier derive de T_ext quand aucune mesure n'est disponible.
+- **FR-010**: Les 3 solveurs existants (MILP, LP, QP) DOIVENT rester inchanges et fonctionnels.
 
 ### Key Entities
 
