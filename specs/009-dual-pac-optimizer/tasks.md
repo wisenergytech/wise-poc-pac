@@ -18,7 +18,7 @@
 
 **Purpose**: No new dependencies or project structure changes needed. Setup is minimal.
 
-- [ ] T001 Verify ompr/HiGHS handles mixed binary+continuous MILP with ramp constraints by running a minimal prototype in R/optimizer_dual.R (5 timesteps, 2 variables, ramp constraint)
+- [x] T001 Verify ompr/HiGHS handles mixed binary+continuous MILP with ramp constraints by running a minimal prototype in R/optimizer_dual.R (5 timesteps, 2 variables, ramp constraint)
 
 **Checkpoint**: Confirmed HiGHS solves the dual formulation correctly.
 
@@ -28,9 +28,9 @@
 
 **Purpose**: Core functions that ALL user stories depend on. Must complete before any story.
 
-- [ ] T002 [P] Add `calc_cop_gshp()` function in R/fct_helpers.R — COP eau/eau with parameters (t_sol, cop_nominal=4.5, t_ref=10, t_ballon, t_ballon_ref=50), sensitivity +0.08/°C, clamped [2.0, 6.0]
-- [ ] T003 [P] Add T_sol proxy computation in R/R6_data_generator.R — compute `t_sol` column as annual mean T_ext (constant per simulation), add to prepared dataframe
-- [ ] T004 Add dual PAC params to SimulationParams in R/R6_params.R — fields: pac2_active, pac2_type, pac2_mode, p_pac2_kw, cop2_nominal, t_ref_cop2, pac1_type, pac1_mode, ramp_max, t_sol_method, t_sol_constant (see data-model.md for types/defaults)
+- [x] T002 [P] Add `calc_cop_gshp()` function in R/fct_helpers.R — COP eau/eau with parameters (t_sol, cop_nominal=4.5, t_ref=10, t_ballon, t_ballon_ref=50), sensitivity +0.08/°C, clamped [2.0, 6.0]
+- [x] T003 [P] Add T_sol proxy computation in R/R6_data_generator.R — compute `t_sol` column as annual mean T_ext (constant per simulation), add to prepared dataframe
+- [x] T004 Add dual PAC params to SimulationParams in R/R6_params.R — fields: pac2_active, pac2_type, pac2_mode, p_pac2_kw, cop2_nominal, t_ref_cop2, pac1_type, pac1_mode, ramp_max, t_sol_method, t_sol_constant (see data-model.md for types/defaults)
 
 **Checkpoint**: Foundation ready — `calc_cop_gshp()`, T_sol proxy, and params all available for solver implementation.
 
@@ -61,13 +61,13 @@
 
 ### Implementation
 
-- [ ] T009 [US2] Create `solve_block_dual()` in R/optimizer_dual.R — MILP model symmetric par mode: pour chaque PAC, verifier pac1_mode/pac2_mode. Si mode=="onoff", creer variable binaire {0,1}. Si mode=="inverter", creer variable continue [0,1]. Variables: y_or_p_pac1[t], y_or_p_pac2[t], t_bal[t], offt[t], inj[t], slack[t]. Contraintes: C1 bilan energie (deux termes PAC), C2 dynamique thermique (dual source), C3/C4 confort (soft T_min + hard T_max). Suivre le pattern de R/optimizer_milp.R:127-311.
-- [ ] T010 [US2] Add battery support to `solve_block_dual()` in R/optimizer_dual.R — chrg[t], dischrg[t], soc[t], batt_ch[t] with anti-simultaneity. Copy from optimizer_milp.R:172-264.
-- [ ] T011 [US2] Add `run_optimization_dual()` block loop in R/optimizer_dual.R — same block-loop pattern as run_optimization_milp() (R/optimizer_milp.R:327-451), with dual COP iterative refinement: update cop1_override via calc_cop_gshp() or calc_cop() based on pac1_type/pac2_type after first solve pass.
-- [ ] T012 [US2] Create DualOptimizer R6 class in R/R6_optimizer.R — inherits BaseOptimizer, overrides solve_block() to delegate to solve_block_dual(). Override solve() to handle dual COP refinement (two cop_override vectors instead of one).
-- [ ] T013 [US2] Add guard anti-regression for dual in R/R6_optimizer.R DualOptimizer — compare dual cost vs mono-PAC baseline cost, revert if dual is worse (extend existing guard_baseline pattern).
-- [ ] T014 [US2] Wire DualOptimizer into R/R6_simulation.R — replace T008 placeholder: when pac2_active, instantiate DualOptimizer with dual params and run.
-- [ ] T015 [US2] Add output columns mapping in R/optimizer_dual.R solve_block_dual() — extract sim_pac1_on, sim_pac2_load, sim_pac1_kwh, sim_pac2_kwh, sim_cop1, sim_cop2. Compute backward-compatible sim_pac_on = pac1 + pac2, sim_cop = weighted average.
+- [x] T009 [US2] Create `solve_block_dual()` in R/optimizer_dual.R — MILP model symmetric par mode: pour chaque PAC, verifier pac1_mode/pac2_mode. Si mode=="onoff", creer variable binaire {0,1}. Si mode=="inverter", creer variable continue [0,1]. Variables: y_or_p_pac1[t], y_or_p_pac2[t], t_bal[t], offt[t], inj[t], slack[t]. Contraintes: C1 bilan energie (deux termes PAC), C2 dynamique thermique (dual source), C3/C4 confort (soft T_min + hard T_max). Suivre le pattern de R/optimizer_milp.R:127-311.
+- [x] T010 [US2] Add battery support to `solve_block_dual()` in R/optimizer_dual.R — chrg[t], dischrg[t], soc[t], batt_ch[t] with anti-simultaneity. Copy from optimizer_milp.R:172-264.
+- [x] T011 [US2] Add `run_optimization_dual()` block loop in R/optimizer_dual.R — same block-loop pattern as run_optimization_milp() (R/optimizer_milp.R:327-451), with dual COP iterative refinement: update cop1_override via calc_cop_gshp() or calc_cop() based on pac1_type/pac2_type after first solve pass.
+- [x] T012 [US2] Create DualOptimizer R6 class in R/R6_optimizer.R — inherits BaseOptimizer, overrides solve_block() to delegate to solve_block_dual(). Override solve() to handle dual COP refinement (two cop_override vectors instead of one).
+- [x] T013 [US2] Add guard anti-regression for dual in R/R6_optimizer.R DualOptimizer — compare dual cost vs mono-PAC baseline cost, revert if dual is worse (extend existing guard_baseline pattern).
+- [x] T014 [US2] Wire DualOptimizer into R/R6_simulation.R — replace T008 placeholder: when pac2_active, instantiate DualOptimizer with dual params and run.
+- [x] T015 [US2] Add output columns mapping in R/optimizer_dual.R solve_block_dual() — extract sim_pac1_on, sim_pac2_load, sim_pac1_kwh, sim_pac2_kwh, sim_cop1, sim_cop2. Compute backward-compatible sim_pac_on = pac1 + pac2, sim_cop = weighted average.
 
 **Checkpoint**: Dual optimizer runs end-to-end. Cost <= mono-PAC on test data.
 
@@ -81,8 +81,8 @@
 
 ### Implementation
 
-- [ ] T016 [US3] Add ramp constraints to solve_block_dual() in R/optimizer_dual.R — for EACH PAC with mode=="inverter" (PAC1, PAC2, ou les deux): add_constraint(p[t] - p[t-1] <= ramp_max, t=2:n) and add_constraint(p[t-1] - p[t] <= ramp_max, t=2:n).
-- [ ] T017 [US3] Handle initial ramp in solve_block_dual() — for first timestep of non-first blocks, constrain inverter PAC load based on last value from previous block (chain via initial conditions, same pattern as t_init and soc_init). Applies to whichever PAC(s) are inverter.
+- [x] T016 [US3] Add ramp constraints to solve_block_dual() in R/optimizer_dual.R — for EACH PAC with mode=="inverter" (PAC1, PAC2, ou les deux): add_constraint(p[t] - p[t-1] <= ramp_max, t=2:n) and add_constraint(p[t-1] - p[t] <= ramp_max, t=2:n).
+- [x] T017 [US3] Handle initial ramp in solve_block_dual() — for first timestep of non-first blocks, constrain inverter PAC load based on last value from previous block (chain via initial conditions, same pattern as t_init and soc_init). Applies to whichever PAC(s) are inverter.
 
 **Checkpoint**: Inverter PAC shows smooth transitions. Ramp constraint verified on output.
 

@@ -72,6 +72,19 @@ SimulationParams <- R6::R6Class("SimulationParams",
     qp_w_comfort = NULL,
     qp_w_smooth = NULL,
 
+    # --- Dual PAC (009) ---
+    pac2_active = NULL,
+    pac2_type = NULL,
+    pac2_mode = NULL,
+    p_pac2_kw = NULL,
+    cop2_nominal = NULL,
+    t_ref_cop2 = NULL,
+    pac1_type = NULL,
+    pac1_mode = NULL,
+    ramp_max = NULL,
+    t_sol_method = NULL,
+    t_sol_constant = NULL,
+
     #' @description Create a new SimulationParams object.
     #' @param t_consigne Target tank temperature (degrees C, default 35)
     #' @param t_tolerance Temperature tolerance band (degrees C, default 5)
@@ -136,7 +149,11 @@ SimulationParams <- R6::R6Class("SimulationParams",
       seuil_surplus_pct = 0.3,
       perte_kwh_par_qt = 0.05,
       qp_w_comfort = 0.001,
-      qp_w_smooth = 0.01
+      qp_w_smooth = 0.01,
+      pac2_active = FALSE, pac2_type = "ashp", pac2_mode = "inverter",
+      p_pac2_kw = 40, cop2_nominal = 3.5, t_ref_cop2 = 7,
+      pac1_type = "gshp", pac1_mode = "onoff",
+      ramp_max = 0.3, t_sol_method = "annual_mean", t_sol_constant = 10
     ) {
       self$t_consigne <- t_consigne
       self$t_tolerance <- t_tolerance
@@ -195,6 +212,17 @@ SimulationParams <- R6::R6Class("SimulationParams",
       self$perte_kwh_par_qt <- perte_kwh_par_qt
       self$qp_w_comfort <- qp_w_comfort
       self$qp_w_smooth <- qp_w_smooth
+      self$pac2_active <- pac2_active
+      self$pac2_type <- pac2_type
+      self$pac2_mode <- pac2_mode
+      self$p_pac2_kw <- p_pac2_kw
+      self$cop2_nominal <- cop2_nominal
+      self$t_ref_cop2 <- t_ref_cop2
+      self$pac1_type <- pac1_type
+      self$pac1_mode <- pac1_mode
+      self$ramp_max <- ramp_max
+      self$t_sol_method <- t_sol_method
+      self$t_sol_constant <- t_sol_constant
     },
 
     #' @description Convert to a named list compatible with existing functions.
@@ -243,7 +271,18 @@ SimulationParams <- R6::R6Class("SimulationParams",
         curtail_kwh_per_qt = self$curtail_kwh_per_qt,
         optim_bloc_h = self$optim_bloc_h,
         qp_w_comfort = self$qp_w_comfort,
-        qp_w_smooth = self$qp_w_smooth
+        qp_w_smooth = self$qp_w_smooth,
+        pac2_active = self$pac2_active,
+        pac2_type = self$pac2_type,
+        pac2_mode = self$pac2_mode,
+        p_pac2_kw = self$p_pac2_kw,
+        cop2_nominal = self$cop2_nominal,
+        t_ref_cop2 = self$t_ref_cop2,
+        pac1_type = self$pac1_type,
+        pac1_mode = self$pac1_mode,
+        ramp_max = self$ramp_max,
+        t_sol_method = self$t_sol_method,
+        t_sol_constant = self$t_sol_constant
       )
     }
   ),

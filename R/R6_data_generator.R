@@ -409,6 +409,11 @@ DataGenerator <- R6::R6Class("DataGenerator",
         message(sprintf("[prepare_df] ECS estimee: %.1f kWh_th/jour (profil type matin/soir)", ecs_kwh_jour))
       }
 
+      # T_sol proxy: annual mean T_ext (constant per simulation, depth ~2-3m)
+      if (!"t_sol" %in% names(df)) {
+        df$t_sol <- mean(df$t_ext, na.rm = TRUE)
+      }
+
       list(df = df, params = params)
     }
   ),

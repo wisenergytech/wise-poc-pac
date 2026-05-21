@@ -22,6 +22,28 @@ calc_cop <- function(t_ext, cop_nominal = 3.5, t_ref = 7, t_ballon = NULL, t_bal
   pmax(1.5, pmin(5.5, cop))
 }
 
+#' Calculate COP for Ground Source Heat Pump (GSHP)
+#'
+#' COP depends on ground temperature (source) and optionally on
+#' the tank temperature (condenser). More stable than ASHP because
+#' ground temperature varies slowly. Clamped to [2.0, 6.0].
+#'
+#' @param t_sol Ground/soil temperature (degrees C)
+#' @param cop_nominal Nominal COP at reference temperature (default 4.5)
+#' @param t_ref Reference ground temperature for nominal COP (default 10)
+#' @param t_ballon Optional tank temperature (degrees C). If provided, COP
+#'   is reduced by 1% per degree above t_ballon_ref.
+#' @param t_ballon_ref Reference tank temperature (default 50)
+#' @return Numeric vector of COP values, clamped to [2.0, 6.0]
+#' @export
+calc_cop_gshp <- function(t_sol, cop_nominal = 4.5, t_ref = 10, t_ballon = NULL, t_ballon_ref = 50) {
+  cop <- cop_nominal + 0.08 * (t_sol - t_ref)
+  if (!is.null(t_ballon)) {
+    cop <- cop * (1 - 0.01 * (t_ballon - t_ballon_ref))
+  }
+  pmax(2.0, pmin(6.0, cop))
+}
+
 #' Auto-Aggregate Based on Period Length
 #'
 #' Automatically chooses aggregation level based on the time span:
