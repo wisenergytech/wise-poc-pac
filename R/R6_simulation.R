@@ -123,11 +123,15 @@ Simulation <- R6::R6Class("Simulation",
 
       private$status <- "running_optimization"
 
+      # Force dual mode when PAC 2 is active
+      if (isTRUE(private$params$pac2_active)) mode <- "dual"
+
       # Create the appropriate optimizer
       optimizer <- switch(mode,
         milp  = MILPOptimizer$new(private$params, private$baseline_result),
         lp    = LPOptimizer$new(private$params, private$baseline_result),
         qp    = QPOptimizer$new(private$params, private$baseline_result),
+        dual  = DualOptimizer$new(private$params, private$baseline_result),
         stop(sprintf("Unknown optimization mode: %s", mode))
       )
 

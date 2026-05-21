@@ -86,7 +86,13 @@ mod_comparaison_server <- function(id, sidebar) {
       "Facture optimis\u00e9e (EUR)"            = "facture_opti",
       "Temp\u00e9rature ballon optimis\u00e9e (\u00b0C)" = "sim_t_ballon",
       "COP"                                     = "sim_cop",
-      "PAC on (optimis\u00e9)"                  = "sim_pac_on"
+      "PAC on (optimis\u00e9)"                  = "sim_pac_on",
+      "PAC 1 (kWh)"                             = "sim_pac1_kwh",
+      "PAC 2 (kWh)"                             = "sim_pac2_kwh",
+      "PAC 1 on/load"                           = "sim_pac1_on",
+      "PAC 2 load"                              = "sim_pac2_load",
+      "COP PAC 1"                               = "sim_cop1",
+      "COP PAC 2"                               = "sim_cop2"
     )
 
     all_vars <- c(vars_external, vars_baseline, vars_optimised)

@@ -47,13 +47,30 @@ mod_sidebar_ui <- function(id) {
         choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
         selected = "parametric")),
 
-    # ---- PAC ----
+    # ---- PAC 1 ----
     shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Pompe a chaleur", tip("Caracteristiques de votre PAC. La puissance thermique est celle indiquee par le constructeur (sortie chaleur). Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
+      shiny::tags$div(class = "section-title", "PAC 1", tip("Caracteristiques de votre PAC principale. La puissance thermique est celle indiquee par le constructeur (sortie chaleur). Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
       shiny::numericInput(ns("p_pac_th_kw"), "Puissance thermique (kW)", 60, min = 1, max = 500, step = 1),
       shiny::uiOutput(ns("pac_csv_hint")),
       shiny::numericInput(ns("cop_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1),
+      shiny::selectInput(ns("pac1_type"), "Type source", choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"), selected = "gshp"),
+      shiny::selectInput(ns("pac1_mode"), "Mode", choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "onoff"),
       shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "COP = Coefficient de Performance. Un COP de 3.5 signifie que 1 kWh electrique produit 3.5 kWh de chaleur.")),
+
+    # ---- PAC 2 (dual) ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "PAC 2 (optionnelle)", tip("Activez une seconde PAC pour l'optimisation dual. Le solveur decide automatiquement quel PAC utiliser a chaque pas de temps.")),
+      shiny::checkboxInput(ns("pac2_active"), "Activer PAC 2", value = FALSE),
+      shiny::conditionalPanel(sprintf("input['%s']", ns("pac2_active")),
+        shiny::numericInput(ns("p_pac2_th_kw"), "Puissance thermique (kW)", 140, min = 1, max = 500, step = 1),
+        shiny::numericInput(ns("cop2_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1),
+        shiny::selectInput(ns("pac2_type"), "Type source", choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"), selected = "ashp"),
+        shiny::selectInput(ns("pac2_mode"), "Mode", choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "inverter"),
+        shiny::conditionalPanel(sprintf("input['%s']=='inverter'", ns("pac2_mode")),
+          shiny::sliderInput(ns("ramp_max"), shiny::tags$span("Rampe max", tip("Variation maximale de puissance par quart d'heure (fraction de P_max). 0.3 = la PAC peut changer de 30%% de sa puissance a chaque pas de temps.")),
+            0.1, 1, 0.3, step = 0.05)),
+        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
+          shiny::HTML("Le solveur dual optimise le dispatch entre les deux PAC en fonction des prix, de la m\u00e9t\u00e9o et du COP de chaque machine.")))),
 
     # ---- Ballon ----
     shiny::tags$div(class = "sidebar-section",
@@ -194,14 +211,27 @@ mod_sidebar_ui <- function(id) {
 
     # ---- Optimisation ----
     if (isTRUE(ui_cfg$simple_mode)) {
-      # Simple mode: force LP 24h, penalty 2.5, ToU on — show only TOU info
+      # Simple mode: LP/QP choice, 24h blocks, penalty 2.5, ToU forced on
+      simple_optim <- c("LP" = "optimiseur_lp", "QP" = "optimiseur_qp")
+      simple_optim <- simple_optim[simple_optim %in% ui_cfg$optimizers]
+      if (length(simple_optim) == 0) simple_optim <- c("LP" = "optimiseur_lp")
       shiny::tagList(
         shiny::tags$div(style = "display:none;",
-          shiny::radioButtons(ns("approche"), NULL, choices = c("LP" = "optimiseur_lp"), selected = "optimiseur_lp"),
           shiny::checkboxInput(ns("tou_active"), NULL, TRUE)),
         shiny::tags$div(class = "sidebar-section",
           shiny::tags$div(class = "section-title", "Optimisation"),
-          shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;line-height:1.4;", cl$text),
+          shiny::radioButtons(ns("approche"), "Approche", choices = simple_optim, selected = simple_optim[1], inline = TRUE),
+          shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_lp'", ns("approche")),
+            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+              shiny::HTML("<b>LP</b> : la PAC module sa puissance en continu (0-100%%). Optimal pour les PAC inverter."))),
+          shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_qp'", ns("approche")),
+            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
+              shiny::HTML("<b>QP</b> : comme le LP, mais penalise les ecarts de temperature et les variations brusques de puissance. Ballon plus stable, PAC cycle moins.")),
+            shiny::sliderInput(ns("qp_w_comfort"), shiny::tags$span("Poids confort", tip("Penalite sur l'ecart entre la temperature du ballon et la consigne. Plus eleve : le ballon reste proche de la consigne.")),
+              0, 1, 0.1, step = 0.01),
+            shiny::sliderInput(ns("qp_w_smooth"), shiny::tags$span("Poids lissage", tip("Penalite sur les changements brusques de puissance PAC. Plus eleve : la PAC monte et descend progressivement.")),
+              0, 1, 0.05, step = 0.01)),
+          shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;line-height:1.4;margin-top:8px;", cl$text),
             shiny::HTML(sprintf(
               "<b style='color:%s;'>TOU (Time of Use)</b> &mdash; activ\u00e9",
               cl$success)),
@@ -590,7 +620,19 @@ mod_sidebar_server <- function(id, sim_state) {
         slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
         curtailment_active = if (!is.null(input$curtailment_active)) isTRUE(input$curtailment_active) else FALSE,
         curtail_kwh_per_qt = if (!is.null(input$curtailment_active) && isTRUE(input$curtailment_active)) input$curtail_kw * 0.25 else Inf,
-        optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24)
+        optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24,
+        pac1_type = if (!is.null(input$pac1_type)) input$pac1_type else "gshp",
+        pac1_mode = if (!is.null(input$pac1_mode)) input$pac1_mode else "onoff",
+        pac2_active = if (!is.null(input$pac2_active)) isTRUE(input$pac2_active) else FALSE,
+        pac2_type = if (!is.null(input$pac2_type)) input$pac2_type else "ashp",
+        pac2_mode = if (!is.null(input$pac2_mode)) input$pac2_mode else "inverter",
+        p_pac2_kw = if (!is.null(input$pac2_active) && isTRUE(input$pac2_active) && !is.null(input$p_pac2_th_kw) && !is.null(input$cop2_nominal))
+          input$p_pac2_th_kw / input$cop2_nominal else 0,
+        cop2_nominal = if (!is.null(input$cop2_nominal)) input$cop2_nominal else 3.5,
+        t_ref_cop2 = 7,
+        ramp_max = if (!is.null(input$ramp_max)) input$ramp_max else 0.3,
+        t_sol_method = "annual_mean",
+        t_sol_constant = 10)
     })
 
     # ---- params_cible_r (target contract for comparison) ----
@@ -1072,7 +1114,7 @@ mod_sidebar_server <- function(id, sim_state) {
       # Set mode-specific params
       if (approche == "optimiseur_lp") p$optim_bloc_h <- if (!is.null(input$optim_bloc_h_lp)) input$optim_bloc_h_lp else 24
       if (approche == "optimiseur_qp") {
-        p$optim_bloc_h <- input$optim_bloc_h_qp
+        p$optim_bloc_h <- if (!is.null(input$optim_bloc_h_qp)) input$optim_bloc_h_qp else 24
         p$qp_w_comfort <- input$qp_w_comfort
         p$qp_w_smooth <- input$qp_w_smooth
       }

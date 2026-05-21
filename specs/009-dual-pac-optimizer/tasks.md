@@ -44,10 +44,10 @@
 
 ### Implementation
 
-- [ ] T005 [US1] Add PAC 2 toggle and configuration UI in R/mod_sidebar.R — conditional panel with: checkboxInput pac2_active, selectInput pac2_type (ASHP/GSHP), selectInput pac2_mode (on/off, inverter), numericInput p_pac2_kw, numericInput cop2_nominal, conditionalPanel for ramp_max (visible when mode=inverter)
-- [ ] T006 [US1] Add PAC 1 type/mode selectors in R/mod_sidebar.R — relabel existing PAC section as "PAC 1", add selectInput pac1_type and pac1_mode
-- [ ] T007 [US1] Wire sidebar inputs to SimulationParams in R/mod_sidebar.R — collect pac2_* inputs into params list, pass to R6_simulation.R
-- [ ] T008 [US1] Add solver selection logic in R/R6_simulation.R — if pac2_active, use DualOptimizer instead of MILP/LP/QP (placeholder: fallback to MILPOptimizer until T009-T013 implement the real solver)
+- [x] T005 [US1] Add PAC 2 toggle and configuration UI in R/mod_sidebar.R — conditional panel with: checkboxInput pac2_active, selectInput pac2_type (ASHP/GSHP), selectInput pac2_mode (on/off, inverter), numericInput p_pac2_kw, numericInput cop2_nominal, conditionalPanel for ramp_max (visible when mode=inverter)
+- [x] T006 [US1] Add PAC 1 type/mode selectors in R/mod_sidebar.R — relabel existing PAC section as "PAC 1", add selectInput pac1_type and pac1_mode
+- [x] T007 [US1] Wire sidebar inputs to SimulationParams in R/mod_sidebar.R — collect pac2_* inputs into params list, pass to R6_simulation.R
+- [x] T008 [US1] Add solver selection logic in R/R6_simulation.R — if pac2_active, use DualOptimizer instead of MILP/LP/QP (placeholder: fallback to MILPOptimizer until T009-T013 implement the real solver)
 
 **Checkpoint**: PAC 2 is configurable in the UI. Simulation still runs (with fallback solver).
 
@@ -96,8 +96,8 @@
 
 ### Implementation
 
-- [ ] T018 [P] [US4] Add PAC ventilation KPIs in R/mod_comparaison.R — when pac2_active: compute and display kWh PAC 1, kWh PAC 2, cout PAC 1, cout PAC 2, part relative (%). Conditional: only show when sim results have sim_pac2_kwh column.
-- [ ] T019 [P] [US4] Add dual PAC power graph in R/mod_energie.R or R/mod_details.R — stacked or overlaid plotly traces for PAC 1 (creneaux) and PAC 2 (courbe lisse) with distinct colors.
+- [x] T018 [P] [US4] Add PAC ventilation KPIs in R/mod_comparaison.R — when pac2_active: compute and display kWh PAC 1, kWh PAC 2, cout PAC 1, cout PAC 2, part relative (%). Conditional: only show when sim results have sim_pac2_kwh column.
+- [x] T019 [P] [US4] Add dual PAC power graph in R/mod_energie.R or R/mod_details.R — stacked or overlaid plotly traces for PAC 1 (creneaux) and PAC 2 (courbe lisse) with distinct colors.
 
 **Checkpoint**: All user stories complete. PAC ventilation visible in UI.
 
