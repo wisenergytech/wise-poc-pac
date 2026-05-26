@@ -331,6 +331,42 @@ if (length(days_with_na) > 0) {
 }
 
 # =============================================================================
+# 7b. COP estime (modele parametrique)
+# =============================================================================
+# Pas de COP mesure dans BQ — PAC_301_COP_MAX et PAC_501_COP_MAX sont des
+# parametres machine, pas des mesures de fonctionnement.
+#
+# On utilise les fonctions calc_cop() et calc_cop_gshp() du package :
+#   - GSHP (Carrier 61WG035) : calc_cop_gshp(t_sol, cop_nominal=4.5, t_ref=10, t_ballon)
+#     Sensibilite +0.08/°C source, -1%/°C ballon au-dessus de 50°C, bornes [2.0, 6.0]
+#   - ASHP (Hoval Belaria Pro) : calc_cop(t_ext, cop_nominal=3.5, t_ref=7, t_ballon)
+#     Sensibilite +0.1/°C source, -1%/°C ballon au-dessus de 50°C, bornes [1.5, 5.5]
+#
+# Ces COP sont des estimations basees sur la physique (T_source, T_ballon).
+# Le COP reel depend aussi de la charge partielle, du degivrage, etc.
+# =============================================================================
+message("[COP] Estimation parametrique...")
+
+source("R/fct_helpers.R")
+
+df_base <- df_base %>%
+  mutate(
+    cop_gshp = calc_cop_gshp(t_sol, cop_nominal = 4.5, t_ref = 10, t_ballon = t_ballon),
+    cop_ashp = calc_cop(t_ext, cop_nominal = 3.5, t_ref = 7, t_ballon = t_ballon),
+    # COP combine pondere par la conso electrique de chaque PAC
+    cop = ifelse(pac_kwh > 0,
+      (gshp_kwh * cop_gshp + ashp_kwh * cop_ashp) / pac_kwh,
+      (cop_gshp + cop_ashp) / 2)
+  )
+
+message(sprintf("  COP GSHP : %.2f - %.2f (median %.2f)",
+  min(df_base$cop_gshp, na.rm = TRUE), max(df_base$cop_gshp, na.rm = TRUE),
+  median(df_base$cop_gshp, na.rm = TRUE)))
+message(sprintf("  COP ASHP : %.2f - %.2f (median %.2f)",
+  min(df_base$cop_ashp, na.rm = TRUE), max(df_base$cop_ashp, na.rm = TRUE),
+  median(df_base$cop_ashp, na.rm = TRUE)))
+
+# =============================================================================
 # 8. EXPORT CSV
 # =============================================================================
 
@@ -347,7 +383,8 @@ df_export_full <- df_base %>%
     gshp_cop_max, ashp_cop_max,
     gshp_puissance_th, ashp_puissance_th,
     gshp_t_condenseur, ashp_t_condenseur,
-    gshp_t_evaporateur
+    gshp_t_evaporateur,
+    cop_gshp, cop_ashp, cop
   ) %>%
   mutate(timestamp = format(timestamp, "%Y-%m-%d %H:%M:%S"))
 
@@ -361,7 +398,8 @@ df_export_app <- df_base %>%
     timestamp, pv_kwh,
     gshp_kwh, ashp_kwh, pac_kwh,
     offtake_kwh, feedin_kwh,
-    t_ballon, t_sol, t_ext
+    t_ballon, t_sol, t_ext,
+    cop_gshp, cop_ashp, cop
   ) %>%
   mutate(timestamp = format(timestamp, "%Y-%m-%d %H:%M:%S"))
 
