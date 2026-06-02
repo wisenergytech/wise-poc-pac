@@ -35,9 +35,9 @@ DATA_DIR   <- "data"
 TMP_DIR    <- tempdir()
 
 # EM_PAC compteurs only available from 2026-05-12 12:48 (Lucia confirmed install)
-# Use 2026-05-13 for clean full days
+# Use 2026-05-13 for clean full days, fetch up to yesterday
 DATE_START <- "2026-05-13"
-DATE_END   <- "2026-05-20"
+DATE_END   <- format(Sys.Date() - 1, "%Y-%m-%d")
 
 PV_KWC <- 65  # Elia scaling (calibre a 65 kWc)
 
