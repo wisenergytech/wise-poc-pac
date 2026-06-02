@@ -369,27 +369,33 @@ DataGenerator <- R6::R6Class("DataGenerator",
       if ("soutirage_ecs_kwh" %in% names(df)) {
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
         df <- df %>% dplyr::mutate(soutirage_estime_kwh = soutirage_ecs_kwh)
+      } else if (has_pac_kwh && has_t_ballon) {
+        # Best estimate: energy balance from measured T_ballon + PAC + losses
+        # ecs[t] = (T[t-1] - T[t]) * cap + pac[t] * COP - pertes
+        # This uses all 3 measurements to deduce exactly what was drawn
+        k_perte <- 0.004 * params$dt_h
+        t_amb <- 20
+        cap <- params$capacite_kwh_par_degre
+        params$perte_kwh_par_qt <- k_perte * (params$t_consigne - t_amb)
+        df <- df %>% dplyr::mutate(
+          t_ballon_prev = dplyr::lag(t_ballon, default = t_ballon[1]),
+          pertes_qt = k_perte * (t_ballon_prev - t_amb),
+          soutirage_estime_kwh = pmax(0,
+            (t_ballon_prev - t_ballon) * cap +  # energy lost from tank cooling
+            pac_kwh * cop_reel -                 # energy added by PAC
+            pertes_qt                            # minus standing losses
+          )
+        ) %>% dplyr::select(-t_ballon_prev, -pertes_qt)
+        message(sprintf("[prepare_df] soutirage deduit de T_ballon + PAC: %.1f kWh_th/jour",
+          sum(df$soutirage_estime_kwh, na.rm = TRUE) / max(1, as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")))))
       } else if (has_pac_kwh) {
-        # Back-calculate total thermal demand from measured PAC consumption
-        # soutirage = pac_kwh * COP + standing losses (captures heating + ECS + all losses)
+        # Fallback: back-calculate from PAC consumption alone (no T_ballon)
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
         df <- df %>% dplyr::mutate(
           soutirage_estime_kwh = pmax(0, pac_kwh * cop_reel + params$perte_kwh_par_qt)
         )
         message(sprintf("[prepare_df] soutirage back-calcule depuis pac_kwh: %.1f kWh_th/jour",
           sum(df$soutirage_estime_kwh, na.rm = TRUE) / max(1, as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")))))
-      } else if ("delta_t_mesure" %in% names(df)) {
-        # Estimate ECS draws from tank temperature drops (legacy t_ballon path)
-        pm <- df %>%
-          dplyr::filter(offtake_kwh < 0.05, delta_t_mesure < 0) %>%
-          dplyr::summarise(p = stats::median(delta_t_mesure, na.rm = TRUE)) %>%
-          dplyr::pull(p)
-        if (is.na(pm) || pm >= 0) pm <- -0.2
-        params$perte_kwh_par_qt <- abs(pm) * params$capacite_kwh_par_degre
-        df <- df %>% dplyr::mutate(soutirage_estime_kwh = dplyr::case_when(
-          offtake_kwh < 0.05 & delta_t_mesure < pm ~
-            (abs(delta_t_mesure) - abs(pm)) * params$capacite_kwh_par_degre,
-          TRUE ~ 0))
       } else {
         # No ECS data available (pac_kwh CSV or fallback path): use typical daily profile
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
