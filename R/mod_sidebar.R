@@ -124,11 +124,10 @@ mod_sidebar_ui <- function(id) {
           shiny::numericInput(ns("taxe_transport_cible"), "Taxes reseau (EUR/kWh)", 0.19, min = 0, max = 0.5, step = 0.01),
           shiny::numericInput(ns("coeff_injection_cible"), "Coeff. injection / spot", 1.0, min = 0, max = 1.5, step = 0.05)))),
 
-    # ---- PV ----
-    shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Dimensionnement PV", tip("Simulez l'impact d'une installation PV plus grande ou plus petite. Les donnees sont mises a l'echelle proportionnellement.")),
-      # Source PV + PV auto: hidden when CSV measured baseline active
-      shiny::conditionalPanel(sprintf("!output['%s']", ns("csv_measured")),
+    # ---- PV (hidden in CSV mode — pv_kwh comes from the CSV) ----
+    shiny::conditionalPanel(sprintf("input['%s']!='csv'", ns("data_source")),
+      shiny::tags$div(class = "sidebar-section",
+        shiny::tags$div(class = "section-title", "Dimensionnement PV", tip("Simulez l'impact d'une installation PV plus grande ou plus petite. Les donnees sont mises a l'echelle proportionnellement.")),
         {
           all_pv <- c("Synth\u00e9tique" = "synthetic",
                        "R\u00e9el Elia (Namur)" = "real_elia",
@@ -148,15 +147,9 @@ mod_sidebar_ui <- function(id) {
         shiny::conditionalPanel(sprintf("input['%s']", ns("pv_auto")),
           shiny::uiOutput(ns("pv_auto_display"))),
         shiny::conditionalPanel(sprintf("!input['%s']", ns("pv_auto")),
-          shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5))),
-      shiny::tags$div(style = "display:none;",
-        shiny::numericInput(ns("pv_kwc_ref"), NULL, 6, min = 1, max = 200, step = 0.5)),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::uiOutput(ns("pv_kwc_ref_banner"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::uiOutput(ns("pv_kwc_custom_ui"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
-        shiny::uiOutput(ns("pv_whatif_toggle")))),
+          shiny::sliderInput(ns("pv_kwc_manual"), "Puissance crete (kWc)", 1, 200, 6, step = 0.5)))),
+    shiny::tags$div(style = "display:none;",
+      shiny::numericInput(ns("pv_kwc_ref"), NULL, 6, min = 1, max = 200, step = 0.5)),
 
     # ---- Baseline ----
     shiny::uiOutput(ns("measured_baseline_banner")),
