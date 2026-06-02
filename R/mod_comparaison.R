@@ -99,28 +99,33 @@ mod_comparaison_server <- function(id, sidebar) {
     vars_csv <- shiny::reactive({
       rd <- raw_data()
       if (is.null(rd)) return(NULL)
-      # Show ALL numeric columns with original CSV name + mapped name
       numeric_cols <- names(rd)[vapply(rd, is.numeric, logical(1))]
       exclude <- c("timestamp", "heure_join")
       numeric_cols <- setdiff(numeric_cols, exclude)
       if (length(numeric_cols) == 0) return(NULL)
 
-      # Get the mapping to find original CSV names
+      # Build reverse map: internal_name -> original CSV column name
       mapping_result <- tryCatch(sidebar$csv_mapping_result(), error = function(e) NULL)
-      if (!is.null(mapping_result)) {
-        # Build reverse map: internal_name -> original_csv_name
+      reverse <- list()
+      if (!is.null(mapping_result) && !is.null(mapping_result$mapping)) {
         m <- mapping_result$mapping
-        reverse <- setNames(names(m), as.character(m))
-        # feedin_kwh was renamed to intake_kwh internally
-        if ("feedin_kwh" %in% as.character(m)) reverse[["intake_kwh"]] <- reverse[["feedin_kwh"]]
-      } else {
-        reverse <- NULL
+        for (target in names(m)) {
+          src <- m[[target]]
+          if (!is.na(src) && src != target) {
+            # apply_column_mapping renamed src -> target
+            # feedin_kwh -> intake_kwh is a special case
+            if (target == "feedin_kwh") {
+              reverse[["intake_kwh"]] <- src
+            } else {
+              reverse[[target]] <- src
+            }
+          }
+        }
       }
 
       labels <- vapply(numeric_cols, function(col) {
-        original <- if (!is.null(reverse) && col %in% names(reverse)) reverse[[col]] else NULL
-        if (!is.null(original) && original != col) {
-          sprintf("%s  (%s)", original, col)
+        if (col %in% names(reverse)) {
+          sprintf("%s  (%s)", reverse[[col]], col)
         } else {
           col
         }
