@@ -51,7 +51,7 @@ solve_block_qp <- function(block_data, params, t_init, soc_init = NULL, prix_ter
 
   pv <- block_data$pv_kwh
   conso <- block_data$conso_hors_pac
-  prix_off <- block_data$prix_offtake
+  prix_off <- pmax(0, block_data$prix_offtake)  # floor negative prices to avoid solver divergence
   prix_inj <- block_data$prix_injection
   ecs <- block_data$soutirage_estime_kwh
 
