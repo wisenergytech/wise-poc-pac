@@ -396,7 +396,7 @@ out_app <- file.path(DATA_DIR, "bq_k0001_dual_pac.csv")
 df_export_app <- df_base %>%
   select(
     timestamp, pv_kwh,
-    gshp_kwh, ashp_kwh, pac_kwh,
+    gshp_kwh, ashp_kwh,
     offtake_kwh, feedin_kwh,
     t_ballon, t_sol, t_ext,
     cop_gshp, cop_ashp, cop
