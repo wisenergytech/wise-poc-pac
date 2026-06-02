@@ -86,6 +86,10 @@ solve_block_dual <- function(block_data, params, t_init, soc_init = NULL,
   k_perte <- 0.004 * params$dt_h
   t_amb <- 20
 
+  # Floor negative prices to 0 to avoid solver divergence
+  # (negative offtake price → solver wants infinite offtake → infeasible)
+  prix_off <- pmax(0, prix_off)
+
   # Battery
   has_batt <- params$batterie_active
   batt_pw <- if (has_batt) params$batt_kw * params$dt_h else 0
