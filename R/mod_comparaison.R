@@ -97,41 +97,50 @@ mod_comparaison_server <- function(id, sidebar) {
 
     # Dynamic CSV columns (010): add all numeric columns from imported CSV
     vars_csv <- shiny::reactive({
+      # Use original CSV column names (before mapping) as labels
+      # Values = internal column names (after mapping) for data access
       rd <- raw_data()
       if (is.null(rd)) return(NULL)
-      numeric_cols <- names(rd)[vapply(rd, is.numeric, logical(1))]
-      exclude <- c("timestamp", "heure_join")
-      numeric_cols <- setdiff(numeric_cols, exclude)
-      if (length(numeric_cols) == 0) return(NULL)
 
-      # Build reverse map: internal_name -> original CSV column name
+      original_cols <- tryCatch(sidebar$csv_original_columns(), error = function(e) NULL)
+      if (is.null(original_cols)) return(NULL)
+
+      # Read original CSV to get which columns are numeric
+      # (original_cols is just names, we need to check types from raw_data)
+      numeric_internal <- names(rd)[vapply(rd, is.numeric, logical(1))]
+      numeric_internal <- setdiff(numeric_internal, c("timestamp", "heure_join"))
+
+      # Build forward map: original_csv_name -> internal_name
       mapping_result <- tryCatch(sidebar$csv_mapping_result(), error = function(e) NULL)
-      reverse <- list()
+      forward <- list()
       if (!is.null(mapping_result) && !is.null(mapping_result$mapping)) {
         m <- mapping_result$mapping
         for (target in names(m)) {
           src <- m[[target]]
-          if (!is.na(src) && src != target) {
-            # apply_column_mapping renamed src -> target
-            # feedin_kwh -> intake_kwh is a special case
-            if (target == "feedin_kwh") {
-              reverse[["intake_kwh"]] <- src
-            } else {
-              reverse[[target]] <- src
-            }
+          if (!is.na(src)) {
+            internal <- if (target == "feedin_kwh") "intake_kwh" else target
+            forward[[src]] <- internal
           }
         }
       }
 
-      labels <- vapply(numeric_cols, function(col) {
-        if (col %in% names(reverse)) {
-          sprintf("%s  (%s)", reverse[[col]], col)
-        } else {
-          col
-        }
+      # For each original CSV column, find its internal name in raw_data
+      csv_numeric <- intersect(original_cols, c(
+        names(forward),  # mapped columns (original name -> internal)
+        numeric_internal  # unmapped columns (same name in both)
+      ))
+      if (length(csv_numeric) == 0) return(NULL)
+
+      # Exclude timestamp
+      csv_numeric <- setdiff(csv_numeric, c("timestamp", "time", "datetime"))
+
+      values <- vapply(csv_numeric, function(orig) {
+        if (orig %in% names(forward)) forward[[orig]] else orig
       }, character(1))
 
-      setNames(numeric_cols, labels)
+      # Only keep columns that actually exist in raw_data
+      keep <- values %in% names(rd)
+      setNames(values[keep], csv_numeric[keep])
     })
 
     all_vars_reactive <- shiny::reactive({

@@ -1594,6 +1594,7 @@ mod_sidebar_server <- function(id, sim_state) {
       date_range = shiny::reactive(input$date_range),
       data_source = shiny::reactive(input$data_source),
       csv_mapping_result = csv_mapping_result,
+      csv_original_columns = csv_columns,
       pv_data_source = shiny::reactive(input$pv_data_source),
       baseline_type = shiny::reactive(input$baseline_type),
       approche = shiny::reactive(input$approche),
