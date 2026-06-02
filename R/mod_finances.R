@@ -83,29 +83,33 @@ mod_finances_server <- function(id, sidebar) {
         pct1 <- if (abs(fa) > 0.001) round(levier1 / abs(fa) * 100, 1) else 0
         pct2 <- if (abs(fa) > 0.001) round(levier2 / abs(fa) * 100, 1) else 0
 
-        # -- Row 1: 3 cards (Avant / Gain / Apres) --
-        row1 <- list(
-          kpi_card(paste0(formatC(round(fa), big.mark = " ", format = "d"), " EUR"),
-            sprintf("Avant (%s)", lbl_actuel), "", cl$reel,
-            tooltip = sprintf("Facture actuelle : contrat %s, thermostat classique.%s",
-              lbl_actuel,
-              if (isTRUE(is_csv())) " Perimetre compteur reseau uniquement (peut etre negatif si injection PV > soutirage)." else "")),
-          kpi_card(paste0(formatC(round(gain_total), big.mark = " ", format = "d"), " EUR"),
-            "Gain", "", col_fn(gain_total),
-            tooltip = sprintf("Economie totale : %d EUR (%.1f%%). Inclut le passage en contrat %s + le pilotage intelligent Wise Brain.",
-              round(gain_total), pct_total, lbl_cible)),
-          kpi_card(paste0(formatC(round(fd), big.mark = " ", format = "d"), " EUR"),
-            sprintf("Apres (%s + Wise)", lbl_cible), "", col_fn(gain_total),
-            baseline_val = fa, opti_val = fd, gain_invert = TRUE,
-            gain_val = round(fd - fa), gain_unit = "EUR",
-            tooltip = sprintf("Facture avec contrat %s + pilotage Wise Brain : %d EUR.",
-              lbl_cible, round(fd)))
+        # -- Row 1: Single combined facture card --
+        gain_col <- col_fn(gain_total)
+        arrow <- if (gain_total > 0) "\u25bc" else if (gain_total < 0) "\u25b2" else ""
+        disclaimer <- if (isTRUE(is_csv())) {
+          sprintf("<br><span style='font-size:.55rem;color:%s;'>P\u00e9rim\u00e8tre compteur r\u00e9seau uniquement</span>", cl$text_muted)
+        } else ""
+
+        row1_card <- shiny::tags$div(class = "kpi-card", style = sprintf("--kpi-accent:%s;padding:20px 16px;", gain_col),
+          # Line 1: Avant → Après
+          shiny::tags$div(style = "display:flex;justify-content:center;align-items:baseline;gap:8px;",
+            shiny::tags$span(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;color:%s;", cl$reel),
+              sprintf("%s EUR", formatC(round(fa), big.mark = " ", format = "d"))),
+            shiny::tags$span(style = sprintf("font-size:1.2rem;color:%s;", cl$text_muted), "\u2192"),
+            shiny::tags$span(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1.4rem;font-weight:700;color:%s;", gain_col),
+              sprintf("%s EUR", formatC(round(fd), big.mark = " ", format = "d")))),
+          # Line 2: Labels
+          shiny::tags$div(style = sprintf("font-size:.65rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-top:4px;", cl$text_muted),
+            sprintf("%s \u2192 %s + Wise Brain", lbl_actuel, lbl_cible)),
+          # Line 3: Gain
+          shiny::tags$div(style = sprintf("font-family:'JetBrains Mono',monospace;font-size:1rem;font-weight:600;color:%s;margin-top:8px;", gain_col),
+            sprintf("%s %s EUR d'\u00e9conomie (%.0f%%)", arrow,
+              formatC(abs(round(gain_total)), big.mark = " ", format = "d"), abs(pct_total))),
+          # Disclaimer
+          shiny::HTML(disclaimer)
         )
 
-        row1_div <- do.call(shiny::tags$div, c(
-          list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:8px;"),
-          lapply(row1, function(k) shiny::tags$div(style = "flex:1;", k))
-        ))
+        row1_div <- shiny::tags$div(style = "margin-bottom:8px;", row1_card)
 
         # -- Row 2: Detail du resultat final (vs situation actuelle A) --
         prix_pac_a <- if (!is.null(k$prix_kwh_pac_baseline) && !is.na(k$prix_kwh_pac_baseline)) {
