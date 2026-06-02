@@ -287,15 +287,22 @@ mod_comparaison_server <- function(id, sidebar) {
         op_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
       }
 
-      # Dynamic CSV columns (010): add extra numeric columns from CSV
-      csv_extra <- vars_csv()
-      groups <- list(
-        "\U0001f4e1 Sources externes" = ext_avail,
-        "\U0001f3e0 Baseline / CSV"   = bl_avail,
-        "\u2728 Optimis\u00e9"        = op_avail
-      )
-      if (!is.null(csv_extra) && length(csv_extra) > 0) {
-        groups[["\U0001f4cb CSV (autres colonnes)"]] <- csv_extra
+      # In CSV mode: show CSV columns as the primary data group
+      csv_cols <- vars_csv()
+      is_csv <- tryCatch(sidebar$data_source(), error = function(e) "demo") == "csv"
+
+      if (is_csv && !is.null(csv_cols) && length(csv_cols) > 0) {
+        groups <- list(
+          "\U0001f4cb Colonnes CSV" = csv_cols,
+          "\U0001f4e1 Sources externes" = ext_avail,
+          "\u2728 Optimis\u00e9" = op_avail
+        )
+      } else {
+        groups <- list(
+          "\U0001f4e1 Sources externes" = ext_avail,
+          "\U0001f3e0 Baseline / CSV"   = bl_avail,
+          "\u2728 Optimis\u00e9"        = op_avail
+        )
       }
       groups
     }
