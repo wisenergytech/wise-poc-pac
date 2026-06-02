@@ -331,7 +331,59 @@ if (length(days_with_na) > 0) {
 }
 
 # =============================================================================
-# 7b. COP estime (modele parametrique)
+# 7b. BELPEX prices (ENTSO-E)
+# =============================================================================
+# Recupere les prix day-ahead Belpex : CSV local -> API ENTSO-E -> fallback
+# Necessaire pour l'optimiseur (prix_offtake, prix_injection)
+# =============================================================================
+message("[Belpex] Fetching prices...")
+
+source("R/data_entsoe_prices.R")
+
+# Load .env for ENTSO-E API key
+if (file.exists(".env")) {
+  env_lines <- readLines(".env", warn = FALSE)
+  for (line in env_lines) {
+    if (grepl("^[A-Za-z_]", line) && grepl("=", line)) {
+      parts <- strsplit(line, "=", fixed = TRUE)[[1]]
+      key <- parts[1]
+      val <- paste(parts[-1], collapse = "=")
+      do.call(Sys.setenv, setNames(list(val), key))
+    }
+  }
+}
+
+api_key <- Sys.getenv("ENTSOE_API_KEY", Sys.getenv("ENTSO-E_API_KEY", ""))
+
+belpex <- load_belpex_prices(
+  start_date = as.POSIXct(paste0(DATE_START, " 00:00:00"), tz = "UTC"),
+  end_date = as.POSIXct(paste0(DATE_END, " 23:59:59"), tz = "UTC"),
+  api_key = if (nchar(api_key) > 0) api_key else NULL
+)
+
+if (!is.null(belpex$data) && nrow(belpex$data) > 0) {
+  belpex_qt <- belpex$data %>%
+    mutate(
+      timestamp = with_tz(datetime, "Europe/Brussels"),
+      timestamp = floor_date(timestamp, "15 minutes"),
+      prix_eur_kwh = price_eur_mwh / 1000
+    ) %>%
+    distinct(timestamp, .keep_all = TRUE) %>%
+    select(timestamp, prix_eur_kwh)
+
+  df_base <- df_base %>%
+    left_join(belpex_qt, by = "timestamp") %>%
+    mutate(prix_eur_kwh = ifelse(is.na(prix_eur_kwh), median(belpex_qt$prix_eur_kwh, na.rm = TRUE), prix_eur_kwh))
+
+  n_matched <- sum(!is.na(df_base$prix_eur_kwh))
+  message(sprintf("  -> %d/%d quarts d'heure avec prix Belpex (source: %s)",
+    n_matched, nrow(df_base), belpex$source))
+} else {
+  message("[WARN] Pas de prix Belpex disponibles — colonne prix_eur_kwh non ajoutee")
+}
+
+# =============================================================================
+# 7c. COP estime (modele parametrique)
 # =============================================================================
 # Pas de COP mesure dans BQ — PAC_301_COP_MAX et PAC_501_COP_MAX sont des
 # parametres machine, pas des mesures de fonctionnement.
@@ -384,7 +436,8 @@ df_export_full <- df_base %>%
     gshp_puissance_th, ashp_puissance_th,
     gshp_t_condenseur, ashp_t_condenseur,
     gshp_t_evaporateur,
-    cop_gshp, cop_ashp, cop
+    cop_gshp, cop_ashp, cop,
+    any_of("prix_eur_kwh")
   ) %>%
   mutate(timestamp = format(timestamp, "%Y-%m-%d %H:%M:%S"))
 
@@ -399,7 +452,8 @@ df_export_app <- df_base %>%
     gshp_kwh, ashp_kwh,
     offtake_kwh, feedin_kwh,
     t_ballon, t_sol, t_ext,
-    cop_gshp, cop_ashp
+    cop_gshp, cop_ashp,
+    any_of("prix_eur_kwh")
   ) %>%
   mutate(timestamp = format(timestamp, "%Y-%m-%d %H:%M:%S"))
 
