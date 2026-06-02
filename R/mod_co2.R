@@ -46,9 +46,14 @@ mod_co2_server <- function(id, sidebar) {
     co2_data <- shiny::reactive({
       shiny::req(sim_filtered())
       sim <- sim_filtered()
+      ts <- sim$timestamp
+      if (!inherits(ts, "POSIXct")) {
+        ts <- lubridate::ymd_hms(ts, quiet = TRUE)
+      }
+      shiny::req(!all(is.na(ts)))
       result <- fetch_co2_intensity(
-        min(sim$timestamp, na.rm = TRUE),
-        max(sim$timestamp, na.rm = TRUE)
+        min(ts, na.rm = TRUE),
+        max(ts, na.rm = TRUE)
       )
       if (result$source != "local" && result$source != "fallback") {
         shiny::showNotification(

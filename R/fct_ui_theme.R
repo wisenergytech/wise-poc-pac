@@ -160,6 +160,9 @@ resolve_trace_config <- function(vars, agg_level, summable, unit_fn,
 #' @export
 plot_overlay_bar <- function(data, baseline_col, opti_col, ylab,
                              agg_level = NULL) {
+  if (!baseline_col %in% names(data) || !opti_col %in% names(data) || !"timestamp" %in% names(data)) {
+    return(plotly::plot_ly() %>% plotly::layout(title = list(text = "Donn\u00e9es indisponibles", font = list(size = 12))))
+  }
   bl <- data[[baseline_col]]
   op <- data[[opti_col]]
 
