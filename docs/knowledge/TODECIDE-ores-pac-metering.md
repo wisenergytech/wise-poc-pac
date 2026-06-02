@@ -1,85 +1,81 @@
-# Question Karno : incoherence compteur ORES vs compteurs PAC
+# Compteurs ORES vs PAC — resolution du probleme d'unites
 
-*Prepare le 2026-06-02 -- a envoyer a Clement/William*
+*Cree le 2026-06-02 — resolu le 2026-06-02*
 
 ## Contexte
 
-On essaie de faire le bilan energetique du site pour valider notre optimiseur. On compare les donnees du compteur ORES (`wise.k0001_ores`) avec les nouveaux compteurs electriques des PAC (`raw.k0001`, colonnes `EM_PAC_301` et `EM_PAC_501`).
+On comparait les donnees du compteur ORES (`wise.k0001_ores`) avec les compteurs PAC (`raw.k0001`, colonnes `EM_PAC_301` et `EM_PAC_501`). Le bilan energetique ne matchait pas : la PAC semblait consommer 48x plus que le site entier.
 
-William a confirme (mail du 18 mai) que "le compteur ORES comptabilise le prelevement et l'injection sur le reseau" et que "la nuit, tout ce qui est comptabilise par le compteur est utilise par la chaufferie".
+## Probleme initial
 
-## Observation 1 : ORES ne voit pas les PAC la nuit
+En utilisant `EM_PAC_301_ENER_P_IMP_PERIOD` comme energie (kWh) et `EM_PAC_301_PWR_TOT_P` comme puissance (kW), on obtenait :
 
-La nuit du 16 mai 2026 (pas de PV, pas d'injection), les deux PAC tournent a pleine puissance mais le compteur ORES ne voit quasi rien :
+- PAC total : 8 364 kWh sur 16 jours
+- ORES offtake : 175 kWh sur 16 jours
+- Ratio : 48x — physiquement impossible
 
-| Heure (UTC) | ORES (kW) | GSHP EM_PAC_301 (kW) | ASHP EM_PAC_501 (kW) | PAC total (kW) |
-|-------------|-----------|----------------------|----------------------|----------------|
-| 21:05 | 0.32 | 15.9 | 9.3 | 25.2 |
-| 21:15 | 0.31 | 16.0 | 9.2 | 25.3 |
-| 21:30 | 0.31 | 16.1 | 9.9 | 25.9 |
-| 21:45 | 0.31 | 16.0 | 9.4 | 25.3 |
-| 22:00 | 0.30 | 16.0 | 9.6 | 25.6 |
+## Investigation
 
-Les PAC consomment ~25 kW mais ORES ne voit que 0.3 kW (talon).
+### 1. Verification par courant et tension (V × I × PF)
 
-**Sur toute la periode 15 mai - 1 juin** :
-- Consommation ORES totale : **175 kWh** (16 jours) = 0.46 kW moyen
-- Consommation PAC estimee : **8 364 kWh** = 22 kW moyen
+Les colonnes de courant/tension dans `raw.k0001` montrent :
+- GSHP : 232 V, **0.11 A**, PF 0.31 → P = 232 × 0.11 × 0.31 × √3 ≈ **14 W** (pas 16 kW)
+- ASHP : 232 V, **1.35 A**, PF 0.01 → P ≈ **5 W** (pas 10 kW)
 
-## Observation 2 : spikes dans les compteurs PAC
+→ `PWR_TOT_P` ne peut pas etre en kW avec ces courants.
 
-La colonne `EM_PAC_501_PWR_TOT_P` (puissance ASHP) montre des valeurs aberrantes periodiques. Ces spikes **correlent** avec des hausses ponctuelles du compteur ORES :
+### 2. Relecture du mail de Lucia (19 mai)
 
-| Heure (UTC) | ORES (kW) | GSHP EM_PAC_301 (kW) | ASHP EM_PAC_501 (kW) | Commentaire |
-|-------------|-----------|----------------------|----------------------|-------------|
-| 22:05 | 0.31 | 16.0 | 10.4 | Normal |
-| 22:10 | 1.73 | 16.0 | **2 540** | Spike ASHP, ORES monte |
-| 22:15 | 3.37 | 16.1 | **3 097** | Spike |
-| 22:25 | 3.97 | 16.1 | **3 596** | Spike |
-| 22:35 | 4.21 | 16.1 | **3 766** | Spike |
+Lucia avait precise les colonnes :
+> - `EM_PAC_301_ENER_P_IMP_PERIOD` **is the power**
+> - `EM_PAC_301_ENER_P_IMP_T12_PERIOD` **is the energy index**
 
-La GSHP (`EM_PAC_301_PWR_TOT_P`) est stable a ~16 kW. L'ASHP a des spikes reguliers a >2000 kW (physiquement impossible pour une Hoval Belaria Pro 24).
+On avait utilise `PERIOD` comme energie et `PWR_TOT_P` comme puissance. En realite :
+- **`ENER_P_IMP_PERIOD`** = puissance instantanee en **W** (pas kWh)
+- **`ENER_P_IMP_T12_PERIOD`** = index cumulatif d'energie en **Wh** (pas kWh)
+- **`PWR_TOT_P`** = probablement une mesure interne du controleur (pas la puissance elec du compresseur)
 
-La colonne `EM_PAC_501_ENER_P_IMP_PERIOD` montre le meme probleme — des sauts de valeur (644, 518, 90 kWh puis 2.5 kWh par periode de 5 min).
+### 3. Verification avec les index T12
 
-## Observation 3 : correlation ORES ↔ spikes ASHP
+En utilisant les deltas de l'index T12 (en Wh, divise par 1000 → kWh) :
 
-Les plus grosses consommations ORES coincident avec les spikes ASHP :
+| Journee du 16 mai | Si T12 en Wh → kWh | ORES (kWh) | Ratio |
+|--------------------|--------------------|------------|-------|
+| GSHP | 7.8 | — | — |
+| ASHP | 51.3 | — | — |
+| **PAC total** | **59.1** | **23.7** | **2.5x** |
 
-| Moment | ORES (kW) | GSHP (kW) | ASHP (kW) |
-|--------|-----------|-----------|-----------|
-| 26 mai 11:35 | **126** | 17.1 | 9.0 |
-| 16 mai 03:45 | **12.8** | 8 618 | 3 113 |
-| 16 mai 03:50 | **12.7** | 8 773 | 2 779 |
-| 16 mai 04:10 | **6.6** | 16.3 | 10.5 |
+Ratio 2.5x : **plausible !** La PAC (59 kWh) consomme plus que le soutirage ORES (24 kWh) car une partie vient de l'autoconsommation PV (~35 kWh).
 
-Quand les deux compteurs PAC ont des spikes, ORES monte aussi. En fonctionnement "normal" (GSHP ~16 kW, ASHP ~10 kW), ORES ne voit que 0.3 kW.
+### 4. Verification multi-jours (15 mai - 1 juin)
 
-## Hypotheses
+Avec les unites corrigees :
+- GSHP : **37 kWh** sur 17 jours (~2.2 kWh/jour — quasi-arretee en mai)
+- ASHP : **599 kWh** sur 17 jours (~35 kWh/jour, ~1.5 kW moyen)
+- PAC total : **637 kWh**
+- ORES offtake : **178 kWh**
+- Ratio PAC/ORES : **3.6x** — coherent avec l'autoconsommation PV
 
-**H1 — Les compteurs EM_PAC ne sont pas en kW.** Si `PWR_TOT_P` etait en W (pas kW), la GSHP serait a 16 W et l'ASHP a 10 W. Mais 16 W est trop faible pour une PAC, et ca ne colle pas avec la fiche constructeur (Carrier 61WG035 = 10-11 kW elec nominal).
+## Resolution
 
-**H2 — Le compteur ORES dans BQ (`wise.k0001_ores`) ne couvre pas les PAC.** Les PAC seraient sur un circuit separe (triphas ?) non mesure par ce compteur. Les 0.3 kW de talon = auxiliaires/circulateurs.
+Le script `data-raw/fetch_bq_dual_pac.R` a ete corrige :
+- **Energie** : delta de `EM_PAC_*_ENER_P_IMP_T12_PERIOD` (index Wh cumulatif) ÷ 1000 → kWh
+- **Puissance** : `EM_PAC_*_ENER_P_IMP_PERIOD` (W) ÷ 1000 → kW (pour diagnostics)
+- Les colonnes `PWR_TOT_P` ne sont plus utilisees (mesure interne controleur, pas puissance compresseur)
 
-**H3 — Les valeurs "normales" des compteurs PAC (16 kW, 10 kW) sont fausses.** Ce seraient les spikes qui sont les vraies valeurs, et les 16/10 kW seraient des valeurs de veille/standby. Mais physiquement 16 kW est coherent avec la Carrier 61WG035.
+## Lecons apprises
 
-**H4 — Les compteurs PAC reportent des valeurs internes au controleur**, pas des mesures electriques reelles. Les spikes seraient des artefacts du protocole de communication.
+1. **Toujours verifier les unites avec V × I × PF** — pas se fier aux noms de colonnes
+2. **Relire les mails sources** — Lucia avait donne la bonne info, on l'avait mal interpretee
+3. **Le "unit check" etait circulaire** — comparer deux colonnes en unites inconnues ne prouve rien
+4. **Les spikes dans les donnees** (ASHP > 2000) sont probablement des artefacts du protocole de communication avec le controleur — pas des mesures reelles
 
-## Questions pour Karno
+## Questions restantes pour Karno
 
-1. **Le compteur ORES dans BigQuery (`wise.k0001_ores`) mesure-t-il bien la chaufferie PAC incluses ?** Nos donnees montrent que la nuit, ORES voit 0.3 kW alors que les PAC declarent consommer 25 kW.
+Les questions d'unites sont resolues. Il reste :
 
-2. **Les colonnes `EM_PAC_301_PWR_TOT_P` et `EM_PAC_501_PWR_TOT_P` — quelle est l'unite ?** kW ? W ? Autre ? Et les spikes reguliers a >2000 sur l'ASHP — est-ce un defaut du compteur ou du protocole ?
+1. **Schema electrique** : on confirme que ORES voit la chaufferie (PAC + auxiliaires + PV). Le bilan `PAC > ORES` s'explique par l'autoconsommation PV. Est-ce correct ?
 
-3. **Les colonnes `EM_PAC_*_ENER_P_IMP_PERIOD` — qu'est-ce qu'elles mesurent exactement ?** Energie par periode de 5 min (kWh) ? Index cumulatif ? Autre ? On observe des sauts non expliques (644 → 518 → 90 → 2.5).
+2. **`PWR_TOT_P` vs `ENER_P_IMP_PERIOD`** : les deux semblent mesurer des choses differentes. `PWR_TOT_P` a des valeurs tres faibles (courants < 1.5 A) qui ne correspondent pas aux compresseurs. Que mesure exactement `PWR_TOT_P` ?
 
-4. **Schema electrique simplifie** : pouvez-vous nous confirmer ce qui est en amont et en aval du compteur ORES ? Les PAC sont-elles sur le meme circuit ou un circuit triphas separe ?
-
-## Impact sur le POC
-
-Sans reponse a ces questions, on ne peut pas :
-- Calculer la part PAC dans la conso du site
-- Calculer le PV disponible pour la PAC (vs le reste du batiment)
-- Produire des KPIs financiers fiables (facture baseline vs optimisee)
-
-L'optimiseur fonctionne techniquement (scheduling PAC optimal sous contraintes thermiques + prix), mais les resultats chiffres (EUR economises) ne sont pas fiables tant que le bilan energetique n'est pas resolu.
+3. **Spikes ASHP** : les valeurs `EM_PAC_501_ENER_P_IMP_PERIOD > 500 W` et `EM_PAC_501_ENER_P_IMP_T12_PERIOD` avec des sauts d'index — est-ce un defaut connu du compteur ou du protocole Modbus ?
