@@ -52,6 +52,10 @@ mod_finances_server <- function(id, sidebar) {
       }
     }
 
+    is_csv <- shiny::reactive({
+      tryCatch(sidebar$data_source(), error = function(e) "demo") == "csv"
+    })
+
     # ---- KPIs ----
     output$finance_kpi_row <- shiny::renderUI({
       shiny::req(sidebar$kpis_r())
@@ -84,7 +88,9 @@ mod_finances_server <- function(id, sidebar) {
         row1 <- list(
           kpi_card(paste0(formatC(round(fa), big.mark = " ", format = "d"), " EUR"),
             "Situation actuelle", "", cl$reel,
-            tooltip = sprintf("Votre facture actuelle en contrat %s, sans pilotage intelligent. C'est le point de depart : ce que vous payez aujourd'hui.", lbl_actuel)),
+            tooltip = sprintf("Votre facture actuelle en contrat %s, sans pilotage intelligent. C'est le point de depart : ce que vous payez aujourd'hui.%s",
+              lbl_actuel,
+              if (isTRUE(is_csv())) " NB: perimetre compteur reseau uniquement (peut etre negatif si injection PV > soutirage)." else "")),
           kpi_card(paste0(formatC(round(levier1), big.mark = " ", format = "d"), " EUR"),
             "Levier 1 : Pilotage", "", cl$opti,
             baseline_val = fa, opti_val = fa - levier1, gain_invert = TRUE,
@@ -159,7 +165,8 @@ mod_finances_server <- function(id, sidebar) {
             "Facture nette", "", cl$opti,
             baseline_val = k$facture_baseline, opti_val = k$facture_opti, gain_invert = TRUE,
             gain_val = round(k$facture_opti - k$facture_baseline), gain_unit = "EUR",
-            tooltip = "Cout net (soutirage - injection). Baseline vs optimise."),
+            tooltip = sprintf("Cout net (soutirage - injection). Baseline vs optimise.%s",
+              if (isTRUE(is_csv())) " Perimetre compteur reseau uniquement." else "")),
           kpi_card(paste0(round(k$cout_soutirage_opti), " EUR"),
             "Cout soutirage", "", cl$accent3,
             baseline_val = k$cout_soutirage_baseline, opti_val = k$cout_soutirage_opti, gain_invert = TRUE,
