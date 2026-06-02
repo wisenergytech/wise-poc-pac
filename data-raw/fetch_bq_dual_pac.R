@@ -399,7 +399,7 @@ df_export_app <- df_base %>%
     gshp_kwh, ashp_kwh,
     offtake_kwh, feedin_kwh,
     t_ballon, t_sol, t_ext,
-    cop_gshp, cop_ashp, cop
+    cop_gshp, cop_ashp
   ) %>%
   mutate(timestamp = format(timestamp, "%Y-%m-%d %H:%M:%S"))
 
