@@ -900,11 +900,12 @@ mod_sidebar_server <- function(id, sim_state) {
         return()
       }
       df <- raw_data()
-      has_pac <- "pac_kwh" %in% names(df)
+      has_pac <- any(c("pac_kwh", "pac1_kwh", "gshp_kwh", "ashp_kwh") %in% names(df))
       has_meter <- "offtake_kwh" %in% names(df) &&
         "intake_kwh" %in% names(df)
       has_tbal <- "t_ballon" %in% names(df)
-      pac_na_rate <- if (has_pac) sum(is.na(df$pac_kwh)) / nrow(df) else 1
+      pac_col <- intersect(c("pac_kwh", "pac1_kwh", "gshp_kwh"), names(df))[1]
+      pac_na_rate <- if (!is.na(pac_col)) sum(is.na(df[[pac_col]])) / nrow(df) else 1
       csv_measured_eligible(has_pac && has_meter && pac_na_rate < 0.10)
       csv_has_t_ballon(has_tbal)
 

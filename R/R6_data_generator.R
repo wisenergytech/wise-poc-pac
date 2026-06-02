@@ -267,8 +267,17 @@ DataGenerator <- R6::R6Class("DataGenerator",
       # Scale PV production
       ratio_pv <- params$pv_kwc / params$pv_kwc_ref
       has_conso_base <- "conso_base_kwh" %in% names(df)
+      # Recognize pac1_kwh (from CSV mapping) as pac_kwh equivalent
+      if ("pac1_kwh" %in% names(df) && !"pac_kwh" %in% names(df)) {
+        df$pac_kwh <- df$pac1_kwh + if ("pac2_kwh" %in% names(df)) df$pac2_kwh else 0
+      }
       has_pac_kwh    <- "pac_kwh" %in% names(df)
       has_t_ballon   <- "t_ballon" %in% names(df)
+
+      # Compute delta_t_mesure from t_ballon if available (for ECS detection from T drops)
+      if (has_t_ballon && !"delta_t_mesure" %in% names(df)) {
+        df$delta_t_mesure <- c(0, diff(df$t_ballon))
+      }
 
       # Rename feedin_kwh -> intake_kwh if user CSV uses feedin_kwh
       if ("feedin_kwh" %in% names(df) && !"intake_kwh" %in% names(df)) {
