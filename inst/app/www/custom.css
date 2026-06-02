@@ -164,6 +164,29 @@ input::placeholder {
 }
 
 /* ---- KPI cards ---- */
+.kpi-card {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 16px 12px 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,.06);
+  position: relative;
+  overflow: hidden;
+  transition: box-shadow .15s ease;
+}
+
+.kpi-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,.1);
+}
+
+.kpi-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+  background: var(--kpi-accent, #1D4345);
+}
+
 .kpi-value {
   font-family: 'JetBrains Mono', monospace;
   font-size: 1.8rem;
@@ -176,7 +199,7 @@ input::placeholder {
   text-transform: uppercase;
   letter-spacing: .1em;
   color: #475569;
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .kpi-unit {
@@ -188,14 +211,14 @@ input::placeholder {
 .kpi-sub {
   font-size: .65rem;
   color: #475569;
-  margin-top: 2px;
+  margin-top: 4px;
   font-family: 'JetBrains Mono', monospace;
 }
 
 .kpi-gain {
   font-size: .72rem;
   font-weight: 600;
-  margin-top: 1px;
+  margin-top: 3px;
   font-family: 'JetBrains Mono', monospace;
 }
 

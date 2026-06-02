@@ -331,7 +331,9 @@ kpi_card <- function(value, label, unit, color,
     ))
   }
 
-  do.call(shiny::tags$div, c(list(class = "text-center"), list(val_div, label_div), sub_divs))
+  do.call(shiny::tags$div, c(
+    list(class = "kpi-card text-center", style = sprintf("--kpi-accent:%s;", color)),
+    list(val_div, label_div), sub_divs))
 }
 
 #' Explainer Panel
