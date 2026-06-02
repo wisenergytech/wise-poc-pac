@@ -1467,9 +1467,12 @@ mod_sidebar_server <- function(id, sim_state) {
         shiny::req(sim_result())
         bundle <- list(
           sim_result = sim_result(),
+          csv_original_columns = csv_columns(),
+          csv_mapping_result = csv_mapping_result(),
           metadata = list(
             exported_at = Sys.time(),
-            app_version = as.character(utils::packageVersion("wisepocpac"))
+            app_version = as.character(utils::packageVersion("wisepocpac")),
+            data_source = tryCatch(input$data_source, error = function(e) "demo")
           )
         )
         saveRDS(bundle, file)
@@ -1532,6 +1535,15 @@ mod_sidebar_server <- function(id, sim_state) {
         return()
       }
       sim_result(bundle$sim_result)
+
+      # Restore CSV column info (for explorer dropdowns)
+      if (!is.null(bundle$csv_original_columns)) {
+        csv_columns(bundle$csv_original_columns)
+      }
+      if (!is.null(bundle$csv_mapping_result)) {
+        csv_mapping_result(bundle$csv_mapping_result)
+      }
+
       if (!is.null(sim_df$timestamp)) {
         shiny::updateDateRangeInput(session, "date_range",
           start = as.Date(min(sim_df$timestamp)),
