@@ -397,7 +397,6 @@ df_export_app <- df_base %>%
   select(
     timestamp, pv_kwh,
     gshp_kwh, ashp_kwh, pac_kwh,
-    gshp_kw_mean, ashp_kw_mean,
     offtake_kwh, feedin_kwh,
     t_ballon, t_sol, t_ext,
     cop_gshp, cop_ashp, cop
