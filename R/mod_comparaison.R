@@ -90,28 +90,23 @@ mod_comparaison_server <- function(id, sidebar) {
 
     # Dynamic CSV columns (010): add all numeric columns from imported CSV
     vars_csv <- shiny::reactive({
-      # Simple: get original CSV column names, use them as both label and value.
-      # The dataframe raw_data() keeps unmapped columns with their original names,
-      # so we can access them directly. For mapped columns, we show the original
-      # name but the column in raw_data() has the internal name — we handle this
-      # by keeping BOTH original and internal columns in the choices.
+      # Get numeric columns from raw_data OR sim_result (for RDS import)
       rd <- raw_data()
-      if (is.null(rd)) return(NULL)
+      src_df <- if (!is.null(rd)) {
+        rd
+      } else if (has_sim()) {
+        sim_result()$sim
+      } else {
+        return(NULL)
+      }
 
-      # All numeric columns currently in raw_data (mix of internal + unmapped names)
-      all_numeric <- names(rd)[vapply(rd, is.numeric, logical(1))]
-      all_numeric <- setdiff(all_numeric, c("timestamp", "heure_join"))
+      all_numeric <- names(src_df)[vapply(src_df, is.numeric, logical(1))]
+      exclude <- c("timestamp", "heure_join", "autoconso_baseline", "autoconso_opti",
+                    "facture_baseline", "facture_opti")
+      all_numeric <- setdiff(all_numeric, exclude)
       if (length(all_numeric) == 0) return(NULL)
 
-      # Get original CSV column names for display
-      original_cols <- tryCatch(sidebar$csv_original_columns(), error = function(e) NULL)
-      if (is.null(original_cols)) {
-        # Fallback: just use current column names
-        return(setNames(all_numeric, all_numeric))
-      }
-      original_numeric <- setdiff(original_cols, c("timestamp", "time", "datetime"))
-
-      # Build reverse: internal_name -> original_name
+      # Build reverse map: internal_name -> original CSV name
       mapping_result <- tryCatch(sidebar$csv_mapping_result(), error = function(e) NULL)
       reverse <- list()
       if (!is.null(mapping_result) && !is.null(mapping_result$mapping)) {
@@ -124,7 +119,7 @@ mod_comparaison_server <- function(id, sidebar) {
         }
       }
 
-      # For each numeric column in raw_data, show its original CSV name
+      # Label = original CSV name, Value = internal name
       labels <- vapply(all_numeric, function(col) {
         if (col %in% names(reverse)) reverse[[col]] else col
       }, character(1))
