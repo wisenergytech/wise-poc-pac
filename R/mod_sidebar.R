@@ -171,79 +171,19 @@ mod_sidebar_ui <- function(id) {
         shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
           "Rendement = part de l'energie recuperee apres un cycle charge/decharge (pertes thermiques). Plage SoC = limites min/max pour proteger la duree de vie."))),
 
-    # ---- Optimisation ----
-    if (isTRUE(ui_cfg$simple_mode)) {
-      # Simple mode: LP/QP choice, 24h blocks, penalty 2.5, ToU forced on
-      simple_optim <- c("LP" = "optimiseur_lp", "QP" = "optimiseur_qp")
-      simple_optim <- simple_optim[simple_optim %in% ui_cfg$optimizers]
-      if (length(simple_optim) == 0) simple_optim <- c("LP" = "optimiseur_lp")
-      shiny::tagList(
-        shiny::tags$div(style = "display:none;",
-          shiny::checkboxInput(ns("tou_active"), NULL, TRUE)),
-        shiny::tags$div(class = "sidebar-section",
-          shiny::tags$div(class = "section-title", "Optimisation"),
-          shiny::radioButtons(ns("approche"), "Approche", choices = simple_optim, selected = simple_optim[1], inline = TRUE),
-          shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_lp'", ns("approche")),
-            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-              shiny::HTML("<b>LP</b> : la PAC module sa puissance en continu (0-100%%). Optimal pour les PAC inverter."))),
-          shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_qp'", ns("approche")),
-            shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-              shiny::HTML("<b>QP</b> : comme le LP, mais penalise les ecarts de temperature et les variations brusques de puissance. Ballon plus stable, PAC cycle moins.")),
-            shiny::sliderInput(ns("qp_w_comfort"), shiny::tags$span("Poids confort", tip("Penalite sur l'ecart entre la temperature du ballon et la consigne. Plus eleve : le ballon reste proche de la consigne.")),
-              0, 1, 0.1, step = 0.01),
-            shiny::sliderInput(ns("qp_w_smooth"), shiny::tags$span("Poids lissage", tip("Penalite sur les changements brusques de puissance PAC. Plus eleve : la PAC monte et descend progressivement.")),
-              0, 1, 0.05, step = 0.01)),
-          shiny::tags$div(style = sprintf("font-size:.75rem;color:%s;line-height:1.4;margin-top:8px;", cl$text),
-            shiny::HTML(sprintf(
-              "<b style='color:%s;'>TOU (Time of Use)</b> &mdash; activ\u00e9",
-              cl$success)),
-            shiny::conditionalPanel(sprintf("input['%s']=='belix'", ns("type_contrat")),
-              shiny::tags$span(style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-                "L'optimiseur d\u00e9cale la consommation PAC vers les heures creuses (tarif r\u00e9duit).")),
-            shiny::conditionalPanel(sprintf("input['%s']=='dynamique'", ns("type_contrat")),
-              shiny::tags$span(style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-                "L'optimiseur exploite les variations de prix spot (Belpex) pour d\u00e9caler la consommation PAC vers les heures les moins ch\u00e8res.")),
-            shiny::conditionalPanel(sprintf("input['%s']=='fixe'", ns("type_contrat")),
-              shiny::tags$span(style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-                "Prix plat : l'optimiseur maximise l'autoconsommation PV (pas de signal horaire).")))))
-    } else shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "Optimisation", tip("Choisissez l'approche de resolution et les strategies d'optimisation a activer.")),
-      {
-        all_optim <- c("MILP" = "optimiseur", "LP" = "optimiseur_lp", "QP" = "optimiseur_qp")
-        optim_choices <- all_optim[all_optim %in% ui_cfg$optimizers]
-        optim_selected <- if (ui_cfg$optimizers[1] %in% optim_choices) ui_cfg$optimizers[1] else optim_choices[1]
-        shiny::radioButtons(ns("approche"), "Approche", choices = optim_choices, selected = optim_selected, inline = TRUE)
-      },
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("<b>MILP</b> : la PAC est soit allumee soit eteinte (on/off). L'optimiseur planifie les creneaux ou la PAC chauffe le ballon pour minimiser le cout total, en respectant les limites de temperature du ballon.")),
-        shiny::sliderInput(ns("optim_bloc_h"), shiny::tags$span("Horizon bloc", tip("Nombre d'heures que l'optimiseur voit en avance pour planifier les cycles de la PAC. 4h : il anticipe les prix et le PV sur 4h, rapide a calculer. 24h : il planifie la journee complete (pre-chauffe le ballon quand le PV est fort, evite la pointe du soir), mais plus lent.")),
-          1, 24, 4, step = 1, post = "h"),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          shiny::HTML("4h = rapide (~1s/bloc) | 12h = equilibre | 24h = optimal mais lent"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_lp'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("<b>LP</b> : la PAC module sa puissance en continu (0-100%%). L'optimiseur choisit a chaque quart d'heure le niveau de charge optimal du ballon en fonction des prix, du PV et du COP. Ideal pour les PAC inverter qui modulant naturellement.")),
-        shiny::sliderInput(ns("optim_bloc_h_lp"), shiny::tags$span("Horizon bloc", tip("Nombre d'heures que l'optimiseur voit en avance. Le LP etant rapide, on peut planifier sur 24h : il anticipe le surplus PV de l'apres-midi pour eviter de chauffer le ballon le matin au prix fort.")),
-          1, 24, 24, step = 1, post = "h"),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          shiny::HTML("LP = rapide, des blocs de 24h sont recommandes"))),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur' || input['%s']=='optimiseur_lp'", ns("approche"), ns("approche")),
-        shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("Penalite T_min (EUR/C)", tip("Cout fictif par degre sous T_min du ballon. Plus bas : l'optimiseur laisse le ballon refroidir pres de T_min (meilleur COP car moins d'ecart avec l'exterieur, plus d'economies). Plus haut : la PAC maintient le ballon au-dessus de T_min strictement. A 2.5 EUR/C : bon compromis entre economies et confort.")),
-          0.5, 20, 2.5, step = 0.5, post = " EUR/C")),
-      shiny::conditionalPanel(sprintf("input['%s']=='optimiseur_qp'", ns("approche")),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;margin-bottom:6px;", cl$text_muted),
-          shiny::HTML("<b>QP</b> : comme le LP, la PAC module en continu, mais l'optimiseur penalise aussi les ecarts de temperature du ballon par rapport a la consigne et les variations brusques de puissance PAC. Le ballon reste plus stable, la PAC cycle moins.")),
-        shiny::sliderInput(ns("optim_bloc_h_qp"), shiny::tags$span("Horizon bloc", tip("Nombre d'heures que l'optimiseur voit en avance pour planifier la charge du ballon. 12-24h recommande : il peut anticiper le surplus PV et les prix de la journee pour lisser le profil de charge de la PAC.")),
-          1, 24, 24, step = 1, post = "h"),
-        shiny::sliderInput(ns("qp_w_comfort"), shiny::tags$span("Poids confort", tip("Penalite sur l'ecart entre la temperature du ballon et la consigne. Plus eleve : le ballon reste proche de la consigne (plus de confort ECS), mais la PAC tourne plus souvent.")),
-          0, 1, 0.1, step = 0.01),
-        shiny::sliderInput(ns("qp_w_smooth"), shiny::tags$span("Poids lissage", tip("Penalite sur les changements brusques de puissance PAC d'un quart d'heure a l'autre. Plus eleve : la PAC monte et descend progressivement (moins de cycling, moins d'usure). A 0 : la PAC peut passer de 0 a 100%% instantanement.")),
-          0, 1, 0.05, step = 0.01),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted),
-          shiny::HTML("Poids a 0 = LP pur. Augmenter pour plus de confort/lissage au detriment du cout."))),
+    # ---- Optimisation (auto-selected based on PAC config) ----
+    shiny::tags$div(class = "sidebar-section",
+      shiny::tags$div(class = "section-title", "Optimisation"),
+      # Hidden inputs: approche is set server-side, TOU always on
+      shiny::tags$div(style = "display:none;",
+        shiny::radioButtons(ns("approche"), NULL, choices = c("auto" = "auto"), selected = "auto"),
+        shiny::checkboxInput(ns("tou_active"), NULL, TRUE)),
+      # Encart showing auto-selected optimizer
+      shiny::uiOutput(ns("optimizer_info")),
+      shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("P\u00e9nalit\u00e9 T_min (EUR/\u00b0C)", tip("Cout fictif par degre sous T_min. Plus bas : economies maximales. Plus haut : confort prioritaire.")),
+        0.5, 20, 2.5, step = 0.5, post = " EUR/\u00b0C"),
       shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
-        shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strategies d'optimisation"),
+        shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strat\u00e9gies d'optimisation"),
         if (isTRUE(ui_cfg$strategies$tou)) shiny::tagList(
           shiny::checkboxInput(ns("tou_active"), shiny::tags$span("TOU (Time of Use)", tip("Exploite le signal prix (heures creuses/pleines ou spot Belpex selon le contrat) pour decaler la consommation PAC. Desactivez pour optimiser uniquement l'autoconsommation PV, sans tenir compte des prix.")),
             TRUE),
@@ -791,6 +731,49 @@ mod_sidebar_server <- function(id, sim_state) {
         })
     })
 
+    # ---- Auto-select optimizer and display info encart ----
+    auto_optimizer <- shiny::reactive({
+      pac2 <- if (!is.null(input$pac2_active)) isTRUE(input$pac2_active) else FALSE
+      pac1_mode <- if (!is.null(input$pac1_mode)) input$pac1_mode else "onoff"
+
+      if (pac2) {
+        list(
+          mode = "dual",
+          approche = "dual",
+          label = "Dual (MILP mixte)",
+          reason = "Deux PAC d\u00e9tect\u00e9es \u2192 dispatch optimal coupl\u00e9 (binaire + continu + rampe)",
+          bloc_h = 4
+        )
+      } else if (pac1_mode == "onoff") {
+        list(
+          mode = "milp",
+          approche = "optimiseur",
+          label = "MILP (on/off)",
+          reason = "PAC on/off \u2192 optimisation binaire (allum\u00e9e ou \u00e9teinte)",
+          bloc_h = 4
+        )
+      } else {
+        list(
+          mode = "lp",
+          approche = "optimiseur_lp",
+          label = "LP (continu)",
+          reason = "PAC inverter \u2192 modulation continue (0-100%)",
+          bloc_h = 24
+        )
+      }
+    })
+
+    output$optimizer_info <- shiny::renderUI({
+      opt <- auto_optimizer()
+      shiny::tags$div(
+        style = sprintf(
+          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin-bottom:8px;font-size:.72rem;line-height:1.4;",
+          cl$bg_card, cl$accent),
+        shiny::HTML(sprintf(
+          "<b style='color:%s;'>%s</b><br><span style='color:%s;'>%s</span>",
+          cl$accent, opt$label, cl$text_muted, opt$reason)))
+    })
+
     # ---- raw_data ----
     # Compute raw_data from current inputs. Also triggers once at boot
     # via the observe below (ignoreInit = FALSE on input$date_range).
@@ -1224,7 +1207,9 @@ mod_sidebar_server <- function(id, sim_state) {
       on.exit(sim_running(FALSE), add = TRUE)
       p <- params_r(); df <- raw_data()
       p$tou_active <- isTRUE(input$tou_active)
-      approche <- input$approche
+      # Auto-select optimizer based on PAC config
+      opt <- auto_optimizer()
+      approche <- opt$approche
 
       # Baseline mode: measured (CSV eligible), pv_tracking, or thermostat
       baseline_mode_r <- if (csv_measured_eligible() && !isTRUE(input$pv_whatif)) {
@@ -1241,10 +1226,9 @@ mod_sidebar_server <- function(id, sim_state) {
         df$prix_eur_kwh <- mean(df$prix_eur_kwh, na.rm = TRUE)
       }
 
-      # Map sidebar approche to R6 optimization mode
-      r6_mode <- switch(approche,
-        optimiseur = "milp", optimiseur_lp = "lp", optimiseur_qp = "qp",
-        "lp")
+      # Map auto-selected approche to R6 optimization mode
+      r6_mode <- opt$mode
+      p$optim_bloc_h <- opt$bloc_h
 
       # Set mode-specific params
       if (approche == "optimiseur_lp") p$optim_bloc_h <- if (!is.null(input$optim_bloc_h_lp)) input$optim_bloc_h_lp else 24
