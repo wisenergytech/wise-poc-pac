@@ -904,11 +904,11 @@ mod_sidebar_server <- function(id, sim_state) {
           report <- c(report, "", "&#9888; <b>Avertissements :</b>", warn_lines)
         }
 
-        # Show the full report as a single notification
+        # Show the full report as a single notification (id prevents duplicates on re-fire)
         shiny::showNotification(
           shiny::HTML(paste(report, collapse = "<br>")),
           type = if (length(warn_lines) > 0) "warning" else "message",
-          duration = 20)
+          duration = 20, id = "csv-import-report")
       } else {
         shiny::req(input$date_range)
 
