@@ -455,8 +455,12 @@ mod_comparaison_server <- function(id, sidebar) {
       }
 
       if (!is.null(merge_src) && nrow(merge_src) > 0) {
-        all_val_cols <- c(unname(vars_baseline), unname(vars_optimised))
-        val_cols <- intersect(names(merge_src), all_val_cols)
+        # Include all numeric columns from merge_src (CSV + baseline + optimised)
+        # not just hardcoded vars_baseline/vars_optimised
+        numeric_cols <- names(merge_src)[vapply(merge_src, is.numeric, logical(1))]
+        val_cols <- setdiff(numeric_cols, "timestamp")
+        # Avoid overwriting columns already in df (external data)
+        val_cols <- setdiff(val_cols, setdiff(names(df), "timestamp"))
         if (length(val_cols) > 0) {
           to_join <- merge_src[, c("timestamp", val_cols)]
           to_join$timestamp <- lubridate::floor_date(to_join$timestamp, "15 min")
