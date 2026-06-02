@@ -99,12 +99,13 @@ mod_comparaison_server <- function(id, sidebar) {
     vars_csv <- shiny::reactive({
       rd <- raw_data()
       if (is.null(rd)) return(NULL)
+      # Show ALL numeric columns from the CSV with their actual names
       numeric_cols <- names(rd)[vapply(rd, is.numeric, logical(1))]
-      # Exclude columns already in hardcoded lists
-      known <- c(unname(vars_external), unname(vars_baseline), unname(vars_optimised))
-      extra <- setdiff(numeric_cols, known)
-      if (length(extra) == 0) return(NULL)
-      setNames(extra, paste0("[CSV] ", extra))
+      # Exclude timestamp-like and purely internal columns
+      exclude <- c("timestamp", "heure_join")
+      numeric_cols <- setdiff(numeric_cols, exclude)
+      if (length(numeric_cols) == 0) return(NULL)
+      setNames(numeric_cols, paste0("[CSV] ", numeric_cols))
     })
 
     all_vars_reactive <- shiny::reactive({
