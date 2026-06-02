@@ -72,6 +72,8 @@ This updates guidelines, templates, CSS theme, CLAUDE.md, and constitution base 
 - R 4.5+ (Shiny) + golem, R6, shiny, bslib, dplyr, plotly (no new dependencies) (005-measured-baseline)
 - R 4.5+ (Shiny) + ompr 1.0.4, ompr.roi 1.0.2, ROI.plugin.highs (MILP solver), R6 >= 2.5.0, golem >= 0.4.0, shiny, bslib, dplyr, plotly (009-dual-pac-optimizer)
 - N/A (in-memory simulation, CSV/RDA data files) (009-dual-pac-optimizer)
+- R 4.5+ (Shiny) + golem, shiny, bslib, dplyr, readr (all existing, no new deps) (010-csv-column-mapping)
+- N/A (in-memory, CSV files) (010-csv-column-mapping)
 
 ## Recent Changes
 - 001-milp-optimizer: Added R 4.5+ (Shiny) + ompr 1.0.4, ompr.roi 1.0.2, ROI.plugin.glpk 1.0-0 (nouveaux) + stack existante (shiny, bslib, dplyr, plotly, DT)
