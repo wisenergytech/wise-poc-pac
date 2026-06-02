@@ -1538,52 +1538,27 @@ mod_sidebar_server <- function(id, sim_state) {
           end = as.Date(max(sim_df$timestamp)))
       }
 
-      # Restore sidebar inputs from saved params
+      # Restore sidebar inputs from saved params (safe: ignore missing inputs)
       p <- bundle$sim_result$params
       if (!is.null(p)) {
-        if (!is.null(p$p_pac_th_kw)) shiny::updateNumericInput(session, "p_pac_th_kw", value = p$p_pac_th_kw)
-        if (!is.null(p$cop_nominal)) shiny::updateNumericInput(session, "cop_nominal", value = p$cop_nominal)
-        if (!is.null(p$t_consigne)) shiny::updateNumericInput(session, "t_consigne", value = p$t_consigne)
-        if (!is.null(p$t_tolerance)) shiny::updateSliderInput(session, "t_tolerance", value = p$t_tolerance)
+        safe_update <- function(fn, id, ...) {
+          tryCatch(fn(session, id, ...), error = function(e) NULL)
+        }
+        safe_update(shiny::updateNumericInput, "t_consigne", value = p$t_consigne)
+        safe_update(shiny::updateSliderInput, "t_tolerance", value = p$t_tolerance)
+        safe_update(shiny::updateNumericInput, "p_pac_th_kw", value = p$p_pac_th_kw)
+        safe_update(shiny::updateNumericInput, "cop_nominal", value = p$cop_nominal)
         if (!is.null(p$volume_ballon_l)) {
-          shiny::updateCheckboxInput(session, "volume_auto", value = FALSE)
-          shiny::updateNumericInput(session, "volume_ballon_manual", value = p$volume_ballon_l)
+          safe_update(shiny::updateCheckboxInput, "volume_auto", value = FALSE)
+          safe_update(shiny::updateNumericInput, "volume_ballon_manual", value = p$volume_ballon_l)
         }
-        if (!is.null(p$type_contrat)) shiny::updateRadioButtons(session, "type_contrat", selected = p$type_contrat)
-        if (!is.null(p$pv_kwc_ref)) shiny::updateNumericInput(session, "pv_kwc_ref", value = p$pv_kwc_ref)
-        # PV
-        if (!is.null(p$pv_kwc)) {
-          shiny::updateCheckboxInput(session, "pv_auto", value = FALSE)
-          shiny::updateSliderInput(session, "pv_kwc_manual", value = p$pv_kwc)
-        }
-        if (!is.null(p$pv_data_source)) shiny::updateRadioButtons(session, "pv_data_source", selected = p$pv_data_source)
-        # Contract-specific params
-        if (!is.null(p$prix_fixe_offtake)) shiny::updateNumericInput(session, "prix_fixe_offtake", value = p$prix_fixe_offtake)
-        if (!is.null(p$prix_fixe_injection)) shiny::updateNumericInput(session, "prix_fixe_injection", value = p$prix_fixe_injection)
-        if (!is.null(p$belix_m_eur_mwh)) shiny::updateNumericInput(session, "belix_m", value = p$belix_m_eur_mwh)
-        if (!is.null(p$belix_r_eur_mwh)) shiny::updateNumericInput(session, "belix_r", value = p$belix_r_eur_mwh)
-        if (!is.null(p$belix_t_eur_mwh)) shiny::updateNumericInput(session, "belix_t", value = p$belix_t_eur_mwh)
-        if (!is.null(p$belix_injection_fixe)) shiny::updateNumericInput(session, "belix_injection_fixe", value = p$belix_injection_fixe)
-        if (!is.null(p$taxe_transport_eur_kwh)) shiny::updateNumericInput(session, "taxe_transport", value = p$taxe_transport_eur_kwh)
-        if (!is.null(p$coeff_injection)) shiny::updateNumericInput(session, "coeff_injection", value = p$coeff_injection)
-        # Optimizer params
-        if (!is.null(p$slack_penalty)) shiny::updateSliderInput(session, "slack_penalty", value = p$slack_penalty)
-        if (!is.null(p$optim_bloc_h)) shiny::updateSliderInput(session, "optim_bloc_h", value = p$optim_bloc_h)
-        # Battery
-        if (!is.null(p$batterie_active)) shiny::updateCheckboxInput(session, "batterie_active", value = p$batterie_active)
-        if (!is.null(p$batt_kwh)) shiny::updateNumericInput(session, "batt_kwh", value = p$batt_kwh)
-        if (!is.null(p$batt_kw)) shiny::updateNumericInput(session, "batt_kw", value = p$batt_kw)
-        if (!is.null(p$batt_rendement)) shiny::updateSliderInput(session, "batt_rendement", value = round(p$batt_rendement * 100))
-        if (!is.null(p$batt_soc_min) && !is.null(p$batt_soc_max)) {
-          shiny::updateSliderInput(session, "batt_soc_range", value = c(round(p$batt_soc_min * 100), round(p$batt_soc_max * 100)))
-        }
-        # Curtailment
-        if (!is.null(p$curtailment_active)) shiny::updateCheckboxInput(session, "curtailment_active", value = p$curtailment_active)
-        if (!is.null(p$curtail_kwh_per_qt) && is.finite(p$curtail_kwh_per_qt)) {
-          shiny::updateNumericInput(session, "curtail_kw", value = p$curtail_kwh_per_qt / 0.25)
-        }
-        # TOU
-        if (!is.null(p$tou_active)) shiny::updateCheckboxInput(session, "tou_active", value = p$tou_active)
+        safe_update(shiny::updateRadioButtons, "type_contrat", selected = p$type_contrat)
+        safe_update(shiny::updateNumericInput, "pv_kwc_ref", value = p$pv_kwc_ref)
+        safe_update(shiny::updateNumericInput, "prix_fixe_offtake", value = p$prix_fixe_offtake)
+        safe_update(shiny::updateNumericInput, "prix_fixe_injection", value = p$prix_fixe_injection)
+        safe_update(shiny::updateSliderInput, "slack_penalty", value = p$slack_penalty)
+        safe_update(shiny::updateCheckboxInput, "batterie_active", value = p$batterie_active)
+        safe_update(shiny::updateCheckboxInput, "tou_active", value = p$tou_active)
       }
 
       v <- if (!is.null(bundle$metadata$app_version)) bundle$metadata$app_version else "inconnue"
