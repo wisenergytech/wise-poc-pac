@@ -169,10 +169,23 @@ mod_comparaison_server <- function(id, sidebar) {
       "sim_pac_on", "autoconso_baseline", "autoconso_opti",
       "facture_baseline", "facture_opti")
 
+    # Resolve label for a variable (hardcoded or CSV)
+    get_label <- function(var) {
+      if (is.null(var) || var == "") return(var)
+      lbl <- names(all_vars)[all_vars == var]
+      if (length(lbl) > 0) return(lbl[1])
+      csv_v <- vars_csv()
+      if (!is.null(csv_v) && var %in% csv_v) {
+        lbl <- names(csv_v)[csv_v == var]
+        if (length(lbl) > 0) return(lbl[1])
+      }
+      var
+    }
+
     get_unit <- function(var) {
       if (is.null(var) || var == "") return(NA_character_)
-      label <- names(all_vars)[all_vars == var]
-      if (length(label) == 0) return(NA_character_)
+      label <- get_label(var)
+      if (is.null(label) || label == var) return(NA_character_)
       m <- regmatches(label, regexpr("\\(([^)]+)\\)", label))
       if (length(m) == 0) return(NA_character_)
       gsub("[()]", "", m)
@@ -527,7 +540,7 @@ mod_comparaison_server <- function(id, sidebar) {
         v <- vars[i]
         cfg <- configs[[v]]
         col <- colors[i]
-        lbl <- names(all_vars)[all_vars == v]
+        lbl <- get_label(v)
 
         if (cfg$type == "bar") {
           opacity <- if (n_bars >= 2 && i > 1) cl$scenarios$optimise$bar_opacity
@@ -549,8 +562,8 @@ mod_comparaison_server <- function(id, sidebar) {
       # Axis titles: collect actual units placed on each axis
       y1_units <- unique(na.omit(sapply(vars[sapply(vars, function(v) configs[[v]]$axis == "y")], get_unit)))
       y2_units <- unique(na.omit(sapply(vars[sapply(vars, function(v) configs[[v]]$axis == "y2")], get_unit)))
-      ytitle1 <- if (length(y1_units) > 0) paste(y1_units, collapse = " / ") else names(all_vars)[all_vars == v1]
-      ytitle2 <- if (length(y2_units) > 0) paste(y2_units, collapse = " / ") else names(all_vars)[all_vars == v2]
+      ytitle1 <- if (length(y1_units) > 0) paste(y1_units, collapse = " / ") else get_label(v1)
+      ytitle2 <- if (length(y2_units) > 0) paste(y2_units, collapse = " / ") else get_label(v2)
 
       barmode <- if (n_bars >= 2) "group" else if (n_bars == 1) "overlay" else "group"
 
