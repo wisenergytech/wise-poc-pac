@@ -96,8 +96,8 @@ mod_co2_server <- function(id, sidebar) {
           tooltip = "Nombre d'arbres necessaires pour absorber le CO2 evite (25 kg CO2/arbre/an, FAO).")
       )
       do.call(shiny::tags$div, c(
-        list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
-        lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k))
+        list(style = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"),
+        lapply(kpis, function(k) shiny::tags$div(style = "flex:1 1 calc(25% - 8px);min-width:140px;", k))
       ))
     })
 

@@ -142,8 +142,8 @@ mod_finances_server <- function(id, sidebar) {
         row2 <- Filter(Negate(is.null), row2)
 
         row2_div <- do.call(shiny::tags$div, c(
-          list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
-          lapply(row2, function(k) shiny::tags$div(style = "flex:1;", k))
+          list(style = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"),
+          lapply(row2, function(k) shiny::tags$div(style = "flex:1 1 calc(33% - 8px);min-width:140px;", k))
         ))
 
         shiny::tagList(row1_div, row2_div)
@@ -185,8 +185,8 @@ mod_finances_server <- function(id, sidebar) {
         )
         kpis <- Filter(Negate(is.null), kpis)
         do.call(shiny::tags$div, c(
-          list(style = "display:flex;justify-content:space-evenly;gap:8px;margin-bottom:12px;"),
-          lapply(kpis, function(k) shiny::tags$div(style = "flex:1;", k))
+          list(style = "display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;"),
+          lapply(kpis, function(k) shiny::tags$div(style = "flex:1 1 calc(25% - 8px);min-width:140px;", k))
         ))
       }
     })
