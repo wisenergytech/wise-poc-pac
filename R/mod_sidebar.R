@@ -28,20 +28,8 @@ mod_sidebar_ui <- function(id) {
       shiny::conditionalPanel(sprintf("input['%s']=='csv'", ns("data_source")),
         shiny::fileInput(ns("csv_file"), NULL, accept = ".csv", buttonLabel = "Parcourir", placeholder = "data.csv"),
         shiny::downloadButton(ns("download_template"), "T\u00e9l\u00e9charger le template CSV", class = "btn-outline-secondary btn-sm w-100 mb-2"),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.4;", cl$text_muted),
-          shiny::HTML(paste0(
-            "<b>Colonnes requises :</b><br>",
-            "<code>timestamp</code> &mdash; horodatage ISO 8601 (pas de 15 min)<br>",
-            "<code>pv_kwh</code> &mdash; production PV mesur\u00e9e (onduleur)<br>",
-            "<code>pac_kwh</code> &mdash; conso \u00e9lectrique PAC (sous-compteur)<br>",
-            "<code>offtake_kwh</code> &mdash; soutirage r\u00e9seau (compteur)<br>",
-            "<code>feedin_kwh</code> &mdash; injection r\u00e9seau (compteur)<br>",
-            "<br><b>Optionnelles :</b><br>",
-            "<code>t_ext</code> &mdash; temp\u00e9rature ext\u00e9rieure (\u00b0C)<br>",
-            "<code>t_ballon</code> &mdash; temp\u00e9rature du ballon (\u00b0C, pour estimer les soutirages ECS)<br>",
-            "<br>La colonne <code>pac_kwh</code> permet de d\u00e9duire exactement la consommation hors PAC ",
-            "(<code>conso_hors_pac = offtake + pv - injection - pac</code>). ",
-            "Sans elle, l'app <b>estime</b> la r\u00e9partition (moins pr\u00e9cis)."))))),
+        # --- Column mapping panel (010) ---
+        shiny::uiOutput(ns("csv_mapping_panel")))),
     shiny::tags$div(style = "display:none;",
       shiny::selectInput(ns("baseline_type"), NULL,
         choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
@@ -660,6 +648,68 @@ mod_sidebar_server <- function(id, sim_state) {
       p
     })
 
+    # ---- CSV column mapping (010) ----
+    csv_columns <- shiny::reactiveVal(NULL)
+    csv_mapping_result <- shiny::reactiveVal(NULL)
+
+    output$csv_mapping_panel <- shiny::renderUI({
+      shiny::req(input$data_source == "csv", input$csv_file)
+      cols <- csv_columns()
+      shiny::req(cols)
+      ns <- session$ns
+      choices_with_na <- c("---" = "---", setNames(cols, cols))
+      mapping <- csv_mapping_result()
+
+      get_sel <- function(field) {
+        if (!is.null(mapping) && !is.na(mapping$mapping[[field]])) mapping$mapping[[field]] else "---"
+      }
+
+      auto <- if (!is.null(mapping)) detect_auto_mappable(mapping$mapping, cols) else FALSE
+
+      shiny::tagList(
+        shiny::tags$details(open = if (!auto) "open" else NULL,
+          shiny::tags$summary(style = sprintf("font-size:.75rem;font-weight:600;color:%s;cursor:pointer;margin:6px 0;", cl$accent),
+            if (auto) "Mapping colonnes (auto-detect\u00e9)" else "Mapping colonnes"),
+          shiny::tags$div(style = "font-size:.7rem;padding:4px 0;",
+            shiny::selectInput(ns("map_timestamp"), "Timestamp", choices_with_na, selected = get_sel("timestamp"), width = "100%"),
+            shiny::selectInput(ns("map_pv"), "Production PV", choices_with_na, selected = get_sel("pv_kwh"), width = "100%"),
+            shiny::selectInput(ns("map_offtake"), "Soutirage r\u00e9seau", choices_with_na, selected = get_sel("offtake_kwh"), width = "100%"),
+            shiny::selectInput(ns("map_feedin"), "Injection r\u00e9seau", choices_with_na, selected = get_sel("feedin_kwh"), width = "100%"),
+            shiny::selectInput(ns("map_pac1"), "PAC 1 (kWh \u00e9lec)", choices_with_na, selected = get_sel("pac1_kwh"), width = "100%"),
+            shiny::selectInput(ns("map_pac2"), "PAC 2 (optionnelle)", choices_with_na, selected = get_sel("pac2_kwh"), width = "100%"),
+            shiny::selectInput(ns("map_t_ballon"), "T ballon (\u00b0C)", choices_with_na, selected = get_sel("t_ballon"), width = "100%"),
+            shiny::selectInput(ns("map_t_sol"), "T sol (\u00b0C)", choices_with_na, selected = get_sel("t_sol"), width = "100%"),
+            shiny::selectInput(ns("map_t_ext"), "T ext\u00e9rieure (\u00b0C)", choices_with_na, selected = get_sel("t_ext"), width = "100%")
+          )))
+    })
+
+    shiny::observe({
+      shiny::req(input$csv_file)
+      cols <- names(readr::read_csv(input$csv_file$datapath, n_max = 0, show_col_types = FALSE))
+      csv_columns(cols)
+      result <- suggest_column_mapping(cols)
+      csv_mapping_result(result)
+      message(sprintf("[CSV Mapping] %d columns detected, auto-mappable: %s",
+        length(cols), detect_auto_mappable(result$mapping, cols)))
+    })
+
+    # Helper: get current mapping from UI inputs
+    get_ui_mapping <- function() {
+      m <- list(
+        timestamp = input$map_timestamp,
+        pv_kwh = input$map_pv,
+        offtake_kwh = input$map_offtake,
+        feedin_kwh = input$map_feedin,
+        pac1_kwh = input$map_pac1,
+        pac2_kwh = input$map_pac2,
+        t_ballon = input$map_t_ballon,
+        t_sol = input$map_t_sol,
+        t_ext = input$map_t_ext
+      )
+      # Replace "---" with NA
+      lapply(m, function(x) if (is.null(x) || x == "---") NA_character_ else x)
+    }
+
     # ---- raw_data ----
     # Compute raw_data from current inputs. Also triggers once at boot
     # via the observe below (ignoreInit = FALSE on input$date_range).
@@ -667,23 +717,26 @@ mod_sidebar_server <- function(id, sim_state) {
       if (input$data_source == "csv") {
         shiny::req(input$csv_file)
         df <- readr::read_csv(input$csv_file$datapath, show_col_types = FALSE)
-        if (!inherits(df$timestamp, "POSIXct")) {
+
+        # Apply column mapping (010)
+        mapping <- get_ui_mapping()
+        df <- apply_column_mapping(df, mapping)
+
+        # Parse timestamp
+        if ("timestamp" %in% names(df) && !inherits(df$timestamp, "POSIXct")) {
           df$timestamp <- dplyr::coalesce(
             lubridate::ymd_hms(df$timestamp, quiet = TRUE),
             lubridate::ymd(df$timestamp, quiet = TRUE))
         }
 
-        # Normalize column names early so the rest of the app uses consistent names
-        if ("feedin_kwh" %in% names(df) && !"intake_kwh" %in% names(df)) {
-          df <- dplyr::rename(df, intake_kwh = feedin_kwh)
-        }
-
-        # Validate required columns
-        required <- c("timestamp", "pv_kwh", "offtake_kwh", "intake_kwh")
+        # Validate required columns (post-mapping)
+        required <- c("timestamp", "pv_kwh", "offtake_kwh")
+        # feedin_kwh is renamed to intake_kwh by apply_column_mapping
+        if (!"intake_kwh" %in% names(df)) required <- c(required, "intake_kwh")
         missing <- setdiff(required, names(df))
         if (length(missing) > 0) {
           shiny::showNotification(
-            sprintf("Colonnes manquantes dans le CSV : %s", paste(missing, collapse = ", ")),
+            sprintf("Colonnes manquantes (mappez-les dans le panneau ci-dessus) : %s", paste(missing, collapse = ", ")),
             type = "error", duration = 10)
           shiny::req(FALSE)
         }

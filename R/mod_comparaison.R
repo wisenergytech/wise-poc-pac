@@ -95,6 +95,25 @@ mod_comparaison_server <- function(id, sidebar) {
       "COP PAC 2"                               = "sim_cop2"
     )
 
+    # Dynamic CSV columns (010): add all numeric columns from imported CSV
+    vars_csv <- shiny::reactive({
+      rd <- raw_data()
+      if (is.null(rd)) return(NULL)
+      numeric_cols <- names(rd)[vapply(rd, is.numeric, logical(1))]
+      # Exclude columns already in hardcoded lists
+      known <- c(unname(vars_external), unname(vars_baseline), unname(vars_optimised))
+      extra <- setdiff(numeric_cols, known)
+      if (length(extra) == 0) return(NULL)
+      setNames(extra, paste0("[CSV] ", extra))
+    })
+
+    all_vars_reactive <- shiny::reactive({
+      base <- c(vars_external, vars_baseline, vars_optimised)
+      csv_extra <- vars_csv()
+      if (!is.null(csv_extra)) base <- c(csv_extra, base)
+      base
+    })
+
     all_vars <- c(vars_external, vars_baseline, vars_optimised)
 
     # Color palettes per category (primary + fallbacks for dedup)
@@ -246,11 +265,17 @@ mod_comparaison_server <- function(id, sidebar) {
         op_avail <- stats::setNames("", "\u26a0 Lancez une simulation")
       }
 
-      list(
+      # Dynamic CSV columns (010): add extra numeric columns from CSV
+      csv_extra <- vars_csv()
+      groups <- list(
         "\U0001f4e1 Sources externes" = ext_avail,
         "\U0001f3e0 Baseline / CSV"   = bl_avail,
         "\u2728 Optimis\u00e9"        = op_avail
       )
+      if (!is.null(csv_extra) && length(csv_extra) > 0) {
+        groups[["\U0001f4cb CSV (autres colonnes)"]] <- csv_extra
+      }
+      groups
     }
 
     # Filter choices for serie 3: max 2 distinct units across all 3 series
