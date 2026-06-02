@@ -73,25 +73,25 @@ sql_pac <- sprintf("
   SELECT
     UTC_DateTime,
     -- Temperatures
-    TT_601,                          -- T ballon haut
-    TT_602,                          -- T ballon bas
-    EC_201_T_flow,                   -- T sol (sortie forage = source GSHP)
-    EC_201_T_return,                 -- T sol (retour forage)
-    TT_Text,                         -- T exterieure (sonde site)
+    TT_601,                                -- T ballon haut
+    TT_602,                                -- T ballon bas
+    EC_201_T_flow,                         -- T sol (sortie forage = source GSHP)
+    EC_201_T_return,                       -- T sol (retour forage)
+    TT_Text,                               -- T exterieure (sonde site)
     -- GSHP (PAC 3.01 = Carrier 61WG035, 40-44 kWth)
-    EM_PAC_301_ENER_P_IMP_PERIOD,    -- Energie elec importee par periode (kWh)
-    EM_PAC_301_PWR_TOT_P,            -- Puissance active instantanee (kW)
-    PAC_301_COP_MAX,                 -- COP max reporte
-    PAC_301_PUISSANCE,               -- Puissance thermique reportee
-    PAC_301_T_OUT_CONDENSEUR,        -- T sortie condenseur
-    PAC_301_T_IN_EAU_ECHANGEUR,      -- T entree echangeur (source)
+    EM_PAC_301_ENER_P_IMP_T12_PERIOD,      -- Index energie cumulatif (Wh) — Lucia 19/05
+    EM_PAC_301_ENER_P_IMP_PERIOD,          -- Puissance instantanee (W) — Lucia 19/05
+    PAC_301_COP_MAX,
+    PAC_301_PUISSANCE,
+    PAC_301_T_OUT_CONDENSEUR,
+    PAC_301_T_IN_EAU_ECHANGEUR,
     -- ASHP (PAC 5.01 = Hoval Belaria Pro 24, 22-24 kWth)
-    EM_PAC_501_ENER_P_IMP_PERIOD,    -- Energie elec importee par periode (kWh)
-    EM_PAC_501_PWR_TOT_P,            -- Puissance active instantanee (kW)
-    PAC_501_COP_MAX,                 -- COP max reporte
-    PAC_501_PUISSANCE,               -- Puissance thermique reportee
-    PAC_501_T_OUT_CONDENSEUR,        -- T sortie condenseur
-    PAC_501_T_EXT                    -- T ext vue par l'ASHP
+    EM_PAC_501_ENER_P_IMP_T12_PERIOD,      -- Index energie cumulatif (Wh) — Lucia 19/05
+    EM_PAC_501_ENER_P_IMP_PERIOD,          -- Puissance instantanee (W) — Lucia 19/05
+    PAC_501_COP_MAX,
+    PAC_501_PUISSANCE,
+    PAC_501_T_OUT_CONDENSEUR,
+    PAC_501_T_EXT
   FROM `%s.raw.k0001`
   WHERE UTC_DateTime >= '%s'
     AND UTC_DateTime <= '%s 23:59:59'
@@ -128,6 +128,9 @@ message(sprintf("  -> %d lignes ORES", nrow(df_ores)))
 message("[Aggregation] 5-min -> 15-min...")
 
 # --- 3a. PAC : agreger par quart d'heure ---
+# CORRECTED (2026-06-02): use T12 index (Wh cumulative) for energy, not PERIOD
+# Lucia (19/05): ENER_P_IMP_T12_PERIOD = energy index (Wh cumulative)
+#                ENER_P_IMP_PERIOD = power (W instantaneous)
 df_pac_15 <- df_pac %>%
   mutate(qt = floor_date(UTC_DateTime, unit = "15 minutes")) %>%
   group_by(qt) %>%
@@ -138,18 +141,18 @@ df_pac_15 <- df_pac %>%
     t_sol = mean(EC_201_T_flow, na.rm = TRUE),
     t_sol_return = mean(EC_201_T_return, na.rm = TRUE),
     t_ext_site = mean(TT_Text, na.rm = TRUE),
-    # GSHP elec : LAST value per 15-min (ENER_P_IMP_PERIOD is already a 15-min
-    # delta reported every 5 min — taking last avoids triple-counting)
-    # Also use median of PWR_TOT_P to filter spikes
-    gshp_kwh = last(na.omit(EM_PAC_301_ENER_P_IMP_PERIOD)),
-    gshp_kw_mean = median(EM_PAC_301_PWR_TOT_P, na.rm = TRUE),
+    # GSHP energy: last T12 index in the quarter (for delta calculation)
+    gshp_idx = last(na.omit(EM_PAC_301_ENER_P_IMP_T12_PERIOD)),
+    # GSHP power (W): median of instantaneous power, for diagnostics
+    gshp_w_mean = median(EM_PAC_301_ENER_P_IMP_PERIOD, na.rm = TRUE),
     gshp_cop_max = mean(PAC_301_COP_MAX, na.rm = TRUE),
     gshp_puissance_th = mean(PAC_301_PUISSANCE, na.rm = TRUE),
     gshp_t_condenseur = mean(PAC_301_T_OUT_CONDENSEUR, na.rm = TRUE),
     gshp_t_evaporateur = mean(PAC_301_T_IN_EAU_ECHANGEUR, na.rm = TRUE),
-    # ASHP elec : same logic — last value per 15-min, median power for spikes
-    ashp_kwh = last(na.omit(EM_PAC_501_ENER_P_IMP_PERIOD)),
-    ashp_kw_mean = median(EM_PAC_501_PWR_TOT_P, na.rm = TRUE),
+    # ASHP energy: last T12 index
+    ashp_idx = last(na.omit(EM_PAC_501_ENER_P_IMP_T12_PERIOD)),
+    # ASHP power (W): median
+    ashp_w_mean = median(EM_PAC_501_ENER_P_IMP_PERIOD, na.rm = TRUE),
     ashp_cop_max = mean(PAC_501_COP_MAX, na.rm = TRUE),
     ashp_puissance_th = mean(PAC_501_PUISSANCE, na.rm = TRUE),
     ashp_t_condenseur = mean(PAC_501_T_OUT_CONDENSEUR, na.rm = TRUE),
@@ -157,45 +160,30 @@ df_pac_15 <- df_pac %>%
     .groups = "drop"
   ) %>%
   mutate(across(where(is.numeric), ~ifelse(is.nan(.), NA_real_, .))) %>%
+  arrange(qt) %>%
   mutate(
-    # Replace NULL from last(na.omit(...)) with 0
+    # Energy per quarter = delta of T12 index (Wh) / 1000 -> kWh
+    gshp_kwh = pmax(0, (gshp_idx - dplyr::lag(gshp_idx)) / 1000),
+    ashp_kwh = pmax(0, (ashp_idx - dplyr::lag(ashp_idx)) / 1000),
+    # Replace NA (first row) with 0
     gshp_kwh = ifelse(is.na(gshp_kwh), 0, gshp_kwh),
     ashp_kwh = ifelse(is.na(ashp_kwh), 0, ashp_kwh),
-    # Cap energy spikes: max plausible = P_elec_max * 0.25h
-    # GSHP Carrier 61WG035: 40-44 kWth / COP~4 = ~11 kW elec -> max 3 kWh/qt
-    # ASHP Hoval Belaria Pro 24: 22-24 kWth / COP~3.5 = ~7 kW elec -> max 2 kWh/qt
-    # Use generous caps (x2) to allow for transients
-    gshp_kwh = ifelse(gshp_kwh > 6, NA_real_, gshp_kwh),
-    ashp_kwh = ifelse(ashp_kwh > 4, NA_real_, ashp_kwh),
-    # Replace capped NAs with 0 (spike = no reliable data for that qt)
-    gshp_kwh = ifelse(is.na(gshp_kwh), 0, gshp_kwh),
-    ashp_kwh = ifelse(is.na(ashp_kwh), 0, ashp_kwh),
-    # Cap power spikes
-    gshp_kw_mean = ifelse(!is.na(gshp_kw_mean) & gshp_kw_mean > 50, NA_real_, gshp_kw_mean),
-    ashp_kw_mean = ifelse(!is.na(ashp_kw_mean) & ashp_kw_mean > 30, NA_real_, ashp_kw_mean)
+    # Power in kW (from W)
+    gshp_kw_mean = gshp_w_mean / 1000,
+    ashp_kw_mean = ashp_w_mean / 1000,
+    # Cap energy spikes: GSHP max ~11 kW elec -> max 2.75 kWh/qt, ASHP max ~7 kW -> 1.75 kWh/qt
+    gshp_kwh = ifelse(gshp_kwh > 5, 0, gshp_kwh),
+    ashp_kwh = ifelse(ashp_kwh > 3, 0, ashp_kwh)
   )
 
-# Cross-check: energy vs power consistency
-# If gshp_kwh ~ 4 kWh/15min and gshp_kw_mean ~ 16 kW, then 16 kW * 0.25h = 4 kWh -> OK, unit is kWh
-# If gshp_kwh ~ 4000 and gshp_kw_mean ~ 16, then unit is Wh -> divide by 1000
-gshp_energy_median <- median(df_pac_15$gshp_kwh[df_pac_15$gshp_kwh > 0], na.rm = TRUE)
-gshp_power_median <- median(df_pac_15$gshp_kw_mean[df_pac_15$gshp_kw_mean > 0], na.rm = TRUE)
-expected_kwh <- gshp_power_median * 0.25  # kW * 0.25h
-
-if (!is.na(gshp_energy_median) && !is.na(expected_kwh) && expected_kwh > 0) {
-  ratio <- gshp_energy_median / expected_kwh
-  message(sprintf("[Unit check] GSHP energy median=%.2f, power median=%.2f kW, expected=%.2f kWh/qt, ratio=%.1f",
-    gshp_energy_median, gshp_power_median, expected_kwh, ratio))
-  if (ratio > 500) {
-    message("[Unit fix] ENER_P_IMP_PERIOD appears to be in Wh -> dividing by 1000")
-    df_pac_15$gshp_kwh <- df_pac_15$gshp_kwh / 1000
-    df_pac_15$ashp_kwh <- df_pac_15$ashp_kwh / 1000
-  } else if (ratio > 2.5) {
-    message(sprintf("[WARN] Energy/power ratio=%.1f — unit unclear, keeping as-is", ratio))
-  } else {
-    message("[Unit check] ENER_P_IMP_PERIOD is in kWh — OK")
-  }
-}
+# Cross-check with ORES
+gshp_daily <- sum(df_pac_15$gshp_kwh, na.rm = TRUE)
+ashp_daily <- sum(df_pac_15$ashp_kwh, na.rm = TRUE)
+n_days <- as.numeric(difftime(max(df_pac_15$qt), min(df_pac_15$qt), units = "days"))
+message(sprintf("[Energy check] GSHP: %.1f kWh (%.1f/day), ASHP: %.1f kWh (%.1f/day), Total: %.1f kWh",
+  gshp_daily, gshp_daily / max(1, n_days),
+  ashp_daily, ashp_daily / max(1, n_days),
+  gshp_daily + ashp_daily))
 
 # --- 3b. ORES : difference d'index par quart d'heure ---
 df_ores_15 <- df_ores %>%
