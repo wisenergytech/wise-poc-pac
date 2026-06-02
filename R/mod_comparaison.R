@@ -80,19 +80,12 @@ mod_comparaison_server <- function(id, sidebar) {
     )
 
     vars_optimised <- c(
-      "Soutirage optimis\u00e9 (kWh)"         = "sim_offtake",
-      "Injection optimis\u00e9e (kWh)"         = "sim_intake",
-      "Autoconsommation optimis\u00e9e (kWh)"  = "autoconso_opti",
-      "Facture optimis\u00e9e (EUR)"            = "facture_opti",
-      "Temp\u00e9rature ballon optimis\u00e9e (\u00b0C)" = "sim_t_ballon",
-      "COP"                                     = "sim_cop",
-      "PAC on (optimis\u00e9)"                  = "sim_pac_on",
-      "PAC 1 (kWh)"                             = "sim_pac1_kwh",
-      "PAC 2 (kWh)"                             = "sim_pac2_kwh",
-      "PAC 1 on/load"                           = "sim_pac1_on",
-      "PAC 2 load"                              = "sim_pac2_load",
-      "COP PAC 1"                               = "sim_cop1",
-      "COP PAC 2"                               = "sim_cop2"
+      "Soutirage optimis\u00e9 (kWh)"                  = "sim_offtake",
+      "Injection optimis\u00e9e (kWh)"                  = "sim_intake",
+      "T ballon optimis\u00e9e (\u00b0C)"               = "sim_t_ballon",
+      "Scheduling PAC"                                   = "sim_pac_on",
+      "PAC 1 (kWh)"                                      = "sim_pac1_kwh",
+      "PAC 2 (kWh)"                                      = "sim_pac2_kwh"
     )
 
     # Dynamic CSV columns (010): add all numeric columns from imported CSV
