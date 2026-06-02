@@ -35,30 +35,11 @@ mod_sidebar_ui <- function(id) {
         choices = c("parametric", "reactif", "programmateur", "surplus_pv", "ingenieur", "proactif"),
         selected = "parametric")),
 
-    # ---- PAC 1 ----
-    shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "PAC 1", tip("Caracteristiques de votre PAC principale. La puissance thermique est celle indiquee par le constructeur (sortie chaleur). Le COP varie avec la temperature exterieure ; la valeur nominale est celle a 7C.")),
-      shiny::numericInput(ns("p_pac_th_kw"), "Puissance thermique (kW)", 60, min = 1, max = 500, step = 1),
-      shiny::uiOutput(ns("pac_csv_hint")),
-      shiny::numericInput(ns("cop_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1),
-      shiny::selectInput(ns("pac1_type"), "Type source", choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"), selected = "gshp"),
-      shiny::selectInput(ns("pac1_mode"), "Mode", choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "onoff"),
-      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "COP = Coefficient de Performance. Un COP de 3.5 signifie que 1 kWh electrique produit 3.5 kWh de chaleur.")),
+    # ---- PAC 1 (dynamic: hide power/COP in CSV mode when deducible) ----
+    shiny::uiOutput(ns("pac1_section")),
 
-    # ---- PAC 2 (dual) ----
-    shiny::tags$div(class = "sidebar-section",
-      shiny::tags$div(class = "section-title", "PAC 2 (optionnelle)", tip("Activez une seconde PAC pour l'optimisation dual. Le solveur decide automatiquement quel PAC utiliser a chaque pas de temps.")),
-      shiny::checkboxInput(ns("pac2_active"), "Activer PAC 2", value = FALSE),
-      shiny::conditionalPanel(sprintf("input['%s']", ns("pac2_active")),
-        shiny::numericInput(ns("p_pac2_th_kw"), "Puissance thermique (kW)", 140, min = 1, max = 500, step = 1),
-        shiny::numericInput(ns("cop2_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1),
-        shiny::selectInput(ns("pac2_type"), "Type source", choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"), selected = "ashp"),
-        shiny::selectInput(ns("pac2_mode"), "Mode", choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "inverter"),
-        shiny::conditionalPanel(sprintf("input['%s']=='inverter'", ns("pac2_mode")),
-          shiny::sliderInput(ns("ramp_max"), shiny::tags$span("Rampe max", tip("Variation maximale de puissance par quart d'heure (fraction de P_max). 0.3 = la PAC peut changer de 30%% de sa puissance a chaque pas de temps.")),
-            0.1, 1, 0.3, step = 0.05)),
-        shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;line-height:1.3;", cl$text_muted),
-          shiny::HTML("Le solveur dual optimise le dispatch entre les deux PAC en fonction des prix, de la m\u00e9t\u00e9o et du COP de chaque machine.")))),
+    # ---- PAC 2 (dynamic: hide power/COP in CSV mode when deducible) ----
+    shiny::uiOutput(ns("pac2_section")),
 
     # ---- Ballon ----
     shiny::tags$div(class = "sidebar-section",
@@ -571,15 +552,35 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     # ---- params_r ----
+    # Deduce PAC power from CSV data when manual inputs are hidden
+    csv_pac_power <- shiny::reactive({
+      if (!csv_has_pac_data()) return(NULL)
+      rd <- tryCatch(raw_data(), error = function(e) NULL)
+      if (is.null(rd)) return(NULL)
+      # p_pac_kw = max(energy_per_qt) / dt_h
+      pac1_kw <- if ("pac_kwh" %in% names(rd)) max(rd$pac_kwh, na.rm = TRUE) / 0.25 else 10
+      cop1 <- if ("cop_gshp" %in% names(rd)) median(rd$cop_gshp, na.rm = TRUE) else
+              if ("cop_ashp" %in% names(rd)) median(rd$cop_ashp, na.rm = TRUE) else 3.5
+      pac2_kw <- if ("pac2_kwh" %in% names(rd)) max(rd$pac2_kwh, na.rm = TRUE) / 0.25 else 0
+      cop2 <- if ("cop_ashp" %in% names(rd)) median(rd$cop_ashp, na.rm = TRUE) else 3.5
+      list(pac1_kw = pac1_kw, cop1 = cop1, pac1_th = pac1_kw * cop1,
+           pac2_kw = pac2_kw, cop2 = cop2, pac2_th = pac2_kw * cop2)
+    })
+
     params_r <- shiny::reactive({
-      shiny::req(input$t_consigne, input$t_tolerance, input$p_pac_th_kw,
-                 input$cop_nominal, input$type_contrat)
+      shiny::req(input$t_consigne, input$t_tolerance, input$type_contrat)
+      # PAC power: from manual input or deduced from CSV
+      csv_p <- csv_pac_power()
+      p_th <- if (!is.null(input$p_pac_th_kw)) input$p_pac_th_kw else if (!is.null(csv_p)) csv_p$pac1_th else 60
+      cop <- if (!is.null(input$cop_nominal)) input$cop_nominal else if (!is.null(csv_p)) csv_p$cop1 else 3.5
+      p_kw <- p_th / cop
+
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
       list(t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
         t_min = input$t_consigne - input$t_tolerance, t_max = input$t_consigne + input$t_tolerance,
-        p_pac_kw = p_pac_kw_eff(), p_pac_th_kw = input$p_pac_th_kw,
-        cop_nominal = input$cop_nominal, t_ref_cop = 7,
+        p_pac_kw = p_kw, p_pac_th_kw = p_th,
+        cop_nominal = cop, t_ref_cop = 7,
         volume_ballon_l = vol,
         capacite_kwh_par_degre = vol * 0.001163,
         horizon_qt = 16, seuil_surplus_pct = 0.3, dt_h = 0.25,
@@ -614,9 +615,13 @@ mod_sidebar_server <- function(id, sim_state) {
         pac2_active = if (!is.null(input$pac2_active)) isTRUE(input$pac2_active) else FALSE,
         pac2_type = if (!is.null(input$pac2_type)) input$pac2_type else "ashp",
         pac2_mode = if (!is.null(input$pac2_mode)) input$pac2_mode else "inverter",
-        p_pac2_kw = if (!is.null(input$pac2_active) && isTRUE(input$pac2_active) && !is.null(input$p_pac2_th_kw) && !is.null(input$cop2_nominal))
-          input$p_pac2_th_kw / input$cop2_nominal else 0,
-        cop2_nominal = if (!is.null(input$cop2_nominal)) input$cop2_nominal else 3.5,
+        p_pac2_kw = if (!is.null(input$pac2_active) && isTRUE(input$pac2_active)) {
+          if (!is.null(input$p_pac2_th_kw) && !is.null(input$cop2_nominal))
+            input$p_pac2_th_kw / input$cop2_nominal
+          else if (!is.null(csv_p)) csv_p$pac2_kw
+          else 0
+        } else 0,
+        cop2_nominal = if (!is.null(input$cop2_nominal)) input$cop2_nominal else if (!is.null(csv_p)) csv_p$cop2 else 3.5,
         t_ref_cop2 = 7,
         ramp_max = if (!is.null(input$ramp_max)) input$ramp_max else 0.3,
         t_sol_method = "annual_mean",
@@ -709,6 +714,89 @@ mod_sidebar_server <- function(id, sim_state) {
       # Replace "---" with NA
       lapply(m, function(x) if (is.null(x) || x == "---") NA_character_ else x)
     }
+
+    # ---- PAC sections (dynamic based on CSV vs Demo) ----
+    # In CSV mode with PAC data available, hide power/COP (deduced from data)
+    # In Demo mode, show all controls
+    csv_has_pac_data <- shiny::reactive({
+      if (input$data_source != "csv") return(FALSE)
+      mapping <- csv_mapping_result()
+      if (is.null(mapping)) return(FALSE)
+      !is.na(mapping$mapping[["pac1_kwh"]]) || !is.na(mapping$mapping[["pac2_kwh"]])
+    })
+
+    output$pac1_section <- shiny::renderUI({
+      ns <- session$ns
+      csv_pac <- csv_has_pac_data()
+      mapping <- csv_mapping_result()
+
+      shiny::tags$div(class = "sidebar-section",
+        shiny::tags$div(class = "section-title", "PAC 1"),
+        if (!csv_pac) {
+          # Demo mode: show all controls
+          shiny::tagList(
+            shiny::numericInput(ns("p_pac_th_kw"), "Puissance thermique (kW)", 60, min = 1, max = 500, step = 1),
+            shiny::uiOutput(ns("pac_csv_hint")),
+            shiny::numericInput(ns("cop_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1))
+        } else {
+          # CSV mode: power/COP deduced, show info only
+          pac1_col <- if (!is.null(mapping)) mapping$mapping[["pac1_kwh"]] else "pac1"
+          shiny::tags$div(class = "form-text", style = sprintf("font-size:.7rem;color:%s;line-height:1.4;", cl$text_muted),
+            shiny::HTML(sprintf("Puissance et COP d\u00e9duits du CSV (<code>%s</code>).",
+              if (!is.na(pac1_col)) pac1_col else "pac1")))
+        },
+        shiny::selectInput(ns("pac1_type"), "Type source",
+          choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"),
+          selected = if (!is.null(mapping) && !is.na(mapping$pac1_type)) mapping$pac1_type else "gshp"),
+        shiny::selectInput(ns("pac1_mode"), "Mode",
+          choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "onoff"))
+    })
+
+    output$pac2_section <- shiny::renderUI({
+      ns <- session$ns
+      csv_pac <- csv_has_pac_data()
+      mapping <- csv_mapping_result()
+      has_pac2_mapped <- !is.null(mapping) && !is.na(mapping$mapping[["pac2_kwh"]])
+
+      shiny::tags$div(class = "sidebar-section",
+        shiny::tags$div(class = "section-title", "PAC 2 (optionnelle)"),
+        if (!has_pac2_mapped) {
+          # No PAC 2 in CSV or Demo mode
+          shiny::tagList(
+            shiny::checkboxInput(ns("pac2_active"), "Activer PAC 2", value = FALSE),
+            shiny::conditionalPanel(sprintf("input['%s']", ns("pac2_active")),
+              if (!csv_pac) {
+                shiny::tagList(
+                  shiny::numericInput(ns("p_pac2_th_kw"), "Puissance thermique (kW)", 140, min = 1, max = 500, step = 1),
+                  shiny::numericInput(ns("cop2_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1))
+              },
+              shiny::selectInput(ns("pac2_type"), "Type source",
+                choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"), selected = "ashp"),
+              shiny::selectInput(ns("pac2_mode"), "Mode",
+                choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "inverter"),
+              shiny::conditionalPanel(sprintf("input['%s']=='inverter'", ns("pac2_mode")),
+                shiny::sliderInput(ns("ramp_max"), shiny::tags$span("Rampe max",
+                  tip("Variation maximale de puissance par quart d'heure.")),
+                  0.1, 1, 0.3, step = 0.05))))
+        } else {
+          # PAC 2 detected in CSV — auto-activate, hide power/COP
+          pac2_col <- mapping$mapping[["pac2_kwh"]]
+          shiny::tagList(
+            shiny::tags$div(style = "display:none;",
+              shiny::checkboxInput(ns("pac2_active"), NULL, value = TRUE)),
+            shiny::tags$div(class = "form-text", style = sprintf("font-size:.7rem;color:%s;line-height:1.4;margin-bottom:6px;", cl$success),
+              shiny::HTML(sprintf("PAC 2 d\u00e9tect\u00e9e dans le CSV (<code>%s</code>). Mode dual activ\u00e9 automatiquement.", pac2_col))),
+            shiny::selectInput(ns("pac2_type"), "Type source",
+              choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"),
+              selected = if (!is.na(mapping$pac2_type)) mapping$pac2_type else "ashp"),
+            shiny::selectInput(ns("pac2_mode"), "Mode",
+              choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "inverter"),
+            shiny::conditionalPanel(sprintf("input['%s']=='inverter'", ns("pac2_mode")),
+              shiny::sliderInput(ns("ramp_max"), shiny::tags$span("Rampe max",
+                tip("Variation maximale de puissance par quart d'heure.")),
+                0.1, 1, 0.3, step = 0.05)))
+        })
+    })
 
     # ---- raw_data ----
     # Compute raw_data from current inputs. Also triggers once at boot
