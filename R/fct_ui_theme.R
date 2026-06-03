@@ -112,20 +112,17 @@ resolve_trace_config <- function(vars, agg_level, summable, unit_fn,
   configs <- list()
   n_bars_y1 <- 0L
 
-
   for (i in seq_along(vars)) {
     v <- vars[i]
     is_sum <- v %in% summable
-    u <- unit_fn(v)
-    # Axis: match unit to y1 or y2; unmatched units go to y2
-    ax <- if (!is.na(u) && !is.na(unit1) && u == unit1) "y"
-          else if (!is.na(u) && !is.na(unit2) && u == unit2) "y2"
-          else "y2"
 
-    # Trace type: bars for summable vars at coarse aggregation (any axis)
+    # Axis: Serie 1 = left (y), Serie 2 = right (y2), Serie 3 = right (y2)
+    ax <- if (i == 1) "y" else "y2"
+
+    # Trace type: bars for summable vars at coarse aggregation
     if (is_sum && use_bars) {
       type <- "bar"
-      n_bars_y1 <- n_bars_y1 + 1L
+      if (ax == "y") n_bars_y1 <- n_bars_y1 + 1L
     } else {
       type <- "line"
     }
