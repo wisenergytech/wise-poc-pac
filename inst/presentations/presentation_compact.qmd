@@ -58,6 +58,8 @@ params:
   dual_gain_total: 0
   dual_gain_total_pct: 0
   dual_proj_gain_total_an: 0
+  # Optimizer
+  optim_bloc_h: 24
 format:
   revealjs:
     embed-resources: true
@@ -228,7 +230,11 @@ Le compteur PV (onduleur FusionSolar) présente des incohérences. La production
 
 Les données couvrent mi-mai à début juin — une période **douce et ensoleillée** (COP élevés, PV abondant, peu de chauffage). Les résultats sont **optimistes** par rapport à l'hiver, où le COP chute et la demande thermique augmente. Une simulation annuelle complète est nécessaire pour des projections fiables.
 
-**3. Simulation, pas pilotage réel**
+**3. Horizon d'optimisation : `r params$optim_bloc_h`h**
+
+L'optimiseur découpe la période en **blocs de `r params$optim_bloc_h`h** (alignés sur le marché day-ahead EPEX SPOT) avec un lookahead de `r params$optim_bloc_h`h supplémentaires. Un bloc plus court (6h) est plus rapide mais moins anticipatif ; un bloc de 24h voit un jour complet de prix mais est plus lent à résoudre.
+
+**4. Simulation, pas pilotage réel**
 
 L'optimiseur recalcule **a posteriori** ce qu'il aurait fait. En conditions réelles, les prévisions de prix et de météo sont imparfaites — les gains effectifs seront légèrement inférieurs aux gains simulés.
 
