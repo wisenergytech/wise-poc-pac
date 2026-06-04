@@ -135,6 +135,14 @@ cat(sprintf('
 
 **Constat** : la PAC représente **`r params$pct_pac_conso`%** de la consommation électrique et tourne surtout **la nuit**, quand l'énergie est chère et le PV ne produit pas. Le ballon tampon offre une flexibilité de stockage thermique **inexploitée**.
 
+## Le contexte : le marché belge pousse à la flexibilité
+
+- **Volatilité croissante** : les prix spot varient de < 0 à > 300 EUR/MWh au sein d'une même journée
+- **Prix négatifs de plus en plus fréquents** : au printemps/été, la surproduction solaire fait régulièrement plonger les prix (record : **-479 EUR/MWh** le 26 avril 2026)
+- **Prix bas = électricité verte** : consommer quand le solaire et l'éolien dominent, c'est consommer décarboné **et** bon marché
+- **Contrats dynamiques** : seuls les consommateurs indexés sur le spot peuvent capter ces opportunités
+- Un réseau de chaleur avec **stockage thermique** est idéalement placé pour absorber les heures gratuites et éviter les heures chères
+
 ## Le problème et la solution
 
 ::: columns
@@ -208,16 +216,32 @@ if (dual) {
 }
 ```
 
+## Hypothèses et limites
+
+Les résultats reposent sur **`r params$n_days` jours** de données mesurées. Trois points à noter :
+
+**1. Production solaire reconstituée**
+
+Le compteur PV (onduleur FusionSolar) présente des incohérences. La production solaire est **reconstruite par bilan énergétique** à partir des compteurs ORES (soutirage/injection) et des sous-compteurs PAC (GSHP + ASHP). Seule hypothèse : le talon de consommation chaufferie (~0.6 kW) est constant. Précision estimée : ±5%.
+
+**2. Période courte et non représentative**
+
+Les données couvrent mi-mai à début juin — une période **douce et ensoleillée** (COP élevés, PV abondant, peu de chauffage). Les résultats sont **optimistes** par rapport à l'hiver, où le COP chute et la demande thermique augmente. Une simulation annuelle complète est nécessaire pour des projections fiables.
+
+**3. Simulation, pas pilotage réel**
+
+L'optimiseur recalcule **a posteriori** ce qu'il aurait fait. En conditions réelles, les prévisions de prix et de météo sont imparfaites — les gains effectifs seront légèrement inférieurs aux gains simulés.
+
 ## Prochaines étapes
 
 1. **Proposition commerciale** pour l'étude POC et sa mise en place
-2. **Compteurs dédiés** : GSHP et ASHP sous-comptés depuis mai 2026 — données disponibles pour validation
+2. **Données hivernales** : étendre la simulation à une année complète pour des projections robustes
 3. **Pilotage réel** : interface Wise Brain → régulateur Komfor (avec garde-fous et mode fallback)
 
 **Le potentiel est confirmé par les données réelles.** Le passage à l'acte nécessite un accord commercial et un accès au contrôleur de la chaufferie.
 
 ::: notes
-Les résultats sont calculés sur `r params$n_days` jours de données mesurées. La projection annuelle tient compte de la saisonnalité (degrés-jours, COP, spreads de prix).
+L'autoconsommation PV de 6.6% dans la baseline confirme que la quasi-totalité du PV est injectée. C'est le levier principal : décaler la PAC vers les heures solaires pour autoconsommer plutôt qu'injecter à bas prix.
 :::
 
 ## Merci !
