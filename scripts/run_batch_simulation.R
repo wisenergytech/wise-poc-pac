@@ -25,8 +25,8 @@ cat(sprintf("   Package loaded in %.1fs\n", as.numeric(difftime(Sys.time(), t_st
 csv_path <- "data/bq_k0001_dual_pac_full.csv"
 
 # -- Ballon thermique --
-t_consigne   <- 35    # Consigne temperature (C)
-t_tolerance  <- 5     # +/- tolerance (C) -> T_min=30, T_max=40
+t_min_ballon <- 25    # T min ballon (C) — seuil confort
+t_max_ballon <- 38    # T max ballon (C) — limite pre-chauffage
 volume_ballon_l <- 2500  # Volume ballon (L)
 
 # -- PAC 1 (GSHP) --
@@ -82,8 +82,8 @@ while (i <= length(args)) {
     "--csv"       = { csv_path <- args[i + 1]; i <- i + 1 },
     "--output"    = { output_path <- args[i + 1]; i <- i + 1 },
     "--bloc"      = { optim_bloc_h <- as.numeric(args[i + 1]); i <- i + 1 },
-    "--t_consigne" = { t_consigne <- as.numeric(args[i + 1]); i <- i + 1 },
-    "--t_tolerance" = { t_tolerance <- as.numeric(args[i + 1]); i <- i + 1 },
+    "--t_min"     = { t_min_ballon <- as.numeric(args[i + 1]); i <- i + 1 },
+    "--t_max"     = { t_max_ballon <- as.numeric(args[i + 1]); i <- i + 1 },
     "--pac1_kw"   = { pac1_th_kw <- as.numeric(args[i + 1]); i <- i + 1 },
     "--pac2_kw"   = { pac2_th_kw <- as.numeric(args[i + 1]); i <- i + 1 },
     "--cop1"      = { cop1_nominal <- as.numeric(args[i + 1]); i <- i + 1 },
@@ -109,7 +109,7 @@ if (pac2_active) {
 } else {
   cat("PAC2:         disabled\n")
 }
-cat(sprintf("Ballon:       %d L, consigne %d C +/- %d C\n", volume_ballon_l, t_consigne, t_tolerance))
+cat(sprintf("Ballon:       %d L, T_min=%d C, T_max=%d C\n", volume_ballon_l, t_min_ballon, t_max_ballon))
 cat(sprintf("Bloc:         %dh | Cycle min: %d min | Slack: %.1f\n", optim_bloc_h, min_cycle_min, slack_penalty))
 cat(sprintf("Contrat:      %s | TOU: %s\n", type_contrat, tou_active))
 cat("========================\n\n")
@@ -141,10 +141,10 @@ pac2_elec_kw <- if (pac2_active) pac2_th_kw / cop2_nominal else 0
 
 params <- list(
   dt_h = 0.25,
-  t_consigne = t_consigne,
-  t_tolerance = t_tolerance,
-  t_min = t_consigne - t_tolerance,
-  t_max = t_consigne + t_tolerance,
+  t_min = t_min_ballon,
+  t_max = t_max_ballon,
+  t_consigne = (t_min_ballon + t_max_ballon) / 2,
+  t_tolerance = (t_max_ballon - t_min_ballon) / 2,
   p_pac_kw = pac1_elec_kw,
   p_pac_th_kw = pac1_th_kw,
   cop_nominal = cop1_nominal,
@@ -231,8 +231,8 @@ bundle <- list(
   csv_original_columns = names(raw_df),
   csv_mapping_result = mapping_result,
   sidebar_inputs = list(
-    t_consigne = t_consigne,
-    t_tolerance = t_tolerance,
+    t_min_input = t_min_ballon,
+    t_max_input = t_max_ballon,
     volume_auto = FALSE,
     volume_ballon_manual = volume_ballon_l,
     p_pac_th_kw = pac1_th_kw,

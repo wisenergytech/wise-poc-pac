@@ -57,19 +57,9 @@ mod_sidebar_ui <- function(id) {
       shiny::conditionalPanel(sprintf("!input['%s'] || output['%s']", ns("volume_auto"), ns("csv_measured")),
         shiny::numericInput(ns("volume_ballon_manual"), "Volume (L)", 2500, min = 50, max = 100000, step = 50),
         shiny::uiOutput(ns("volume_csv_hint"))),
-      shiny::numericInput(ns("t_consigne"), "Consigne (C)", 35, min = 20, max = 65, step = 1),
-      shiny::tags$div(
-        style = sprintf(
-          "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:2px 0 6px 0;font-size:.72rem;line-height:1.4;",
-          cl$bg_card, cl$text_muted),
-        shiny::HTML(sprintf(
-          paste0(
-            "<span style='color:%s;'><b>D\u00e9faut : 35\u00b0C</b> (moyenne mesur\u00e9e Karno : 33\u00b0C pour SP tank top). ",
-            "Typique d'un r\u00e9seau basse temp\u00e9rature aliment\u00e9 par PAC. ",
-            "Ajustez selon votre installation.</span>"),
-          cl$text_muted))),
-      shiny::sliderInput(ns("t_tolerance"), "Tolerance +/-C", 1, 10, 5, step = 1),
-      shiny::tags$div(class = "form-text", style = sprintf("font-size:.65rem;color:%s;", cl$text_muted), "Plage autorisee = consigne +/- tolerance. L'algo ne laissera jamais la temperature sortir de cette plage."),
+      shiny::numericInput(ns("t_min_input"), "T min ballon (\u00b0C)", 25, min = 10, max = 55, step = 1),
+      shiny::numericInput(ns("t_max_input"), "T max ballon (\u00b0C)", 38, min = 15, max = 65, step = 1),
+      shiny::uiOutput(ns("t_range_hint")),
       shiny::uiOutput(ns("ecs_field")),
       shiny::uiOutput(ns("ecs_csv_banner")),
       if (isTRUE(ui_cfg$simple_mode)) {
@@ -270,7 +260,7 @@ mod_sidebar_server <- function(id, sim_state) {
     # Track params that affect bounds — mark stale when they change
     shiny::observe({
       # Touch all inputs that affect ac_bounds
-      input$p_pac_th_kw; input$cop_nominal; input$t_consigne; input$t_tolerance
+      input$p_pac_th_kw; input$cop_nominal; input$t_min_input; input$t_max_input
       input$pv_data_source; input$date_range; input$type_contrat
       volume_ballon_eff(); pv_kwc_eff()
       # Only mark stale if bounds were previously calibrated
@@ -283,9 +273,9 @@ mod_sidebar_server <- function(id, sim_state) {
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
       p_base <- list(
-        t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
-        t_min = input$t_consigne - input$t_tolerance,
-        t_max = input$t_consigne + input$t_tolerance,
+        t_min = input$t_min_input, t_max = input$t_max_input,
+        t_consigne = (input$t_min_input + input$t_max_input) / 2,
+        t_tolerance = (input$t_max_input - input$t_min_input) / 2,
         p_pac_kw = p_pac_kw_eff(), cop_nominal = input$cop_nominal, t_ref_cop = 7,
         volume_ballon_l = vol, capacite_kwh_par_degre = vol * 0.001163,
         dt_h = 0.25, pv_kwc = kwc,
@@ -411,7 +401,8 @@ mod_sidebar_server <- function(id, sim_state) {
     # ---- Volume ballon auto/manual ----
     volume_ballon_eff <- shiny::reactive({
       if (isTRUE(input$volume_auto)) {
-        calculate_ballon_volume_auto(p_pac_kw_eff(), input$cop_nominal, input$t_tolerance)
+        tol <- (input$t_max_input - input$t_min_input) / 2
+        calculate_ballon_volume_auto(p_pac_kw_eff(), input$cop_nominal, tol)
       } else {
         input$volume_ballon_manual
       }
@@ -419,8 +410,8 @@ mod_sidebar_server <- function(id, sim_state) {
 
     output$volume_auto_display <- shiny::renderUI({
       vol <- volume_ballon_eff()
-      p_kw <- p_pac_kw_eff(); cop <- input$cop_nominal; tol <- input$t_tolerance
-      delta_t <- 2 * tol
+      p_kw <- p_pac_kw_eff(); cop <- input$cop_nominal
+      delta_t <- input$t_max_input - input$t_min_input
       cap_kwh <- vol * 0.001163 * delta_t
       cap_elec <- round(cap_kwh / cop, 1)
       heures_flex <- round(cap_kwh / (p_kw * cop), 1)
@@ -506,7 +497,7 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     params_r <- shiny::reactive({
-      shiny::req(input$t_consigne, input$t_tolerance, input$type_contrat)
+      shiny::req(input$t_min_input, input$t_max_input, input$type_contrat)
       # PAC power: from manual input or deduced from CSV
       csv_p <- csv_pac_power()
       p_th <- if (!is.null(input$p_pac_th_kw)) input$p_pac_th_kw else if (!is.null(csv_p)) csv_p$pac1_th else 60
@@ -515,8 +506,11 @@ mod_sidebar_server <- function(id, sim_state) {
 
       vol <- volume_ballon_eff()
       kwc <- pv_kwc_eff()
-      list(t_consigne = input$t_consigne, t_tolerance = input$t_tolerance,
-        t_min = input$t_consigne - input$t_tolerance, t_max = input$t_consigne + input$t_tolerance,
+      t_min_val <- input$t_min_input
+      t_max_val <- input$t_max_input
+      list(t_min = t_min_val, t_max = t_max_val,
+        t_consigne = (t_min_val + t_max_val) / 2,
+        t_tolerance = (t_max_val - t_min_val) / 2,
         p_pac_kw = p_kw, p_pac_th_kw = p_th,
         cop_nominal = cop, t_ref_cop = 7,
         volume_ballon_l = vol,
@@ -1041,8 +1035,40 @@ mod_sidebar_server <- function(id, sim_state) {
     })
 
     output$volume_csv_hint <- shiny::renderUI({
-      # CSV estimation hints disabled for now (calculation methods under review)
       NULL
+    })
+
+    output$t_range_hint <- shiny::renderUI({
+      rd <- tryCatch(raw_data(), error = function(e) NULL)
+      if (is.null(rd) || !"t_ballon" %in% names(rd)) return(NULL)
+      tb <- rd$t_ballon[!is.na(rd$t_ballon)]
+      if (length(tb) < 10) return(NULL)
+      q05 <- round(quantile(tb, 0.05), 1)
+      q95 <- round(quantile(tb, 0.95), 1)
+      med <- round(median(tb), 1)
+      # Suggest and auto-update
+      suggested_min <- floor(q05)
+      suggested_max <- ceiling(q95)
+      shiny::tagList(
+        shiny::tags$div(
+          style = sprintf(
+            "background:%s;border:1px solid %s;border-radius:6px;padding:8px 10px;margin:2px 0 6px 0;font-size:.72rem;line-height:1.4;",
+            cl$bg_card, cl$text_muted),
+          shiny::HTML(sprintf(
+            "<span style='color:%s;'>Mesur\u00e9 : <b>%.1f\u00b0C</b> (Q5) \u2014 <b>%.1f\u00b0C</b> (m\u00e9diane) \u2014 <b>%.1f\u00b0C</b> (Q95)</span>",
+            cl$text_muted, q05, med, q95))),
+        shiny::actionLink(session$ns("apply_t_range"), sprintf("Appliquer [%d\u00b0C, %d\u00b0C]", suggested_min, suggested_max),
+          style = sprintf("font-size:.7rem;color:%s;", cl$accent))
+      )
+    })
+
+    shiny::observeEvent(input$apply_t_range, {
+      rd <- tryCatch(raw_data(), error = function(e) NULL)
+      if (!is.null(rd) && "t_ballon" %in% names(rd)) {
+        tb <- rd$t_ballon[!is.na(rd$t_ballon)]
+        shiny::updateNumericInput(session, "t_min_input", value = floor(quantile(tb, 0.05)))
+        shiny::updateNumericInput(session, "t_max_input", value = ceiling(quantile(tb, 0.95)))
+      }
     })
 
     # ---- PV kWc banner (CSV mode) ----
@@ -1478,8 +1504,8 @@ mod_sidebar_server <- function(id, sim_state) {
         # Collect all sidebar input values for full state restore
         sidebar_inputs <- list(
           # Ballon
-          t_consigne = input$t_consigne,
-          t_tolerance = input$t_tolerance,
+          t_min_input = input$t_min_input,
+          t_max_input = input$t_max_input,
           volume_auto = input$volume_auto,
           volume_ballon_manual = input$volume_ballon_manual,
           # PAC 1
@@ -1643,9 +1669,17 @@ mod_sidebar_server <- function(id, sim_state) {
         else NULL
       }
 
-      # Ballon
-      if (!is.null(val("t_consigne"))) safe_update(shiny::updateNumericInput, "t_consigne", value = val("t_consigne"))
-      if (!is.null(val("t_tolerance"))) safe_update(shiny::updateSliderInput, "t_tolerance", value = val("t_tolerance"))
+      # Ballon — new T_min/T_max inputs (backward compat with old t_consigne/t_tolerance)
+      if (!is.null(val("t_min_input"))) {
+        safe_update(shiny::updateNumericInput, "t_min_input", value = val("t_min_input"))
+      } else if (!is.null(val("t_consigne")) && !is.null(val("t_tolerance"))) {
+        safe_update(shiny::updateNumericInput, "t_min_input", value = val("t_consigne") - val("t_tolerance"))
+      }
+      if (!is.null(val("t_max_input"))) {
+        safe_update(shiny::updateNumericInput, "t_max_input", value = val("t_max_input"))
+      } else if (!is.null(val("t_consigne")) && !is.null(val("t_tolerance"))) {
+        safe_update(shiny::updateNumericInput, "t_max_input", value = val("t_consigne") + val("t_tolerance"))
+      }
       if (!is.null(val("volume_ballon_manual", "volume_ballon_l"))) {
         safe_update(shiny::updateCheckboxInput, "volume_auto", value = FALSE)
         safe_update(shiny::updateNumericInput, "volume_ballon_manual", value = val("volume_ballon_manual", "volume_ballon_l"))
