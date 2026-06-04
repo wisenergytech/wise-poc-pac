@@ -883,10 +883,12 @@ mod_sidebar_server <- function(id, sim_state) {
         }
 
         if ("pac_kwh" %in% names(df)) {
+          # Tolerance: 0.2 kWh/qt accounts for PAC sub-meter bias
+          # (standby/auxiliaries counted by PAC meters but not ORES)
           available <- df[["offtake_kwh"]] + df[["pv_kwh"]]
-          n_pac_excess <- sum(df[["pac_kwh"]] > available + 0.01, na.rm = TRUE)
+          n_pac_excess <- sum(df[["pac_kwh"]] > available + 0.2, na.rm = TRUE)
           if (n_pac_excess > n_pts * 0.02) {
-            warn_lines <- c(warn_lines, sprintf("pac_kwh &gt; offtake + pv sur %d pas de temps", n_pac_excess))
+            warn_lines <- c(warn_lines, sprintf("pac_kwh &gt; offtake + pv sur %d pas de temps (biais compteur ?)", n_pac_excess))
           }
         }
 
