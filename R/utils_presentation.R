@@ -217,6 +217,17 @@ render_presentation <- function(kpis, params, sim_data, output_file,
 
   tmp_qmd <- file.path(tmp_dir, template)
 
+  # Filter params to only those declared in the template YAML
+  # (Quarto/knitr rejects undeclared params)
+  yaml_lines <- readLines(tmp_qmd, warn = FALSE)
+  yaml_end <- which(yaml_lines == "---")[2]
+  if (!is.na(yaml_end)) {
+    yaml_block <- yaml_lines[1:yaml_end]
+    declared <- trimws(grep("^  [a-z_]+:", yaml_block, value = TRUE))
+    declared_names <- sub(":.*", "", declared)
+    qparams <- qparams[intersect(names(qparams), declared_names)]
+  }
+
   # Render
   quarto::quarto_render(
     input = tmp_qmd,
