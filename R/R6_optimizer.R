@@ -38,9 +38,11 @@ BaseOptimizer <- R6::R6Class("BaseOptimizer",
       n <- nrow(df)
 
       bloc_qt <- params$optim_bloc_h * 4
-      n_blocs <- ceiling(n / bloc_qt)
 
-      all_results <- vector("list", n_blocs)
+      # Midnight-aligned block boundaries
+      block_starts <- compute_block_starts(df$timestamp, bloc_qt, n)
+
+      all_results <- vector("list", length(block_starts))
 
       # Initial conditions
       t_init <- params$t_consigne
@@ -50,9 +52,9 @@ BaseOptimizer <- R6::R6Class("BaseOptimizer",
         0
       }
 
-      for (b in seq_len(n_blocs)) {
-        i_start <- (b - 1) * bloc_qt + 1
-        i_end <- min(b * bloc_qt, n)
+      for (b in seq_along(block_starts)) {
+        i_start <- block_starts[b]
+        i_end <- if (b < length(block_starts)) block_starts[b + 1] - 1 else n
         n_execute <- i_end - i_start + 1
 
         # Overlapping: extend with lookahead from next block
@@ -274,125 +276,10 @@ QPOptimizer <- R6::R6Class("QPOptimizer",
 DualOptimizer <- R6::R6Class("DualOptimizer",
   inherit = BaseOptimizer,
   public = list(
-    #' @description Run dual optimization with dual COP iterative refinement.
-    #' Overrides BaseOptimizer$solve() to handle two COP curves and ramp chaining.
+    #' @description Run dual optimization. Delegates to run_optimization_dual()
+    #' which handles midnight-aligned blocks, iterative COP, and ramp chaining.
     solve = function() {
-      df <- private$data
-      params <- private$params
-      n <- nrow(df)
-
-      bloc_qt <- params$optim_bloc_h * 4
-      n_blocs <- ceiling(n / bloc_qt)
-
-      all_results <- vector("list", n_blocs)
-
-      # Initial conditions
-      t_init <- params$t_consigne
-      soc_init <- if (params$batterie_active) {
-        (params$batt_soc_min + params$batt_soc_max) / 2 * params$batt_kwh
-      } else {
-        0
-      }
-      p_pac2_init <- NULL
-
-      for (b in seq_len(n_blocs)) {
-        i_start <- (b - 1) * bloc_qt + 1
-        i_end <- min(b * bloc_qt, n)
-        n_execute <- i_end - i_start + 1
-
-        i_lookahead_end <- min(i_end + bloc_qt, n)
-        block_data <- df[i_start:i_lookahead_end, ]
-
-        # Terminal value
-        if (i_lookahead_end == i_end) {
-          cop1_fn <- if (params$pac1_type == "gshp") calc_cop_gshp else calc_cop
-          cop1_moyen <- mean(cop1_fn(block_data$t_sol, params$cop_nominal, params$t_ref_cop))
-          prix_moyen <- mean(block_data$prix_offtake, na.rm = TRUE)
-          prix_terminal_per_deg <- params$capacite_kwh_par_degre / max(cop1_moyen, 1) * prix_moyen
-        } else {
-          prix_terminal_per_deg <- 0
-        }
-
-        if (nrow(block_data) < 2) {
-          block_result <- private$baseline_fallback(df[i_start:i_end, ])
-        } else {
-          # Iterative COP: solve, get T trajectory, update both COPs, re-solve
-          params_iter <- params
-          full_result <- NULL
-          for (cop_iter in 1:2) {
-            full_result <- solve_block_dual(block_data, params_iter, t_init, soc_init,
-                                            prix_terminal_per_deg, p_pac2_init)
-            if (is.null(full_result) || cop_iter == 2) break
-            t_bal_solved <- full_result$sim_t_ballon
-            if (params$pac1_type == "gshp") {
-              params_iter$cop1_override <- calc_cop_gshp(block_data$t_sol, params$cop_nominal, params$t_ref_cop, t_ballon = t_bal_solved)
-            } else {
-              params_iter$cop1_override <- calc_cop(block_data$t_ext, params$cop_nominal, params$t_ref_cop, t_ballon = t_bal_solved)
-            }
-            if (params$pac2_type == "gshp") {
-              params_iter$cop2_override <- calc_cop_gshp(block_data$t_sol, params$cop2_nominal, params$t_ref_cop2, t_ballon = t_bal_solved)
-            } else {
-              params_iter$cop2_override <- calc_cop(block_data$t_ext, params$cop2_nominal, params$t_ref_cop2, t_ballon = t_bal_solved)
-            }
-          }
-
-          if (is.null(full_result)) {
-            message(sprintf("[Dual Optimizer] Block %d infeasible, fallback", b))
-            block_result <- private$baseline_fallback(df[i_start:i_end, ])
-          } else {
-            block_result <- full_result[1:n_execute, ]
-          }
-        }
-
-        all_results[[b]] <- block_result
-
-        t_init <- max(params$t_min, tail(block_result$sim_t_ballon, 1))
-        if (params$batterie_active) {
-          soc_init <- tail(block_result$batt_soc, 1) * params$batt_kwh
-        }
-        if (params$pac2_mode == "inverter") {
-          p_pac2_init <- tail(block_result$sim_pac2_load, 1)
-        }
-      }
-
-      results_df <- dplyr::bind_rows(all_results)
-
-      if (nrow(results_df) != n) {
-        if (nrow(results_df) < n) {
-          pad_n <- n - nrow(results_df)
-          padding <- dplyr::tibble(
-            sim_pac_on = rep(0, pad_n), sim_pac1_on = rep(0, pad_n),
-            sim_pac2_load = rep(0, pad_n), sim_pac1_kwh = rep(0, pad_n),
-            sim_pac2_kwh = rep(0, pad_n), sim_cop1 = rep(3.5, pad_n),
-            sim_cop2 = rep(3.5, pad_n), sim_t_ballon = rep(t_init, pad_n),
-            sim_offtake = rep(0, pad_n), sim_intake = rep(0, pad_n),
-            sim_cop = rep(3.5, pad_n), decision_raison = rep("padding", pad_n),
-            batt_soc = rep(0, pad_n), batt_flux = rep(0, pad_n)
-          )
-          results_df <- dplyr::bind_rows(results_df, padding)
-        } else {
-          results_df <- results_df[1:n, ]
-        }
-      }
-
-      private$results <- df %>% dplyr::mutate(
-        sim_t_ballon = results_df$sim_t_ballon,
-        sim_pac_on = results_df$sim_pac_on,
-        sim_pac1_on = results_df$sim_pac1_on,
-        sim_pac2_load = results_df$sim_pac2_load,
-        sim_pac1_kwh = results_df$sim_pac1_kwh,
-        sim_pac2_kwh = results_df$sim_pac2_kwh,
-        sim_cop1 = results_df$sim_cop1,
-        sim_cop2 = results_df$sim_cop2,
-        sim_offtake = results_df$sim_offtake,
-        sim_intake = results_df$sim_intake,
-        sim_cop = results_df$sim_cop,
-        decision_raison = results_df$decision_raison,
-        batt_soc = results_df$batt_soc,
-        batt_flux = results_df$batt_flux,
-        mode_actif = private$mode_label
-      )
-
+      private$results <- run_optimization_dual(private$data, private$params)
       private$results
     }
   ),
