@@ -370,31 +370,61 @@ DataGenerator <- R6::R6Class("DataGenerator",
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
         df <- df %>% dplyr::mutate(soutirage_estime_kwh = soutirage_ecs_kwh)
       } else if (has_pac_kwh && has_t_ballon) {
-        # Best estimate: energy balance from measured T_ballon + PAC + losses
-        # ecs[t] = (T[t-1] - T[t]) * cap + pac[t] * COP - pertes
-        # This uses all 3 measurements to deduce exactly what was drawn
+        # Best estimate: thermal balance inversion from measured T_ballon + PAC
+        # ecs[t] = T[t-1] * (cap - k) + chaleur_PAC + k * T_amb - T[t] * cap
+        # When dual PAC data available (pac1_kwh + pac2_kwh with separate COPs),
+        # compute chaleur from each PAC independently for better accuracy.
         k_perte <- 0.004 * params$dt_h
         t_amb <- 20
         cap <- params$capacite_kwh_par_degre
         params$perte_kwh_par_qt <- k_perte * (params$t_consigne - t_amb)
+
+        has_dual <- all(c("pac1_kwh", "pac2_kwh") %in% names(df))
+        if (has_dual) {
+          # Dual PAC: compute thermal output per PAC with correct COP curve
+          cop1_fn <- if (params$pac1_type == "gshp") calc_cop_gshp else calc_cop
+          cop2_fn <- if (params$pac2_type == "gshp") calc_cop_gshp else calc_cop
+          t_sol_vec <- if ("t_sol" %in% names(df)) df$t_sol else rep(params$t_sol_constant, nrow(df))
+          cop1 <- cop1_fn(t_sol_vec, params$cop_nominal, params$t_ref_cop, t_ballon = df$t_ballon)
+          cop2 <- cop2_fn(df$t_ext, params$cop2_nominal, params$t_ref_cop2, t_ballon = df$t_ballon)
+          df$chaleur_pac_kwh <- df$pac1_kwh * cop1 + df$pac2_kwh * cop2
+          message(sprintf("[prepare_df] dual PAC chaleur: COP1 median=%.2f, COP2 median=%.2f",
+            stats::median(cop1, na.rm = TRUE), stats::median(cop2, na.rm = TRUE)))
+        } else {
+          df$chaleur_pac_kwh <- df$pac_kwh * df$cop_reel
+        }
+
         df <- df %>% dplyr::mutate(
           t_ballon_prev = dplyr::lag(t_ballon, default = t_ballon[1]),
           pertes_qt = k_perte * (t_ballon_prev - t_amb),
           soutirage_estime_kwh = pmax(0,
-            (t_ballon_prev - t_ballon) * cap +  # energy lost from tank cooling
-            pac_kwh * cop_reel -                 # energy added by PAC
-            pertes_qt                            # minus standing losses
+            t_ballon_prev * (cap - k_perte) +  # stored energy (minus losses)
+            chaleur_pac_kwh +                   # thermal input from PAC(s)
+            k_perte * t_amb -                   # ambient gain
+            t_ballon * cap                      # resulting stored energy
           )
-        ) %>% dplyr::select(-t_ballon_prev, -pertes_qt)
-        message(sprintf("[prepare_df] soutirage deduit de T_ballon + PAC: %.1f kWh_th/jour",
+        ) %>% dplyr::select(-t_ballon_prev, -pertes_qt, -chaleur_pac_kwh)
+        message(sprintf("[prepare_df] soutirage par inversion bilan thermique: %.1f kWh_th/jour",
           sum(df$soutirage_estime_kwh, na.rm = TRUE) / max(1, as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")))))
       } else if (has_pac_kwh) {
         # Fallback: back-calculate from PAC consumption alone (no T_ballon)
         params$perte_kwh_par_qt <- 0.004 * (params$t_consigne - 20) * params$dt_h
-        df <- df %>% dplyr::mutate(
-          soutirage_estime_kwh = pmax(0, pac_kwh * cop_reel + params$perte_kwh_par_qt)
-        )
-        message(sprintf("[prepare_df] soutirage back-calcule depuis pac_kwh: %.1f kWh_th/jour",
+        has_dual <- all(c("pac1_kwh", "pac2_kwh") %in% names(df))
+        if (has_dual) {
+          cop1_fn <- if (params$pac1_type == "gshp") calc_cop_gshp else calc_cop
+          cop2_fn <- if (params$pac2_type == "gshp") calc_cop_gshp else calc_cop
+          t_sol_vec <- if ("t_sol" %in% names(df)) df$t_sol else rep(params$t_sol_constant, nrow(df))
+          cop1 <- cop1_fn(t_sol_vec, params$cop_nominal, params$t_ref_cop)
+          cop2 <- cop2_fn(df$t_ext, params$cop2_nominal, params$t_ref_cop2)
+          df$soutirage_estime_kwh <- pmax(0,
+            df$pac1_kwh * cop1 + df$pac2_kwh * cop2 + params$perte_kwh_par_qt)
+        } else {
+          df <- df %>% dplyr::mutate(
+            soutirage_estime_kwh = pmax(0, pac_kwh * cop_reel + params$perte_kwh_par_qt)
+          )
+        }
+        message(sprintf("[prepare_df] soutirage back-calcule depuis pac_kwh%s: %.1f kWh_th/jour",
+          if (has_dual) " (dual)" else "",
           sum(df$soutirage_estime_kwh, na.rm = TRUE) / max(1, as.numeric(difftime(max(df$timestamp), min(df$timestamp), units = "days")))))
       } else {
         # No ECS data available (pac_kwh CSV or fallback path): use typical daily profile
