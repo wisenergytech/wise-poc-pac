@@ -348,11 +348,13 @@ run_optimization_milp <- function(df, params) {
   n <- nrow(df)
 
   # Block size in quarter-hours
-  bloc_qt <- params$optim_bloc_h * 4  # e.g. 4h * 4 = 16 qt
-  n_blocs <- ceiling(n / bloc_qt)
+  bloc_qt <- params$optim_bloc_h * 4
+
+  # Compute midnight-aligned block boundaries
+  block_starts <- compute_block_starts(df$timestamp, bloc_qt, n)
 
   # Accumulated results
-  all_results <- vector("list", n_blocs)
+  all_results <- vector("list", length(block_starts))
 
   # Initial conditions — meme point de depart que la baseline
   t_init <- params$t_consigne
@@ -362,14 +364,12 @@ run_optimization_milp <- function(df, params) {
     0
   }
 
-  for (b in seq_len(n_blocs)) {
-    # Block indices — execute this range
-    i_start <- (b - 1) * bloc_qt + 1
-    i_end <- min(b * bloc_qt, n)
+  for (b in seq_along(block_starts)) {
+    i_start <- block_starts[b]
+    i_end <- if (b < length(block_starts)) block_starts[b + 1] - 1 else n
     n_execute <- i_end - i_start + 1
 
     # Overlapping blocks: extend with lookahead from next block
-    # Solve a larger block but only keep the first n_execute rows
     i_lookahead_end <- min(i_end + bloc_qt, n)
     block_data <- df[i_start:i_lookahead_end, ]
 
@@ -427,6 +427,7 @@ run_optimization_milp <- function(df, params) {
     }
 
     # Progress reporting (when called from Shiny)
+    n_blocs <- length(block_starts)
     if (exists("setProgress", mode = "function")) {
       try(setProgress(b / n_blocs, detail = sprintf("Bloc %d/%d", b, n_blocs)),
         silent = TRUE)

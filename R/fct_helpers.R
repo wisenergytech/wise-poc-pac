@@ -1,3 +1,44 @@
+#' Compute midnight-aligned block start indices
+#'
+#' Aligns optimization blocks to midnight boundaries so each block
+#' corresponds to one day-ahead price set (EPEX SPOT publishes prices
+#' for 00:00-24:00 at ~12:42 CET the day before).
+#'
+#' @param timestamps POSIXct vector of timestamps
+#' @param bloc_qt Block size in quarter-hours (e.g. 96 for 24h)
+#' @param n Total number of rows
+#' @return Integer vector of 1-based row indices where each block starts
+#' @export
+compute_block_starts <- function(timestamps, bloc_qt, n) {
+  if (n == 0) return(integer(0))
+  if (!inherits(timestamps, "POSIXct")) {
+    # Fallback to sequential blocks if timestamps are not POSIXct
+    return(seq(1L, n, by = bloc_qt))
+  }
+
+  tz <- attr(timestamps[1], "tzone")
+  if (is.null(tz) || tz == "") tz <- "Europe/Brussels"
+
+  # Find midnight boundaries
+  dates <- as.Date(timestamps, tz = tz)
+  unique_dates <- unique(dates)
+
+  # Group consecutive dates into blocks of bloc_qt/96 days
+  days_per_block <- max(1L, bloc_qt %/% 96L)
+
+  starts <- integer(0)
+  d <- 1L
+  while (d <= length(unique_dates)) {
+    # Find first row of this date
+    target_date <- unique_dates[d]
+    idx <- which(dates == target_date)[1]
+    starts <- c(starts, idx)
+    d <- d + days_per_block
+  }
+
+  starts
+}
+
 #' Calculate COP (Coefficient of Performance)
 #'
 #' COP depends on external temperature (source) and optionally on

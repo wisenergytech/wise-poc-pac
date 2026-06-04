@@ -297,7 +297,7 @@ mod_sidebar_server <- function(id, sim_state) {
         batterie_active = FALSE, batt_kwh = 0, batt_kw = 0,
         batt_rendement = 0.9, batt_soc_min = 0.1, batt_soc_max = 0.9,
         curtailment_active = FALSE, curtail_kwh_per_qt = Inf,
-        slack_penalty = 2.5, optim_bloc_h = 4, poids_cout = 0.5,
+        slack_penalty = 2.5, optim_bloc_h = 24, poids_cout = 0.5,
         qp_w_comfort = 0.001, qp_w_smooth = 0.01
       )
 
@@ -746,7 +746,7 @@ mod_sidebar_server <- function(id, sim_state) {
           approche = "dual",
           label = "Dual (MILP mixte)",
           reason = "Deux PAC d\u00e9tect\u00e9es \u2192 dispatch optimal coupl\u00e9 (binaire + continu + rampe)",
-          bloc_h = 4
+          bloc_h = 24
         )
       } else if (pac1_mode == "onoff") {
         list(
@@ -754,7 +754,7 @@ mod_sidebar_server <- function(id, sim_state) {
           approche = "optimiseur",
           label = "MILP (on/off)",
           reason = "PAC on/off \u2192 optimisation binaire (allum\u00e9e ou \u00e9teinte)",
-          bloc_h = 4
+          bloc_h = 24
         )
       } else {
         list(

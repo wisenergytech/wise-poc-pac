@@ -350,9 +350,13 @@ run_optimization_dual <- function(df, params) {
   n <- nrow(df)
 
   bloc_qt <- params$optim_bloc_h * 4
-  n_blocs <- ceiling(n / bloc_qt)
 
-  all_results <- vector("list", n_blocs)
+  # Compute midnight-aligned block boundaries
+  # Day-ahead prices (EPEX SPOT) cover 00:00-24:00, published ~12:42 CET.
+  # Aligning blocks to midnight ensures each block uses one day's price set.
+  block_starts <- compute_block_starts(df$timestamp, bloc_qt, n)
+
+  all_results <- vector("list", length(block_starts))
 
   # Initial conditions
   t_init <- params$t_consigne
@@ -363,12 +367,12 @@ run_optimization_dual <- function(df, params) {
   }
   p_pac2_init <- NULL  # No previous block for first block
 
-  for (b in seq_len(n_blocs)) {
-    i_start <- (b - 1) * bloc_qt + 1
-    i_end <- min(b * bloc_qt, n)
+  for (b in seq_along(block_starts)) {
+    i_start <- block_starts[b]
+    i_end <- if (b < length(block_starts)) block_starts[b + 1] - 1 else n
     n_execute <- i_end - i_start + 1
 
-    # Overlapping: extend with lookahead
+    # Overlapping: extend with lookahead (one full bloc)
     i_lookahead_end <- min(i_end + bloc_qt, n)
     block_data <- df[i_start:i_lookahead_end, ]
 
@@ -454,6 +458,7 @@ run_optimization_dual <- function(df, params) {
     }
 
     # Progress reporting
+    n_blocs <- length(block_starts)
     if (exists("setProgress", mode = "function")) {
       try(setProgress(b / n_blocs, detail = sprintf("Bloc %d/%d", b, n_blocs)),
         silent = TRUE)
