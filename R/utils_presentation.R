@@ -19,8 +19,9 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   date_debut <- format(min(ts, na.rm = TRUE), "%d/%m/%Y")
   date_fin <- format(max(ts, na.rm = TRUE), "%d/%m/%Y")
 
-  # PAC share of total consumption
-  total_conso <- sum(sim_data$offtake_kwh, na.rm = TRUE)
+  # PAC share of total consumption (including self-consumed PV)
+  total_conso <- sum(sim_data$offtake_kwh, na.rm = TRUE) +
+    sum(pmax(0, sim_data$pv_kwh - sim_data$intake_kwh), na.rm = TRUE)
   pac_conso <- kpis$conso_pac_baseline
   pct_pac <- if (total_conso > 0) round(pac_conso / total_conso * 100) else 55
 
@@ -249,8 +250,9 @@ render_markdown <- function(kpis, params, sim_data, output_file,
   date_debut <- format(min(ts, na.rm = TRUE), "%d/%m/%Y")
   date_fin <- format(max(ts, na.rm = TRUE), "%d/%m/%Y")
 
-  # PAC share
-  total_conso <- sum(sim_data$offtake_kwh, na.rm = TRUE)
+  # PAC share (including self-consumed PV)
+  total_conso <- sum(sim_data$offtake_kwh, na.rm = TRUE) +
+    sum(pmax(0, sim_data$pv_kwh - sim_data$intake_kwh), na.rm = TRUE)
   pac_conso <- kpis$conso_pac_baseline
   pct_pac <- if (total_conso > 0) round(pac_conso / total_conso * 100) else 55
 

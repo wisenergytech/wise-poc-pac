@@ -21,15 +21,15 @@ suppressPackageStartupMessages({
 # Load .env if present
 if (file.exists(".env")) {
   env_lines <- readLines(".env", warn = FALSE)
-  env_lines <- env_lines[grepl("=", env_lines) & !grepl("^#", env_lines)]
+  env_lines <- env_lines[grepl("=", env_lines) & !grepl("^\\s*#", env_lines)]
+  env_lines <- env_lines[nchar(trimws(env_lines)) > 0]
   for (line in env_lines) {
-    parts <- strsplit(line, "=", fixed = TRUE)[[1]]
-    if (length(parts) >= 2) {
-      key <- trimws(parts[1])
-      val <- trimws(paste(parts[-1], collapse = "="))
-      val <- gsub("^['\"]|['\"]$", "", val)
-      Sys.setenv(setNames(val, key))
-    }
+    eq_pos <- regexpr("=", line, fixed = TRUE)
+    if (eq_pos < 1) next
+    key <- trimws(substr(line, 1, eq_pos - 1))
+    val <- trimws(substr(line, eq_pos + 1, nchar(line)))
+    val <- gsub("^['\"]|['\"]$", "", val)
+    if (nchar(key) > 0) do.call(Sys.setenv, setNames(list(val), key))
   }
 }
 
