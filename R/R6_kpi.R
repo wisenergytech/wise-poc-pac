@@ -99,8 +99,12 @@ KPICalculator <- R6::R6Class("KPICalculator",
       as_opti <- self$get_autosuffisance(sim_data, pv_total, type = "optimized")
 
       # --- PAC consumption ---
-      pac_qt <- params$p_pac_kw * params$dt_h
-      conso_pac_opti <- sum(sim_data$sim_pac_on * pac_qt, na.rm = TRUE)
+      conso_pac_opti <- if (all(c("sim_pac1_kwh", "sim_pac2_kwh") %in% names(sim_data))) {
+        sum(sim_data$sim_pac1_kwh + sim_data$sim_pac2_kwh, na.rm = TRUE)
+      } else {
+        pac_qt <- params$p_pac_kw * params$dt_h
+        sum(sim_data$sim_pac_on * pac_qt, na.rm = TRUE)
+      }
       # Use measured pac_kwh if available (sub-metered), otherwise derive from energy balance
       conso_pac_baseline <- if ("pac_kwh" %in% names(baseline_data)) {
         sum(baseline_data$pac_kwh, na.rm = TRUE)
@@ -342,8 +346,12 @@ KPICalculator <- R6::R6Class("KPICalculator",
     #' @return Dataframe with columns: tranche, kwh, pct, prix_moyen
     get_pac_par_tranche = function(data, params, type = "baseline") {
       if (type == "optimized") {
-        pac_qt <- params$p_pac_kw * params$dt_h
-        pac_kwh <- data$sim_pac_on * pac_qt
+        if (all(c("sim_pac1_kwh", "sim_pac2_kwh") %in% names(data))) {
+          pac_kwh <- data$sim_pac1_kwh + data$sim_pac2_kwh
+        } else {
+          pac_qt <- params$p_pac_kw * params$dt_h
+          pac_kwh <- data$sim_pac_on * pac_qt
+        }
       } else {
         pac_kwh <- if ("pac_kwh" %in% names(data)) {
           data$pac_kwh

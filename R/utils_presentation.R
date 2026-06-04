@@ -162,7 +162,12 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   # --- Profil horaire moyen (plotly object) ---
   get_pac_kwh_vec <- function(sim, params, type) {
     if (type == "optimized") {
-      sim$sim_pac_on * params$p_pac_kw * params$dt_h
+      # Use per-PAC kWh columns when available (dual optimizer)
+      if (all(c("sim_pac1_kwh", "sim_pac2_kwh") %in% names(sim))) {
+        sim$sim_pac1_kwh + sim$sim_pac2_kwh
+      } else {
+        sim$sim_pac_on * params$p_pac_kw * params$dt_h
+      }
     } else if ("pac_kwh" %in% names(sim)) {
       sim$pac_kwh
     } else {
