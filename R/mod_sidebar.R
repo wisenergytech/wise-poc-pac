@@ -182,6 +182,8 @@ mod_sidebar_ui <- function(id) {
       shiny::uiOutput(ns("optimizer_info")),
       shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("P\u00e9nalit\u00e9 T_min (EUR/\u00b0C)", tip("Cout fictif par degre sous T_min. Plus bas : economies maximales. Plus haut : confort prioritaire.")),
         0.5, 20, 2.5, step = 0.5, post = " EUR/\u00b0C"),
+      shiny::sliderInput(ns("min_cycle_min"), shiny::tags$span("Dur\u00e9e min cycle (min)", tip("Dur\u00e9e minimale de fonctionnement et d'arret d'une PAC on/off. Protege le compresseur contre les cycles courts. 0 = pas de contrainte.")),
+        0, 120, 45, step = 15, post = " min"),
       shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
         shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strat\u00e9gies d'optimisation"),
         if (isTRUE(ui_cfg$strategies$tou)) shiny::tagList(
@@ -557,6 +559,8 @@ mod_sidebar_server <- function(id, sim_state) {
         cop2_nominal = if (!is.null(input$cop2_nominal)) input$cop2_nominal else if (!is.null(csv_p)) csv_p$cop2 else 3.5,
         t_ref_cop2 = 7,
         ramp_max = if (!is.null(input$ramp_max)) input$ramp_max else 0.3,
+        min_cycle_min = if (!is.null(input$min_cycle_min)) input$min_cycle_min else 0,
+        min_cycle_qt = if (!is.null(input$min_cycle_min)) ceiling(input$min_cycle_min / 15) else 0L,
         t_sol_method = "annual_mean",
         t_sol_constant = 9)
     })

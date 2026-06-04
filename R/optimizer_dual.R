@@ -222,6 +222,42 @@ solve_block_dual <- function(block_data, params, t_init, soc_init = NULL,
   }
 
   # ----------------------------------------------------------
+  # C5b: Minimum cycle duration for on/off PACs
+  # ----------------------------------------------------------
+  # If PAC turns ON at t, it must stay ON for min_cycle_qt steps.
+  # If PAC turns OFF at t, it must stay OFF for min_cycle_qt steps.
+  # Formulation: for each k in 1:(L-1):
+  #   y[t] - y[t-1] <= y[t+k]        (min ON)
+  #   y[t-1] - y[t] + y[t+k] <= 1    (min OFF)
+  min_cycle_qt <- if (!is.null(params$min_cycle_qt) && params$min_cycle_qt > 1) {
+    params$min_cycle_qt
+  } else {
+    0L
+  }
+
+  if (pac1_is_binary && min_cycle_qt > 1 && n > min_cycle_qt) {
+    for (k in seq_len(min_cycle_qt - 1)) {
+      t_range <- 2:(n - k)
+      if (length(t_range) > 0) {
+        model <- model |>
+          add_constraint(y_pac1[t] - y_pac1[t - 1] <= y_pac1[t + k], t = t_range) |>
+          add_constraint(y_pac1[t - 1] - y_pac1[t] + y_pac1[t + k] <= 1, t = t_range)
+      }
+    }
+  }
+
+  if (pac2_is_binary && min_cycle_qt > 1 && n > min_cycle_qt) {
+    for (k in seq_len(min_cycle_qt - 1)) {
+      t_range <- 2:(n - k)
+      if (length(t_range) > 0) {
+        model <- model |>
+          add_constraint(p_pac2[t] - p_pac2[t - 1] <= p_pac2[t + k], t = t_range) |>
+          add_constraint(p_pac2[t - 1] - p_pac2[t] + p_pac2[t + k] <= 1, t = t_range)
+      }
+    }
+  }
+
+  # ----------------------------------------------------------
   # C6-C8: Battery constraints (same as optimizer_milp.R)
   # ----------------------------------------------------------
   if (has_batt) {

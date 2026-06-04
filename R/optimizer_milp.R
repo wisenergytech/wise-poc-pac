@@ -246,6 +246,26 @@ solve_block <- function(block_data, params, t_init, soc_init = NULL, prix_termin
     add_constraint(t_bal[t] <= params$t_max, t = 1:n)
 
   # ----------------------------------------------------------
+  # C4b: Minimum cycle duration for on/off PAC
+  # ----------------------------------------------------------
+  min_cycle_qt <- if (!is.null(params$min_cycle_qt) && params$min_cycle_qt > 1) {
+    params$min_cycle_qt
+  } else {
+    0L
+  }
+
+  if (min_cycle_qt > 1 && n > min_cycle_qt) {
+    for (k in seq_len(min_cycle_qt - 1)) {
+      t_range <- 2:(n - k)
+      if (length(t_range) > 0) {
+        model <- model |>
+          add_constraint(pac_on[t] - pac_on[t - 1] <= pac_on[t + k], t = t_range) |>
+          add_constraint(pac_on[t - 1] - pac_on[t] + pac_on[t + k] <= 1, t = t_range)
+      }
+    }
+  }
+
+  # ----------------------------------------------------------
   # C5+C6: Battery constraints (conditional)
   # ----------------------------------------------------------
   if (has_batt) {
