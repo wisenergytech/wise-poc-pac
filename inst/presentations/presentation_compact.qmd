@@ -1,0 +1,227 @@
+---
+title: "Wise Brain — Profondeville"
+subtitle: "Optimisation du réseau de chaleur K-0001"
+author: "WISE"
+date: today
+lang: fr
+params:
+  # Site
+  site_name: "Profondeville"
+  n_logements: 20
+  # Technical — PAC
+  pac1_modele: "Carrier 61WG 035A"
+  pac1_th_kw: 40
+  pac1_cop_nominal: 4.0
+  pac2_modele: "Hoval Belaria Pro 24"
+  pac2_th_kw: 24
+  pac2_cop_nominal: 3.0
+  pac_kw: 64
+  pv_kwc: 42
+  volume_ballon_l: 2500
+  t_consigne: 35
+  t_tolerance: 5
+  t_min: 30
+  t_max: 40
+  # Simulation
+  n_days: 159
+  # Financial KPIs
+  facture_baseline: 3195
+  facture_opti: 2141
+  gain_eur: 1054
+  gain_pct: 33
+  gain_eur_per_day: 6.60
+  # Energy KPIs
+  soutirage_baseline_kwh: 14223
+  soutirage_opti_kwh: 10587
+  ac_baseline: 50.1
+  ac_opti: 70.9
+  as_baseline: 35.5
+  as_opti: 51.1
+  pct_pac_conso: 55
+  # CO2
+  co2_saved_kg: 420
+  co2_pct_reduction: 33
+  # Annual projections
+  proj_facture_baseline_an: 4149
+  proj_facture_opti_an: 2781
+  proj_gain_eur_an: 1369
+  proj_gain_pct_an: 33
+  proj_co2_saved_an_kg: 546
+  # Dual-contract
+  has_dual_contrat: false
+  type_contrat: "spot"
+  type_contrat_cible: ""
+  dual_fa: 3195
+  dual_fd: 0
+  dual_levier1: 1054
+  dual_levier2: 0
+  dual_gain_total: 0
+  dual_gain_total_pct: 0
+  dual_proj_gain_total_an: 0
+format:
+  revealjs:
+    embed-resources: true
+    theme: [default, custom-theme.scss]
+    footer: "Karno x Wise Brain — Profondeville"
+    slide-number: true
+    transition: fade
+    transition-speed: fast
+    width: 1600
+    height: 900
+  pptx:
+    reference-doc: template.pptx
+---
+
+```{r setup, include=FALSE}
+fmt <- function(x, digits = 0) formatC(x, format = "f", big.mark = " ", digits = digits)
+fmt1 <- function(x) formatC(x, format = "f", big.mark = " ", digits = 1)
+
+img_to_b64 <- function(path, mime = "image/png") {
+  paste0("data:", mime, ";base64,", base64enc::base64encode(path))
+}
+bg_b64 <- img_to_b64("images/background.png")
+logo_destore_b64 <- img_to_b64("images/destore-logo.png")
+logo_karno_b64 <- img_to_b64("images/karno-logo.png")
+logo_wise_b64 <- img_to_b64("images/wise-logo.png")
+
+plot_tranches_file <- "plot_tranches.rds"
+has_tranche <- file.exists(plot_tranches_file)
+if (has_tranche) p_tranches <- readRDS(plot_tranches_file)
+
+plot_profil_file <- "plot_profil.rds"
+has_profil <- file.exists(plot_profil_file)
+if (has_profil) p_profil <- readRDS(plot_profil_file)
+```
+
+```{r logos-and-background, echo=FALSE, results='asis'}
+cat(sprintf('
+<script>
+  (function() {
+    var logos = document.createElement("div");
+    logos.id = "partner-logos";
+    logos.innerHTML = \'<img src="%s" alt="Karno Energy" /><img src="%s" alt="Destore" /><img src="%s" alt="WISE" />\';
+    document.querySelector(".reveal").appendChild(logos);
+    function applyBackgrounds() {
+      var bg = "%s";
+      document.querySelectorAll(".reveal .slides section").forEach(function(slide) {
+        slide.setAttribute("data-background-image", bg);
+        slide.setAttribute("data-background-size", "cover");
+        slide.setAttribute("data-background-position", "center bottom");
+      });
+      if (window.Reveal) Reveal.sync();
+    }
+    if (window.Reveal && Reveal.isReady()) {
+      applyBackgrounds();
+    } else if (window.Reveal) {
+      Reveal.on("ready", applyBackgrounds);
+    } else {
+      document.addEventListener("DOMContentLoaded", applyBackgrounds);
+    }
+  })();
+</script>
+', logo_karno_b64, logo_destore_b64, logo_wise_b64, bg_b64))
+```
+
+## Le site et l'installation
+
+**`r params$n_logements` logements** résidentiels, rue des Déchanges, 5170 `r params$site_name`.
+
+| Equipement | Specs |
+|---|---|
+| **PAC géothermique** | `r params$pac1_modele`, `r params$pac1_th_kw` kWth, on/off |
+| **PAC aérothermique** | `r params$pac2_modele`, `r params$pac2_th_kw` kWth, on/off |
+| **Ballon tampon** | `r fmt(params$volume_ballon_l)` L, consigne `r params$t_consigne` °C |
+| **PV** | ~`r params$pv_kwc` kWc |
+
+**Constat** : la PAC représente **`r params$pct_pac_conso`%** de la consommation électrique et tourne surtout **la nuit**, quand l'énergie est chère et le PV ne produit pas. Le ballon tampon offre une flexibilité de stockage thermique **inexploitée**.
+
+## Le problème et la solution
+
+::: columns
+::: {.column width="48%"}
+**Aujourd'hui (thermostat)**
+
+- PAC pilotée par la température du ballon uniquement
+- Aucune conscience du prix ni du PV
+- Autoconsommation PV : **`r fmt1(params$ac_baseline)`%**
+- Autosuffisance : **`r fmt1(params$as_baseline)`%**
+:::
+::: {.column width="4%"}
+:::
+::: {.column width="48%"}
+**Avec Wise Brain (ToU)**
+
+- PAC pilotée par un optimiseur (MILP) qui anticipe prix + PV
+- Pré-chauffe le ballon quand l'énergie est bon marché
+- Autoconsommation PV : **`r fmt1(params$ac_opti)`%** (+`r round(params$ac_opti - params$ac_baseline)` pts)
+- Autosuffisance : **`r fmt1(params$as_opti)`%** (+`r round(params$as_opti - params$as_baseline)` pts)
+:::
+:::
+
+**Les occupants ne ressentent rien** — T_ballon reste dans [`r params$t_min`–`r params$t_max` °C]. Seul le planning de la PAC change.
+
+## Le glissement en action
+
+```{r plot-pac-tranches, echo=FALSE, fig.width=12, fig.height=5}
+if (has_tranche) p_tranches
+```
+
+Le Wise Brain **déplace** la consommation PAC vers la **tranche solaire** (10h-16h), où le PV produit, les prix sont bas et l'électricité est décarbonée.
+
+```{r impact-financier, echo=FALSE, results='asis'}
+dual <- isTRUE(params$has_dual_contrat)
+
+if (dual) {
+  cat(sprintf("## Impact : -%s%% sur la facture\n\n", params$dual_gain_total_pct))
+  cat(sprintf("**%s jours** de données réelles | %s kWth (GSHP + ASHP) | PV %s kWc | Ballon %s L\n\n",
+    params$n_days, params$pac_kw, params$pv_kwc, fmt(params$volume_ballon_l)))
+  cat("|  | EUR |\n")
+  cat("|--|----:|\n")
+  cat(sprintf("| **Situation actuelle** (%s, thermostat) | **%s** |\n",
+    params$type_contrat, fmt(params$dual_fa)))
+  cat(sprintf("| Levier 1 : Pilotage ToU (même contrat) | -%s |\n", fmt(params$dual_levier1)))
+  cat(sprintf("| Levier 2 : Passage %s → %s | -%s |\n",
+    params$type_contrat, params$type_contrat_cible, fmt(params$dual_levier2)))
+  cat(sprintf("| **Résultat final** (%s + Wise Brain) | **%s** |\n\n",
+    params$type_contrat_cible, fmt(params$dual_fd)))
+  cat(sprintf("**Économie : %s EUR** sur %s jours → **~%s EUR/an**\n",
+    fmt(params$dual_gain_total), params$n_days, fmt(params$dual_proj_gain_total_an)))
+} else {
+  cat(sprintf("## Impact : -%s%% sur la facture\n\n", params$gain_pct))
+  cat(sprintf("**%s jours** de données réelles | %s kWth (GSHP + ASHP) | PV %s kWc | Ballon %s L\n\n",
+    params$n_days, params$pac_kw, params$pv_kwc, fmt(params$volume_ballon_l)))
+  cat("|  | Baseline | Optimisé | Gain |\n")
+  cat("|--|--------:|---------:|-----:|\n")
+  cat(sprintf("| **Facture nette** | **%s EUR** | **%s EUR** | **-%s EUR (-%s%%)** |\n",
+    fmt(params$facture_baseline), fmt(params$facture_opti),
+    fmt(params$gain_eur), params$gain_pct))
+  cat(sprintf("| Soutirage réseau | %s kWh | %s kWh | -%s kWh |\n",
+    fmt(params$soutirage_baseline_kwh), fmt(params$soutirage_opti_kwh),
+    fmt(params$soutirage_baseline_kwh - params$soutirage_opti_kwh)))
+  cat(sprintf("| CO2 évité | — | — | **-%s kg (-%s%%)** |\n",
+    fmt(params$co2_saved_kg), params$co2_pct_reduction))
+  cat(sprintf("| **Projection annuelle** | **%s EUR** | **%s EUR** | **~-%s EUR/an** |\n\n",
+    fmt(params$proj_facture_baseline_an), fmt(params$proj_facture_opti_an),
+    fmt(params$proj_gain_eur_an)))
+  cat(sprintf("**%s EUR d'économie par jour**, juste en pilotant intelligemment la PAC.\n",
+    fmt(params$gain_eur_per_day, 2)))
+}
+```
+
+## Prochaines étapes
+
+1. **Proposition commerciale** pour l'étude POC et sa mise en place
+2. **Compteurs dédiés** : GSHP et ASHP sous-comptés depuis mai 2026 — données disponibles pour validation
+3. **Pilotage réel** : interface Wise Brain → régulateur Komfor (avec garde-fous et mode fallback)
+
+**Le potentiel est confirmé par les données réelles.** Le passage à l'acte nécessite un accord commercial et un accès au contrôleur de la chaufferie.
+
+::: notes
+Les résultats sont calculés sur `r params$n_days` jours de données mesurées. La projection annuelle tient compte de la saisonnalité (degrés-jours, COP, spreads de prix).
+:::
+
+## Merci !
+
+Merci pour votre attention.
+
+**Des questions ?**
