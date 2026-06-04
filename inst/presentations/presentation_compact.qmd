@@ -255,3 +255,34 @@ L'autoconsommation PV de 6.6% dans la baseline confirme que la quasi-totalité d
 Merci pour votre attention.
 
 **Des questions ?**
+
+# Annexe
+
+## Comment le PV est-il reconstruit ?
+
+Le compteur PV (onduleur) donne des données incohérentes. On reconstruit la production solaire à partir des **3 compteurs fiables** du site.
+
+A chaque quart d'heure, le bilan électrique est :
+
+```
+soutirage + PV = PAC + talon + injection
+  (ORES)   (?)   (compteurs)  (?)    (ORES)
+```
+
+3 termes mesurés, 2 inconnues (PV et talon). Insoluble... **sauf la nuit**.
+
+La nuit, le PV est **physiquement zéro**. On peut donc isoler le talon :
+
+```
+talon = soutirage - PAC    (la nuit, PV=0, injection=0)
+```
+
+Résultat : talon mesuré = **~0.6 kW** constant (circulateurs, contrôleur, éclairage chaufferie).
+
+Le jour, on connaît le talon → on isole le PV :
+
+```
+PV = PAC + talon + injection - soutirage
+```
+
+**Hypothèse unique** : le talon est le même jour et nuit (~0.6 kW). C'est raisonnable pour une chaufferie, avec une précision estimée à **±5%** sur le PV total.
