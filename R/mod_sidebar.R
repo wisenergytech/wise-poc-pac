@@ -227,6 +227,7 @@ mod_sidebar_ui <- function(id) {
       shiny::downloadButton(ns("download_csv"), "Exporter CSV", class = "btn-outline-primary w-100 mt-1", icon = shiny::icon("download")),
       shiny::downloadButton(ns("download_rds"), "Exporter simulation (.rds)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-export")),
       shiny::downloadButton(ns("download_presentation"), "Exporter presentation (.html)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-code")),
+      shiny::downloadButton(ns("download_presentation_compact"), "Exporter version compacte (.html)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-powerpoint")),
       shiny::downloadButton(ns("download_markdown"), "Exporter rapport (.md)", class = "btn-outline-secondary w-100 mt-1", icon = shiny::icon("file-lines"))),
     shiny::fileInput(ns("import_rds"), NULL, accept = ".rds", buttonLabel = "Importer .rds", placeholder = "simulation.rds"),
     # Automagic button (masque temporairement)
@@ -1545,6 +1546,28 @@ mod_sidebar_server <- function(id, sim_state) {
             format = "revealjs",
             kpis_cible = kpis_cible_r(),
             params_cible = sim_result()$params_cible
+          )
+        })
+      }
+    )
+
+    # ---- Compact Presentation Export ----
+    output$download_presentation_compact <- shiny::downloadHandler(
+      filename = function() {
+        paste0("pac_compact_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".html")
+      },
+      content = function(file) {
+        shiny::req(sim_filtered(), kpis_r())
+        shiny::withProgress(message = "Generation de la presentation compacte...", value = 0.3, {
+          render_presentation(
+            kpis = kpis_r(),
+            params = params_r(),
+            sim_data = sim_filtered(),
+            output_file = file,
+            format = "revealjs",
+            kpis_cible = kpis_cible_r(),
+            params_cible = sim_result()$params_cible,
+            template = "presentation_compact.qmd"
           )
         })
       }

@@ -11,7 +11,8 @@
 #' @return Path to the rendered file (invisibly)
 render_presentation <- function(kpis, params, sim_data, output_file,
                                 format = c("revealjs", "pptx"),
-                                kpis_cible = NULL, params_cible = NULL) {
+                                kpis_cible = NULL, params_cible = NULL,
+                                template = "presentation.qmd") {
   format <- match.arg(format)
 
   # Date range from simulation data
@@ -145,9 +146,9 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   )
 
   # Locate the .qmd template
-  qmd_path <- system.file("presentations", "presentation.qmd", package = "wisepocpac")
+  qmd_path <- system.file("presentations", template, package = "wisepocpac")
   if (qmd_path == "") {
-    qmd_path <- file.path("inst", "presentations", "presentation.qmd")
+    qmd_path <- file.path("inst", "presentations", template)
   }
 
   # --- PAC par tranche horaire (plotly object) ---
@@ -214,7 +215,7 @@ render_presentation <- function(kpis, params, sim_data, output_file,
     saveRDS(p_co2_cumul, file.path(tmp_dir, "plot_co2_cumul.rds"))
   }
 
-  tmp_qmd <- file.path(tmp_dir, "presentation.qmd")
+  tmp_qmd <- file.path(tmp_dir, template)
 
   # Render
   quarto::quarto_render(
@@ -225,7 +226,8 @@ render_presentation <- function(kpis, params, sim_data, output_file,
 
   # Find rendered output
   ext <- if (format == "revealjs") "html" else "pptx"
-  rendered <- file.path(tmp_dir, paste0("presentation.", ext))
+  qmd_stem <- tools::file_path_sans_ext(template)
+  rendered <- file.path(tmp_dir, paste0(qmd_stem, ".", ext))
 
   file.copy(rendered, output_file, overwrite = TRUE)
   unlink(tmp_dir, recursive = TRUE)
