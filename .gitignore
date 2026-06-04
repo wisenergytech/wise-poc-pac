@@ -22,6 +22,9 @@ data/fusionsolar_5min_2026.csv
 data/test_csv_complet.csv
 data/test_csv_complet_partial.csv
 
+# Batch simulation outputs
+results/
+
 # OS
 .DS_Store
 Thumbs.db
