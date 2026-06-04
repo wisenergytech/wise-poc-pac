@@ -12,13 +12,30 @@ params:
   surface_m2: 2000
   conso_chauffage_mwh_an: 198
   co2_evite_20ans_t: 717
-  # Technical
-  pac_kw: 60
+  # Technical — PAC 1 (GSHP)
+  pac1_modele: "Carrier 61WG 035A"
+  pac1_type: "Sol (GSHP)"
+  pac1_mode: "On/Off"
+  pac1_th_kw: 40
+  pac1_cop_nominal: 4.0
+  pac1_t_source: "8–10 °C (forage)"
+  # Technical — PAC 2 (ASHP)
+  pac2_modele: "Hoval Belaria Pro 24"
+  pac2_type: "Air (ASHP)"
+  pac2_mode: "On/Off"
+  pac2_th_kw: 24
+  pac2_cop_nominal: 3.0
+  pac2_t_source: "Variable (air ext.)"
+  # Technical — General
+  pac_kw: 64
   pv_kwc: 42
   pv_kwc_ref: 64
   volume_ballon_l: 2500
-  t_min: 45
-  t_max: 55
+  t_consigne: 35
+  t_tolerance: 5
+  t_min: 30
+  t_max: 40
+  t_sol: 9
   cop_median_hiver: 2.5
   cop_median_misaison: 4.5
   # Simulation period
@@ -187,10 +204,10 @@ Contrat DBFMO (Design-Build-Finance-Maintain-Operate) d'un coût de 430 000 EUR 
 
 ## Installation technique
 
-- **Champ de sondes géothermiques** (source principale)
-- **PAC géothermique (GSHP)** : 40 kW, fonctionnement on/off
-- **PAC aérothermique (ASHP)** : 20 kW, modulation continue (backup & equilibrage)
-- **Ballon tampon** pour le stockage thermique (`r fmt(params$volume_ballon_l)` L)
+- **Champ de sondes géothermiques** (source principale, T° sol ~`r params$t_sol` °C)
+- **PAC géothermique (GSHP)** : `r params$pac1_modele`, `r params$pac1_th_kw` kWth, on/off
+- **PAC aérothermique (ASHP)** : `r params$pac2_modele`, `r params$pac2_th_kw` kWth, on/off
+- **Ballon tampon** pour le stockage thermique (`r fmt(params$volume_ballon_l)` L, consigne `r params$t_consigne` °C)
 - **Installation PV** (~`r params$pv_kwc` kWc, panneaux installés sept. 2025)
 - Compteur ORES bidirectionnel (import/export)
 
@@ -238,6 +255,27 @@ Carrier 61WG 035A : PAC eau/eau réversible, compresseur scroll. Hoval Belaria P
 
 ::: notes
 Cette logique de cascade est un pilotage thermique pur : elle choisit la source la plus efficace en fonction des températures, mais ne tient pas compte du prix de l'électricité ni de la production PV. C'est exactement ce que le Wise Brain viendrait optimiser : décider quand et combien chaque PAC tourne en fonction du prix, du PV et du confort.
+:::
+
+## Paramétrisation du solveur
+
+Le Wise Brain modélise les deux PAC séparément et décide **indépendamment** quand les activer, en remplaçant la logique de cascade par une **optimisation sous contraintes** (MILP).
+
+|  | PAC 1 — GSHP | PAC 2 — ASHP |
+|---|---|---|
+| **Modèle** | `r params$pac1_modele` | `r params$pac2_modele` |
+| **P. thermique** | `r params$pac1_th_kw` kWth | `r params$pac2_th_kw` kWth |
+| **P. électrique** | ~`r round(params$pac1_th_kw / params$pac1_cop_nominal)` kW | ~`r round(params$pac2_th_kw / params$pac2_cop_nominal)` kW |
+| **COP nominal** | `r params$pac1_cop_nominal` | `r params$pac2_cop_nominal` |
+| **Source** | `r params$pac1_t_source` | `r params$pac2_t_source` |
+| **Variable solveur** | Binaire (0/1) | Binaire (0/1) |
+
+**Contraintes thermiques** : T_ballon dans [`r params$t_min`–`r params$t_max` °C] (consigne `r params$t_consigne` °C ± `r params$t_tolerance` °C)
+
+**Objectif** : minimiser le coût net (soutirage × prix − injection × prix) tout en maintenant le confort.
+
+::: notes
+La puissance électrique est déduite : P_elec = P_th / COP_nominal. Le COP réel varie avec la température source (sol ou air) et la température du ballon — le solveur le recalcule à chaque pas de temps. Le solveur utilise HiGHS (MILP open source) avec des blocs glissants de 12h et un lookahead de 12h supplémentaires.
 :::
 
 # Les constats
@@ -354,11 +392,9 @@ Le COP varie avec la température extérieure (de ~`r params$cop_median_hiver` e
 
 ## Hypothèses de la simulation
 
-Deux simplifications retenues pour ce PoC :
+**1. Deux PAC modélisées séparément**
 
-**1. Une seule PAC de `r params$pac_kw` kW thermique**
-
-Le site dispose de deux sous-systèmes (GSHP 40 kW on/off + ASHP 20 kW modulante). Pour cette simulation, on les traite comme **une seule unité modulante de `r params$pac_kw` kW** — ce qui surestime légèrement la flexibilité réelle mais donne un bon ordre de grandeur.
+Le solveur traite les deux sous-systèmes de manière indépendante : **GSHP `r params$pac1_th_kw` kWth** (`r params$pac1_modele`) et **ASHP `r params$pac2_th_kw` kWth** (`r params$pac2_modele`), chacune avec son propre COP et sa source de chaleur. Puissance combinée : `r params$pac_kw` kWth.
 
 **2. Aucun pilotage tarifaire dans la baseline**
 

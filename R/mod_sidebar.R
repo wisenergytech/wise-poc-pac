@@ -545,9 +545,9 @@ mod_sidebar_server <- function(id, sim_state) {
         optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24,
         pac1_type = if (!is.null(input$pac1_type)) input$pac1_type else "gshp",
         pac1_mode = if (!is.null(input$pac1_mode)) input$pac1_mode else "onoff",
-        pac2_active = if (!is.null(input$pac2_active)) isTRUE(input$pac2_active) else FALSE,
+        pac2_active = if (!is.null(input$pac2_active)) isTRUE(input$pac2_active) else TRUE,
         pac2_type = if (!is.null(input$pac2_type)) input$pac2_type else "ashp",
-        pac2_mode = if (!is.null(input$pac2_mode)) input$pac2_mode else "inverter",
+        pac2_mode = if (!is.null(input$pac2_mode)) input$pac2_mode else "onoff",
         p_pac2_kw = if (!is.null(input$pac2_active) && isTRUE(input$pac2_active)) {
           if (!is.null(input$p_pac2_th_kw) && !is.null(input$cop2_nominal))
             input$p_pac2_th_kw / input$cop2_nominal
@@ -558,7 +558,7 @@ mod_sidebar_server <- function(id, sim_state) {
         t_ref_cop2 = 7,
         ramp_max = if (!is.null(input$ramp_max)) input$ramp_max else 0.3,
         t_sol_method = "annual_mean",
-        t_sol_constant = 10)
+        t_sol_constant = 9)
     })
 
     # ---- params_cible_r (target contract for comparison) ----
@@ -668,9 +668,9 @@ mod_sidebar_server <- function(id, sim_state) {
         if (!csv_pac) {
           # Demo mode: show all controls
           shiny::tagList(
-            shiny::numericInput(ns("p_pac_th_kw"), "Puissance thermique (kW)", 60, min = 1, max = 500, step = 1),
+            shiny::numericInput(ns("p_pac_th_kw"), "Puissance thermique (kW)", 40, min = 1, max = 500, step = 1),
             shiny::uiOutput(ns("pac_csv_hint")),
-            shiny::numericInput(ns("cop_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1))
+            shiny::numericInput(ns("cop_nominal"), "COP nominal", 4.0, min = 1.5, max = 6, step = 0.1))
         } else {
           # CSV mode: power/COP deduced, show info only
           pac1_col <- if (!is.null(mapping)) mapping$mapping[["pac1_kwh"]] else "pac1"
@@ -696,17 +696,17 @@ mod_sidebar_server <- function(id, sim_state) {
         if (!has_pac2_mapped) {
           # No PAC 2 in CSV or Demo mode
           shiny::tagList(
-            shiny::checkboxInput(ns("pac2_active"), "Activer PAC 2", value = FALSE),
+            shiny::checkboxInput(ns("pac2_active"), "Activer PAC 2", value = TRUE),
             shiny::conditionalPanel(sprintf("input['%s']", ns("pac2_active")),
               if (!csv_pac) {
                 shiny::tagList(
-                  shiny::numericInput(ns("p_pac2_th_kw"), "Puissance thermique (kW)", 140, min = 1, max = 500, step = 1),
-                  shiny::numericInput(ns("cop2_nominal"), "COP nominal", 3.5, min = 1.5, max = 6, step = 0.1))
+                  shiny::numericInput(ns("p_pac2_th_kw"), "Puissance thermique (kW)", 24, min = 1, max = 500, step = 1),
+                  shiny::numericInput(ns("cop2_nominal"), "COP nominal", 3.0, min = 1.5, max = 6, step = 0.1))
               },
               shiny::selectInput(ns("pac2_type"), "Type source",
                 choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"), selected = "ashp"),
               shiny::selectInput(ns("pac2_mode"), "Mode",
-                choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "inverter"),
+                choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "onoff"),
               shiny::conditionalPanel(sprintf("input['%s']=='inverter'", ns("pac2_mode")),
                 shiny::sliderInput(ns("ramp_max"), shiny::tags$span("Rampe max",
                   tip("Variation maximale de puissance par quart d'heure.")),
