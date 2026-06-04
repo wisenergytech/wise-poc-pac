@@ -1469,10 +1469,52 @@ mod_sidebar_server <- function(id, sim_state) {
       },
       content = function(file) {
         shiny::req(sim_result())
+        # Collect all sidebar input values for full state restore
+        sidebar_inputs <- list(
+          # Ballon
+          t_consigne = input$t_consigne,
+          t_tolerance = input$t_tolerance,
+          volume_auto = input$volume_auto,
+          volume_ballon_manual = input$volume_ballon_manual,
+          # PAC 1
+          p_pac_th_kw = input$p_pac_th_kw,
+          cop_nominal = input$cop_nominal,
+          pac1_type = input$pac1_type,
+          pac1_mode = input$pac1_mode,
+          # PAC 2
+          pac2_active = input$pac2_active,
+          p_pac2_th_kw = input$p_pac2_th_kw,
+          cop2_nominal = input$cop2_nominal,
+          pac2_type = input$pac2_type,
+          pac2_mode = input$pac2_mode,
+          ramp_max = input$ramp_max,
+          # Contrat
+          type_contrat = input$type_contrat,
+          prix_fixe_offtake = input$prix_fixe_offtake,
+          prix_fixe_injection = input$prix_fixe_injection,
+          # PV
+          pv_kwc_ref = input$pv_kwc_ref,
+          # Optimisation
+          slack_penalty = input$slack_penalty,
+          min_cycle_min = input$min_cycle_min,
+          tou_active = input$tou_active,
+          # Batterie
+          batterie_active = input$batterie_active,
+          batt_kwh = input$batt_kwh,
+          batt_kw = input$batt_kw,
+          batt_rendement = input$batt_rendement,
+          batt_soc_range = input$batt_soc_range,
+          # Curtailment
+          curtailment_active = input$curtailment_active,
+          curtail_kw = input$curtail_kw
+        )
+
         bundle <- list(
           sim_result = sim_result(),
+          raw_data = tryCatch(raw_data(), error = function(e) NULL),
           csv_original_columns = csv_columns(),
           csv_mapping_result = csv_mapping_result(),
+          sidebar_inputs = sidebar_inputs,
           metadata = list(
             exported_at = Sys.time(),
             app_version = as.character(utils::packageVersion("wisepocpac")),
@@ -1554,28 +1596,62 @@ mod_sidebar_server <- function(id, sim_state) {
           end = as.Date(max(sim_df$timestamp)))
       }
 
-      # Restore sidebar inputs from saved params (safe: ignore missing inputs)
-      p <- bundle$sim_result$params
-      if (!is.null(p)) {
-        safe_update <- function(fn, id, ...) {
-          tryCatch(fn(session, id, ...), error = function(e) NULL)
-        }
-        safe_update(shiny::updateNumericInput, "t_consigne", value = p$t_consigne)
-        safe_update(shiny::updateSliderInput, "t_tolerance", value = p$t_tolerance)
-        safe_update(shiny::updateNumericInput, "p_pac_th_kw", value = p$p_pac_th_kw)
-        safe_update(shiny::updateNumericInput, "cop_nominal", value = p$cop_nominal)
-        if (!is.null(p$volume_ballon_l)) {
-          safe_update(shiny::updateCheckboxInput, "volume_auto", value = FALSE)
-          safe_update(shiny::updateNumericInput, "volume_ballon_manual", value = p$volume_ballon_l)
-        }
-        safe_update(shiny::updateRadioButtons, "type_contrat", selected = p$type_contrat)
-        safe_update(shiny::updateNumericInput, "pv_kwc_ref", value = p$pv_kwc_ref)
-        safe_update(shiny::updateNumericInput, "prix_fixe_offtake", value = p$prix_fixe_offtake)
-        safe_update(shiny::updateNumericInput, "prix_fixe_injection", value = p$prix_fixe_injection)
-        safe_update(shiny::updateSliderInput, "slack_penalty", value = p$slack_penalty)
-        safe_update(shiny::updateCheckboxInput, "batterie_active", value = p$batterie_active)
-        safe_update(shiny::updateCheckboxInput, "tou_active", value = p$tou_active)
+      # Restore raw data if available (for explorer and re-simulation)
+      if (!is.null(bundle$raw_data)) {
+        raw_data(bundle$raw_data)
       }
+
+      # Restore sidebar inputs: prefer saved sidebar_inputs, fallback to params
+      si <- bundle$sidebar_inputs
+      p <- bundle$sim_result$params
+      safe_update <- function(fn, id, ...) {
+        tryCatch(fn(session, id, ...), error = function(e) NULL)
+      }
+      # Helper: get value from sidebar_inputs first, then params, then NULL
+      val <- function(si_name, p_name = si_name) {
+        if (!is.null(si) && !is.null(si[[si_name]])) si[[si_name]]
+        else if (!is.null(p) && !is.null(p[[p_name]])) p[[p_name]]
+        else NULL
+      }
+
+      # Ballon
+      if (!is.null(val("t_consigne"))) safe_update(shiny::updateNumericInput, "t_consigne", value = val("t_consigne"))
+      if (!is.null(val("t_tolerance"))) safe_update(shiny::updateSliderInput, "t_tolerance", value = val("t_tolerance"))
+      if (!is.null(val("volume_ballon_manual", "volume_ballon_l"))) {
+        safe_update(shiny::updateCheckboxInput, "volume_auto", value = FALSE)
+        safe_update(shiny::updateNumericInput, "volume_ballon_manual", value = val("volume_ballon_manual", "volume_ballon_l"))
+      }
+      # PAC 1
+      if (!is.null(val("p_pac_th_kw"))) safe_update(shiny::updateNumericInput, "p_pac_th_kw", value = val("p_pac_th_kw"))
+      if (!is.null(val("cop_nominal"))) safe_update(shiny::updateNumericInput, "cop_nominal", value = val("cop_nominal"))
+      if (!is.null(val("pac1_type"))) safe_update(shiny::updateSelectInput, "pac1_type", selected = val("pac1_type"))
+      if (!is.null(val("pac1_mode"))) safe_update(shiny::updateSelectInput, "pac1_mode", selected = val("pac1_mode"))
+      # PAC 2
+      if (!is.null(val("pac2_active"))) safe_update(shiny::updateCheckboxInput, "pac2_active", value = val("pac2_active"))
+      if (!is.null(val("p_pac2_th_kw"))) safe_update(shiny::updateNumericInput, "p_pac2_th_kw", value = val("p_pac2_th_kw"))
+      if (!is.null(val("cop2_nominal"))) safe_update(shiny::updateNumericInput, "cop2_nominal", value = val("cop2_nominal"))
+      if (!is.null(val("pac2_type"))) safe_update(shiny::updateSelectInput, "pac2_type", selected = val("pac2_type"))
+      if (!is.null(val("pac2_mode"))) safe_update(shiny::updateSelectInput, "pac2_mode", selected = val("pac2_mode"))
+      if (!is.null(val("ramp_max"))) safe_update(shiny::updateSliderInput, "ramp_max", value = val("ramp_max"))
+      # Contrat
+      if (!is.null(val("type_contrat"))) safe_update(shiny::updateRadioButtons, "type_contrat", selected = val("type_contrat"))
+      if (!is.null(val("prix_fixe_offtake"))) safe_update(shiny::updateNumericInput, "prix_fixe_offtake", value = val("prix_fixe_offtake"))
+      if (!is.null(val("prix_fixe_injection"))) safe_update(shiny::updateNumericInput, "prix_fixe_injection", value = val("prix_fixe_injection"))
+      # PV
+      if (!is.null(val("pv_kwc_ref"))) safe_update(shiny::updateNumericInput, "pv_kwc_ref", value = val("pv_kwc_ref"))
+      # Optimisation
+      if (!is.null(val("slack_penalty"))) safe_update(shiny::updateSliderInput, "slack_penalty", value = val("slack_penalty"))
+      if (!is.null(val("min_cycle_min"))) safe_update(shiny::updateSliderInput, "min_cycle_min", value = val("min_cycle_min"))
+      if (!is.null(val("tou_active"))) safe_update(shiny::updateCheckboxInput, "tou_active", value = val("tou_active"))
+      # Batterie
+      if (!is.null(val("batterie_active"))) safe_update(shiny::updateCheckboxInput, "batterie_active", value = val("batterie_active"))
+      if (!is.null(val("batt_kwh"))) safe_update(shiny::updateNumericInput, "batt_kwh", value = val("batt_kwh"))
+      if (!is.null(val("batt_kw"))) safe_update(shiny::updateNumericInput, "batt_kw", value = val("batt_kw"))
+      if (!is.null(val("batt_rendement"))) safe_update(shiny::updateSliderInput, "batt_rendement", value = val("batt_rendement"))
+      if (!is.null(val("batt_soc_range"))) safe_update(shiny::updateSliderInput, "batt_soc_range", value = val("batt_soc_range"))
+      # Curtailment
+      if (!is.null(val("curtailment_active"))) safe_update(shiny::updateCheckboxInput, "curtailment_active", value = val("curtailment_active"))
+      if (!is.null(val("curtail_kw"))) safe_update(shiny::updateNumericInput, "curtail_kw", value = val("curtail_kw"))
 
       v <- if (!is.null(bundle$metadata$app_version)) bundle$metadata$app_version else "inconnue"
       shiny::showNotification(
