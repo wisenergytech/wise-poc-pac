@@ -165,11 +165,12 @@ cat(sprintf('
 
 ## Sommaire
 
-1. **Le site** — `r params$site_name`, installation et constats
-2. **L'opportunité** — Marché de l'énergie et stratégies de flexibilité
-3. **Notre approche** — Données, algorithme ToU
-4. **Les résultats** — Économies et impact
-5. **Et ensuite ?** — Prochaines étapes
+1. **Le site** — `r params$site_name`, installation, PAC et logique de cascade
+2. **Les constats** — Ce que les données mesurées révèlent
+3. **L'opportunité** — Marché de l'énergie et stratégies de flexibilité
+4. **Notre approche** — Données, algorithme ToU
+5. **Les résultats** — Économies et impact
+6. **Et ensuite ?** — Prochaines étapes
 
 # Le site
 ## Le projet en bref
@@ -197,6 +198,46 @@ La combinaison **PAC + PV + stockage thermique** offre plusieurs degrés de libe
 
 ::: notes
 La géothermie est la source principale. L'aérothermie assure le backup et l'équilibrage thermique. Le PV a été ajouté en 2025, un an après la mise en service du réseau de chaleur.
+:::
+
+## Caractéristiques des pompes à chaleur
+
+|  | PAC géothermique (GSHP) | PAC aérothermique (ASHP) |
+|---|---|---|
+| **Modèle** | Carrier 61WG 035A | Hoval Belaria Pro 24 |
+| **Puissance thermique** | 40–44 kWth | 22–24 kWth |
+| **Source de chaleur** | Forage (sondes géothermiques) | Air extérieur |
+| **Mode de fonctionnement** | On/Off | On/Off |
+| **T° source** | 8–10 °C (sol) | Variable (air ext.) |
+| **Code interne** | PAC 3.01 | PAC 5.01 |
+
+La **GSHP** bénéficie d'une source stable (sol à 8-10 °C toute l'année) → COP élevé et constant. L'**ASHP** a un COP plus variable : élevé en été, plus faible en hiver quand l'air est froid.
+
+::: notes
+Carrier 61WG 035A : PAC eau/eau réversible, compresseur scroll. Hoval Belaria Pro 24 : PAC air/eau monobloc, 24 kWth nominal à A7/W35. Les puissances électriques se déduisent en divisant la puissance thermique par le COP nominal (~10-11 kW élec pour la GSHP, ~6-7 kW élec pour l'ASHP).
+:::
+
+## Logique de priorité actuelle (cascade)
+
+**Période hivernale** (16 sept. – 15 juin) — Consigne ballon : **35 °C**
+
+**Activation séquentielle :**
+
+- **HP1 démarre** quand T_ballon < 35 – 5 = **30 °C**
+- **HP2 démarre** (en complément de HP1) quand T_ballon < 35 – 15 = **20 °C**
+
+**Qui est HP1 ? Ça dépend des conditions :**
+
+| Condition | HP1 (prioritaire) | HP2 (backup) |
+|---|---|---|
+| **Par défaut** | Aéro (ASHP) | Géo (GSHP) |
+| T_sol > 10 °C **et** T_sol > T_ext | **Géo (GSHP)** | Aéro (ASHP) |
+| T_sol + 20 °C < T_ext **ou** T_sol < 8 °C | Retour **Aéro (ASHP)** | Géo (GSHP) |
+
+**En résumé** : la géothermique prend la priorité quand le sol est plus chaud que l'air (hiver froid). En mi-saison et été, l'aérothermique reprend car l'air extérieur est plus chaud et plus efficace.
+
+::: notes
+Cette logique de cascade est un pilotage thermique pur : elle choisit la source la plus efficace en fonction des températures, mais ne tient pas compte du prix de l'électricité ni de la production PV. C'est exactement ce que le Wise Brain viendrait optimiser : décider quand et combien chaque PAC tourne en fonction du prix, du PV et du confort.
 :::
 
 # Les constats
