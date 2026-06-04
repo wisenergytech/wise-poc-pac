@@ -727,7 +727,7 @@ mod_sidebar_server <- function(id, sim_state) {
               choices = c("Air (ASHP)" = "ashp", "Sol (GSHP)" = "gshp"),
               selected = if (!is.na(mapping$pac2_type)) mapping$pac2_type else "ashp"),
             shiny::selectInput(ns("pac2_mode"), "Mode",
-              choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "inverter"),
+              choices = c("On/Off" = "onoff", "Inverter" = "inverter"), selected = "onoff"),
             shiny::conditionalPanel(sprintf("input['%s']=='inverter'", ns("pac2_mode")),
               shiny::sliderInput(ns("ramp_max"), shiny::tags$span("Rampe max",
                 tip("Variation maximale de puissance par quart d'heure.")),
