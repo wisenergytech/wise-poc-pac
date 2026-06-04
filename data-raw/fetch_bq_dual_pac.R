@@ -214,27 +214,72 @@ message(sprintf("  -> %d quarts d'heure (%s -> %s)", nrow(df_base),
   format(max(df_base$timestamp), "%Y-%m-%d")))
 
 # =============================================================================
-# 4. PV : Elia proxy (Namur, 65 kWc)
+# 4. PV : Reconstruction par bilan energetique
 # =============================================================================
-message("[PV Elia] Fetching & scaling...")
+# Le compteur PV (FusionSolar/onduleur) est unreliable (William, mail 18/05).
+# On reconstruit le PV a partir des compteurs fiables :
+#   pv = pac_kwh + conso_hors_pac + feedin - offtake
+#
+# Le talon (conso_hors_pac = circulateurs, controleur, eclairage chaufferie)
+# est estime la nuit (1h-4h) ou PV=0 par definition :
+#   talon = median(offtake_nuit - pac_nuit - feedin_nuit)
+# Ce talon est negatif (-0.16 kWh/qt) car les sous-compteurs PAC mesurent
+# standby/auxiliaires qui ne passent pas par le meme circuit ORES.
+# On l'interprete comme un biais de mesure constant.
+#
+# Formule finale :
+#   pv_kwh = max(0, pac_kwh + feedin_kwh - offtake_kwh - biais)
+#
+# Hypothese unique : le biais compteur est constant.
+# Resultat : bilan ferme exactement, PV=0 la nuit.
+# =============================================================================
+message("[PV] Reconstruction par bilan energetique...")
 
+# Compute pac_kwh for nighttime estimation
+df_base <- df_base %>%
+  mutate(pac_kwh_tmp = gshp_kwh + ashp_kwh)
+
+h <- as.numeric(format(df_base$timestamp, "%H"))
+nuit_mask <- h >= 1 & h < 4
+
+biais_nocturne <- median(
+  df_base$pac_kwh_tmp[nuit_mask] + df_base$feedin_kwh[nuit_mask] - df_base$offtake_kwh[nuit_mask],
+  na.rm = TRUE
+)
+
+df_base <- df_base %>%
+  mutate(
+    pv_kwh = pmax(0, pac_kwh_tmp + feedin_kwh - offtake_kwh - biais_nocturne)
+  ) %>%
+  select(-pac_kwh_tmp)
+
+# Diagnostics
+pv_nuit <- sum(df_base$pv_kwh[nuit_mask], na.rm = TRUE)
+pv_total <- sum(df_base$pv_kwh, na.rm = TRUE)
+n_days_pv <- as.numeric(difftime(max(df_base$timestamp), min(df_base$timestamp), units = "days"))
+message(sprintf("  Biais nocturne: %.3f kWh/qt (%.1f kW)", biais_nocturne, biais_nocturne * 4))
+message(sprintf("  PV reconstruit: %.1f kWh total (%.1f kWh/jour)", pv_total, pv_total / max(1, n_days_pv)))
+message(sprintf("  PV nocturne (1-4h): %.2f kWh (attendu ~0)", pv_nuit))
+
+# Also fetch Elia proxy for comparison (kept as pv_kwh_elia column)
 source("R/data_elia_solar.R")
-
 elia <- fetch_solar_elia(DATE_START, DATE_END, region = "Namur")
-
 if (!is.null(elia$df) && nrow(elia$df) > 0) {
   scaled <- scale_solar_to_local(elia$df, PV_KWC)
   scaled$timestamp <- with_tz(scaled$datetime, "Europe/Brussels")
   scaled <- scaled %>% select(timestamp, pv_kwh_elia = pv_kwh)
-
   df_base <- df_base %>%
     left_join(scaled, by = "timestamp") %>%
-    mutate(pv_kwh = coalesce(pv_kwh_elia, 0)) %>%
-    select(-pv_kwh_elia)
-  message(sprintf("  -> PV Elia jointure OK (%d non-zero)", sum(df_base$pv_kwh > 0, na.rm = TRUE)))
+    mutate(pv_kwh_elia = coalesce(pv_kwh_elia, 0))
+  cor_jour <- cor(
+    df_base$pv_kwh[h >= 8 & h < 18],
+    df_base$pv_kwh_elia[h >= 8 & h < 18],
+    use = "complete.obs"
+  )
+  message(sprintf("  PV Elia proxy: %.1f kWh (ratio elia/recon=%.2f, corr diurne=%.3f)",
+    sum(df_base$pv_kwh_elia), sum(df_base$pv_kwh_elia) / pv_total, cor_jour))
 } else {
-  message("[WARN] Pas de donnees Elia Solar")
-  df_base$pv_kwh <- 0
+  message("[WARN] Pas de donnees Elia Solar pour comparaison")
 }
 
 # =============================================================================
@@ -414,7 +459,7 @@ message(sprintf("  COP ASHP : %.2f - %.2f (median %.2f)",
 out_full <- file.path(DATA_DIR, "bq_k0001_dual_pac_full.csv")
 df_export_full <- df_base %>%
   select(
-    timestamp, pv_kwh,
+    timestamp, pv_kwh, any_of("pv_kwh_elia"),
     gshp_kwh, ashp_kwh, pac_kwh,
     offtake_kwh, feedin_kwh,
     t_ballon, t_ballon_bas, t_sol, t_sol_return, t_ext,
@@ -461,7 +506,15 @@ message(sprintf("ASHP elec    : %.1f kWh (Hoval Belaria Pro)", sum(df_base$ashp_
 message(sprintf("PAC total    : %.1f kWh", sum(df_base$pac_kwh, na.rm = TRUE)))
 message(sprintf("Offtake      : %.1f kWh", sum(df_base$offtake_kwh, na.rm = TRUE)))
 message(sprintf("Feedin       : %.1f kWh", sum(df_base$feedin_kwh, na.rm = TRUE)))
-message(sprintf("PV Elia      : %.1f kWh (proxy %d kWc)", sum(df_base$pv_kwh, na.rm = TRUE), PV_KWC))
+message(sprintf("PV recon     : %.1f kWh (bilan energetique, biais=%.3f kWh/qt)",
+  sum(df_base$pv_kwh, na.rm = TRUE), biais_nocturne))
+if ("pv_kwh_elia" %in% names(df_base)) {
+  message(sprintf("PV Elia      : %.1f kWh (proxy %d kWc, pour comparaison)",
+    sum(df_base$pv_kwh_elia, na.rm = TRUE), PV_KWC))
+}
+ac_pv <- sum(df_base$pv_kwh, na.rm = TRUE) - sum(df_base$feedin_kwh, na.rm = TRUE)
+message(sprintf("Autoconso PV : %.1f kWh (%.1f%%)", ac_pv,
+  ac_pv / max(1, sum(df_base$pv_kwh, na.rm = TRUE)) * 100))
 message(sprintf("T_ballon     : %.1f - %.1f C (median %.1f)",
   min(df_base$t_ballon, na.rm = TRUE), max(df_base$t_ballon, na.rm = TRUE),
   median(df_base$t_ballon, na.rm = TRUE)))
