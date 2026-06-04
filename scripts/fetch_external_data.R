@@ -111,12 +111,14 @@ if (nchar(api_key) > 0) {
 # 2. Elia Solar PV (ODS032)
 # =============================================================================
 cat("\n[2/4] Fetching Elia solar...\n")
-solar <- tryCatch({
+solar_result <- tryCatch({
   fetch_solar_elia(as.POSIXct(from_date), as.POSIXct(to_date + 1), region = "Namur")
 }, error = function(e) {
   message(sprintf("  Error: %s", e$message))
   NULL
 })
+# fetch_solar_elia returns list(df=..., source=..., region=...)
+solar <- if (is.list(solar_result) && !is.null(solar_result$df)) solar_result$df else NULL
 
 if (!is.null(solar) && nrow(solar) > 0) {
   solar$year <- year(solar$datetime)

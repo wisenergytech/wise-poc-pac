@@ -1600,10 +1600,10 @@ mod_sidebar_server <- function(id, sim_state) {
           end = as.Date(max(sim_df$timestamp)))
       }
 
-      # Restore raw data if available (for explorer and re-simulation)
-      if (!is.null(bundle$raw_data)) {
-        raw_data(bundle$raw_data)
-      }
+      # Note: raw_data is a reactive (not reactiveVal), so we can't set it
+      # directly. The CSV columns and mapping are restored above, which is
+      # sufficient for the explorer. raw_data from sim_result$sim is used
+      # as fallback by vars_csv() in mod_comparaison.
 
       # Restore sidebar inputs: prefer saved sidebar_inputs, fallback to params
       si <- bundle$sidebar_inputs
