@@ -12,31 +12,46 @@
 compute_block_starts <- function(timestamps, bloc_qt, n) {
   if (n == 0) return(integer(0))
   if (!inherits(timestamps, "POSIXct")) {
-    # Fallback to sequential blocks if timestamps are not POSIXct
     return(seq(1L, n, by = bloc_qt))
   }
 
   tz <- attr(timestamps[1], "tzone")
   if (is.null(tz) || tz == "") tz <- "Europe/Brussels"
 
-  # Find midnight boundaries
-  dates <- as.Date(timestamps, tz = tz)
-  unique_dates <- unique(dates)
+  qt_per_day <- 96L  # 24h * 4 qt/h
 
-  # Group consecutive dates into blocks of bloc_qt/96 days
-  days_per_block <- max(1L, bloc_qt %/% 96L)
+  if (bloc_qt >= qt_per_day) {
+    # Multi-day blocks: align to midnight, group by days_per_block
+    dates <- as.Date(timestamps, tz = tz)
+    unique_dates <- unique(dates)
+    days_per_block <- bloc_qt %/% qt_per_day
 
-  starts <- integer(0)
-  d <- 1L
-  while (d <= length(unique_dates)) {
-    # Find first row of this date
-    target_date <- unique_dates[d]
-    idx <- which(dates == target_date)[1]
-    starts <- c(starts, idx)
-    d <- d + days_per_block
+    starts <- integer(0)
+    d <- 1L
+    while (d <= length(unique_dates)) {
+      idx <- which(dates == unique_dates[d])[1]
+      starts <- c(starts, idx)
+      d <- d + days_per_block
+    }
+    starts
+  } else {
+    # Intra-day blocks: align to midnight, then subdivide each day
+    dates <- as.Date(timestamps, tz = tz)
+    unique_dates <- unique(dates)
+    blocks_per_day <- qt_per_day %/% bloc_qt  # e.g. 96/24 = 4 blocks of 6h
+
+    starts <- integer(0)
+    for (date in unique_dates) {
+      day_indices <- which(dates == date)
+      if (length(day_indices) == 0) next
+      first_idx <- day_indices[1]
+      for (b in seq_len(blocks_per_day)) {
+        block_start <- first_idx + (b - 1L) * bloc_qt
+        if (block_start <= n) starts <- c(starts, block_start)
+      }
+    }
+    starts
   }
-
-  starts
 }
 
 #' Calculate COP (Coefficient of Performance)
