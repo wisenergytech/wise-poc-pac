@@ -426,7 +426,7 @@ mod_sidebar_server <- function(id, sim_state) {
     pv_kwc_eff <- shiny::reactive({
       if (isTRUE(input$pv_auto)) {
         calculate_pv_auto(p_pac_kw_eff(), volume_ballon_eff(),
-                          input$cop_nominal, input$t_consigne)
+                          input$cop_nominal, (input$t_min_input + input$t_max_input) / 2)
       } else {
         input$pv_kwc_manual
       }
@@ -440,7 +440,7 @@ mod_sidebar_server <- function(id, sim_state) {
       shiny::req(p_pac, cop)
 
       if (p_pac <= 10) {
-        pertes <- round(0.004 * (input$t_consigne - 20) * 24, 1)
+        pertes <- round(0.004 * ((input$t_min_input + input$t_max_input) / 2 - 20) * 24, 1)
         ecs <- round(6 * vol / 200, 1)
         conso <- round((ecs + pertes) / cop * 365)
         detail <- sprintf("ECS %.0f + pertes %.0f kWh/j", ecs, pertes)
