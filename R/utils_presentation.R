@@ -220,12 +220,14 @@ render_presentation <- function(kpis, params, sim_data, output_file,
   # Filter params to only those declared in the template YAML
   # (Quarto/knitr rejects undeclared params)
   yaml_lines <- readLines(tmp_qmd, warn = FALSE)
-  yaml_end <- which(yaml_lines == "---")[2]
-  if (!is.na(yaml_end)) {
-    yaml_block <- yaml_lines[1:yaml_end]
-    declared <- trimws(grep("^  [a-z_]+:", yaml_block, value = TRUE))
-    declared_names <- sub(":.*", "", declared)
-    qparams <- qparams[intersect(names(qparams), declared_names)]
+  yaml_delims <- which(yaml_lines == "---")
+  if (length(yaml_delims) >= 2) {
+    yaml_text <- paste(yaml_lines[(yaml_delims[1] + 1):(yaml_delims[2] - 1)], collapse = "\n")
+    yaml_parsed <- tryCatch(yaml::yaml.load(yaml_text), error = function(e) NULL)
+    if (!is.null(yaml_parsed) && !is.null(yaml_parsed$params)) {
+      declared_names <- names(yaml_parsed$params)
+      qparams <- qparams[intersect(names(qparams), declared_names)]
+    }
   }
 
   # Render
