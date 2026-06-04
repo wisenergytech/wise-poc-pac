@@ -324,13 +324,16 @@ mod_comparaison_server <- function(id, sidebar) {
       existing_units <- unique(stats::na.omit(c(u1, u2)))
       same_unit <- length(existing_units) <= 1
       filtered <- lapply(choices, function(group) {
-        group[sapply(unname(group), function(v) {
+        g <- unlist(group)  # ensure it's a flat named vector
+        if (length(g) == 0) return(character(0))
+        keep <- vapply(unname(g), function(v) {
           if (v == "" || v == v1 || v == v2) return(FALSE)
           u <- get_unit(v)
           if (is.na(u)) return(FALSE)
-          if (same_unit) TRUE  # v1/v2 share a unit, v3 can bring a 2nd one
-          else u %in% existing_units  # already 2 units, v3 must match one
-        })]
+          if (same_unit) TRUE
+          else u %in% existing_units
+        }, logical(1))
+        g[keep]
       })
       filtered <- filtered[lengths(filtered) > 0]
       c(list("\u2014" = c("Aucune (2 s\u00e9ries)" = "")), filtered)

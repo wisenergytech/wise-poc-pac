@@ -11,6 +11,8 @@
 #' @export
 compute_block_starts <- function(timestamps, bloc_qt, n) {
   if (n == 0) return(integer(0))
+  if (length(bloc_qt) == 0 || is.na(bloc_qt) || bloc_qt < 1) bloc_qt <- 96L  # default 24h
+  bloc_qt <- as.integer(bloc_qt)
   if (!inherits(timestamps, "POSIXct")) {
     return(seq(1L, n, by = bloc_qt))
   }
@@ -41,8 +43,8 @@ compute_block_starts <- function(timestamps, bloc_qt, n) {
     blocks_per_day <- qt_per_day %/% bloc_qt  # e.g. 96/24 = 4 blocks of 6h
 
     starts <- integer(0)
-    for (date in unique_dates) {
-      day_indices <- which(dates == date)
+    for (di in seq_along(unique_dates)) {
+      day_indices <- which(dates == unique_dates[di])
       if (length(day_indices) == 0) next
       first_idx <- day_indices[1]
       for (b in seq_len(blocks_per_day)) {
