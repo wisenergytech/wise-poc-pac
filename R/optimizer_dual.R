@@ -355,6 +355,7 @@ run_optimization_dual <- function(df, params) {
   # Day-ahead prices (EPEX SPOT) cover 00:00-24:00, published ~12:42 CET.
   # Aligning blocks to midnight ensures each block uses one day's price set.
   block_starts <- compute_block_starts(df$timestamp, bloc_qt, n)
+  t_optim_start <- Sys.time()
 
   all_results <- vector("list", length(block_starts))
 
@@ -462,6 +463,9 @@ run_optimization_dual <- function(df, params) {
     if (exists("setProgress", mode = "function")) {
       try(setProgress(b / n_blocs, detail = sprintf("Bloc %d/%d", b, n_blocs)),
         silent = TRUE)
+    } else {
+      elapsed <- as.numeric(difftime(Sys.time(), t_optim_start, units = "secs"))
+      message(sprintf("[Dual Optimizer] Bloc %d/%d done (%.1fs elapsed)", b, n_blocs, elapsed))
     }
   }
 

@@ -352,6 +352,7 @@ run_optimization_milp <- function(df, params) {
 
   # Compute midnight-aligned block boundaries
   block_starts <- compute_block_starts(df$timestamp, bloc_qt, n)
+  t_optim_start <- Sys.time()
 
   # Accumulated results
   all_results <- vector("list", length(block_starts))
@@ -426,11 +427,14 @@ run_optimization_milp <- function(df, params) {
       soc_init <- tail(block_result$batt_soc, 1) * params$batt_kwh
     }
 
-    # Progress reporting (when called from Shiny)
+    # Progress reporting
     n_blocs <- length(block_starts)
     if (exists("setProgress", mode = "function")) {
       try(setProgress(b / n_blocs, detail = sprintf("Bloc %d/%d", b, n_blocs)),
         silent = TRUE)
+    } else {
+      elapsed <- as.numeric(difftime(Sys.time(), t_optim_start, units = "secs"))
+      message(sprintf("[MILP Optimizer] Bloc %d/%d done (%.1fs elapsed)", b, n_blocs, elapsed))
     }
   }
 
