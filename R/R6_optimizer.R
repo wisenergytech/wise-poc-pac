@@ -54,8 +54,10 @@ BaseOptimizer <- R6::R6Class("BaseOptimizer",
 
       for (b in seq_along(block_starts)) {
         i_start <- block_starts[b]
-        i_end <- if (b < length(block_starts)) block_starts[b + 1] - 1 else n
+        if (i_start > n) next
+        i_end <- if (b < length(block_starts)) min(block_starts[b + 1] - 1, n) else n
         n_execute <- i_end - i_start + 1
+        if (n_execute < 2) next
 
         # Overlapping: extend with lookahead from next block
         i_lookahead_end <- min(i_end + bloc_qt, n)
