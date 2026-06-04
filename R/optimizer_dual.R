@@ -349,6 +349,23 @@ solve_block_dual <- function(block_data, params, t_init, soc_init = NULL,
 run_optimization_dual <- function(df, params) {
   n <- nrow(df)
 
+  # Validate required params
+  required <- c("optim_bloc_h", "t_consigne", "t_min", "t_max", "p_pac_kw",
+                 "cop_nominal", "capacite_kwh_par_degre", "dt_h",
+                 "pac1_type", "pac1_mode", "pac2_mode", "p_pac2_kw", "cop2_nominal")
+  missing <- setdiff(required, names(params))
+  if (length(missing) > 0) {
+    stop(sprintf("[Dual Optimizer] Missing params: %s", paste(missing, collapse = ", ")))
+  }
+
+  # Validate required columns
+  req_cols <- c("timestamp", "pv_kwh", "conso_hors_pac", "prix_offtake",
+                "prix_injection", "soutirage_estime_kwh", "t_ext")
+  missing_cols <- setdiff(req_cols, names(df))
+  if (length(missing_cols) > 0) {
+    stop(sprintf("[Dual Optimizer] Missing columns: %s", paste(missing_cols, collapse = ", ")))
+  }
+
   bloc_qt <- params$optim_bloc_h * 4
 
   # Compute midnight-aligned block boundaries

@@ -91,7 +91,10 @@ run_simulation <- function(df, params, mode = "lp",
     sim_obj$run_optimization(mode)
     sim_obj$get_results()
   }, error = function(e) {
-    message(sprintf("[%s] Optimization failed: %s", mode_label, e$message))
+    msg <- conditionMessage(e)
+    message(sprintf("[%s] Optimization failed: %s", mode_label, msg))
+    message(sprintf("[%s] Traceback: %s", mode_label,
+      paste(capture.output(traceback(e)), collapse = "\n")))
     NULL
   })
 
