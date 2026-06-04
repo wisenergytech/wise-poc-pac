@@ -12,7 +12,10 @@
 # =============================================================================
 
 # ---- Load the app package ----
-devtools::load_all(".")
+cat("[0/4] Loading package...\n")
+t_start <- Sys.time()
+suppressPackageStartupMessages(devtools::load_all(".", quiet = TRUE))
+cat(sprintf("   Package loaded in %.1fs\n", as.numeric(difftime(Sys.time(), t_start, units = "secs"))))
 
 # =============================================================================
 # PARAMETERS — Edit these to configure your simulation
@@ -131,7 +134,8 @@ cat(sprintf("   %d rows, %s -> %s\n", nrow(df),
     format(min(df$timestamp), "%Y-%m-%d"), format(max(df$timestamp), "%Y-%m-%d")))
 
 # ---- Build params ----
-cat("[2/4] Building parameters...\n")
+cat(sprintf("[2/4] Building parameters... (CSV loaded in %.1fs)\n",
+    as.numeric(difftime(Sys.time(), t_start, units = "secs"))))
 pac1_elec_kw <- pac1_th_kw / cop1_nominal
 pac2_elec_kw <- if (pac2_active) pac2_th_kw / cop2_nominal else 0
 
