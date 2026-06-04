@@ -184,6 +184,8 @@ mod_sidebar_ui <- function(id) {
         0.5, 20, 2.5, step = 0.5, post = " EUR/\u00b0C"),
       shiny::sliderInput(ns("min_cycle_min"), shiny::tags$span("Dur\u00e9e min cycle (min)", tip("Dur\u00e9e minimale de fonctionnement et d'arret d'une PAC on/off. Protege le compresseur contre les cycles courts. 0 = pas de contrainte.")),
         0, 120, 45, step = 15, post = " min"),
+      shiny::selectInput(ns("optim_bloc_h"), shiny::tags$span("Horizon bloc (h)", tip("Dur\u00e9e de chaque bloc d'optimisation. 24h = align\u00e9 sur le march\u00e9 day-ahead (EPEX). Plus court = plus rapide mais moins d'anticipation. Le lookahead ajoute un bloc suppl\u00e9mentaire.")),
+        choices = c("6h" = 6, "12h" = 12, "24h" = 24), selected = 24),
       shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
         shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strat\u00e9gies d'optimisation"),
         if (isTRUE(ui_cfg$strategies$tou)) shiny::tagList(
@@ -544,7 +546,7 @@ mod_sidebar_server <- function(id, sim_state) {
         slack_penalty = if (!is.null(input$slack_penalty)) input$slack_penalty else 2.5,
         curtailment_active = if (!is.null(input$curtailment_active)) isTRUE(input$curtailment_active) else FALSE,
         curtail_kwh_per_qt = if (!is.null(input$curtailment_active) && isTRUE(input$curtailment_active)) input$curtail_kw * 0.25 else Inf,
-        optim_bloc_h = if (!is.null(input$optim_bloc_h)) input$optim_bloc_h else 24,
+        optim_bloc_h = if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24,
         pac1_type = if (!is.null(input$pac1_type)) input$pac1_type else "gshp",
         pac1_mode = if (!is.null(input$pac1_mode)) input$pac1_mode else "onoff",
         pac2_active = if (!is.null(input$pac2_active)) isTRUE(input$pac2_active) else TRUE,
@@ -1232,12 +1234,13 @@ mod_sidebar_server <- function(id, sim_state) {
 
       # Map auto-selected approche to R6 optimization mode
       r6_mode <- opt$mode
-      p$optim_bloc_h <- opt$bloc_h
+      # Use user-selected block duration (from sidebar input)
+      p$optim_bloc_h <- if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24
 
       # Set mode-specific params
-      if (approche == "optimiseur_lp") p$optim_bloc_h <- if (!is.null(input$optim_bloc_h_lp)) input$optim_bloc_h_lp else 24
+      if (approche == "optimiseur_lp") p$optim_bloc_h <- if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24
       if (approche == "optimiseur_qp") {
-        p$optim_bloc_h <- if (!is.null(input$optim_bloc_h_qp)) input$optim_bloc_h_qp else 24
+        p$optim_bloc_h <- if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24
         p$qp_w_comfort <- input$qp_w_comfort
         p$qp_w_smooth <- input$qp_w_smooth
       }
@@ -1497,6 +1500,7 @@ mod_sidebar_server <- function(id, sim_state) {
           # Optimisation
           slack_penalty = input$slack_penalty,
           min_cycle_min = input$min_cycle_min,
+          optim_bloc_h = input$optim_bloc_h,
           tou_active = input$tou_active,
           # Batterie
           batterie_active = input$batterie_active,
@@ -1642,6 +1646,7 @@ mod_sidebar_server <- function(id, sim_state) {
       # Optimisation
       if (!is.null(val("slack_penalty"))) safe_update(shiny::updateSliderInput, "slack_penalty", value = val("slack_penalty"))
       if (!is.null(val("min_cycle_min"))) safe_update(shiny::updateSliderInput, "min_cycle_min", value = val("min_cycle_min"))
+      if (!is.null(val("optim_bloc_h"))) safe_update(shiny::updateSelectInput, "optim_bloc_h", selected = val("optim_bloc_h"))
       if (!is.null(val("tou_active"))) safe_update(shiny::updateCheckboxInput, "tou_active", value = val("tou_active"))
       # Batterie
       if (!is.null(val("batterie_active"))) safe_update(shiny::updateCheckboxInput, "batterie_active", value = val("batterie_active"))
