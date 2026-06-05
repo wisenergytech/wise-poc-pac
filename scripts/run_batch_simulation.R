@@ -49,9 +49,11 @@ prix_fixe_offtake   <- 0.30  # EUR/kWh (only for fixe)
 prix_fixe_injection <- 0.03  # EUR/kWh (only for fixe)
 
 # -- Optimisation --
-optim_bloc_h   <- 6     # Block duration: 6, 12, or 24 (hours)
-slack_penalty  <- 2.5   # EUR/degre sous T_min
-min_cycle_min  <- 45    # Duree min cycle on/off (minutes, 0=disabled)
+optim_approach <- "rules"  # "rules" (transparent) or "milp" (optimal)
+rules_prix_percentile <- 30  # Percentile prix jour pour rule-based
+optim_bloc_h   <- 6     # Block duration: 6, 12, or 24 (hours) — MILP only
+slack_penalty  <- 2.5   # EUR/degre sous T_min — MILP only
+min_cycle_min  <- 45    # Duree min cycle on/off (minutes, 0=disabled) — MILP only
 tou_active     <- TRUE  # Time-of-Use optimization
 
 # -- PV --
@@ -92,6 +94,9 @@ while (i <= length(args)) {
     "--min_cycle" = { min_cycle_min <- as.numeric(args[i + 1]); i <- i + 1 },
     "--no_pac2"   = { pac2_active <- FALSE },
     "--no_tou"    = { tou_active <- FALSE },
+    "--rules"     = { optim_approach <- "rules" },
+    "--milp"      = { optim_approach <- "milp" },
+    "--percentile" = { rules_prix_percentile <- as.numeric(args[i + 1]); i <- i + 1 },
     message(sprintf("Unknown argument: %s", args[i]))
   )
   i <- i + 1
@@ -188,8 +193,14 @@ params <- list(
 )
 
 # ---- Select mode and run ----
-mode <- if (pac2_active) "dual" else if (pac1_mode == "onoff") "milp" else "lp"
-cat(sprintf("[3/4] Running %s optimization (%dh blocks)...\n", toupper(mode), optim_bloc_h))
+if (optim_approach == "rules") {
+  mode <- "rules"
+  params$rules_prix_percentile <- rules_prix_percentile
+  cat(sprintf("[3/4] Running RULES optimization (percentile %d)...\n", rules_prix_percentile))
+} else {
+  mode <- if (pac2_active) "dual" else if (pac1_mode == "onoff") "milp" else "lp"
+  cat(sprintf("[3/4] Running %s optimization (%dh blocks)...\n", toupper(mode), optim_bloc_h))
+}
 
 t0 <- Sys.time()
 result <- run_simulation(df, params, mode = mode, baseline_mode = "measured")

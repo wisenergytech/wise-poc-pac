@@ -170,12 +170,19 @@ mod_sidebar_ui <- function(id) {
         shiny::checkboxInput(ns("tou_active"), NULL, TRUE)),
       # Encart showing auto-selected optimizer
       shiny::uiOutput(ns("optimizer_info")),
-      shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("P\u00e9nalit\u00e9 T_min (EUR/\u00b0C)", tip("Cout fictif par degre sous T_min. Plus bas : economies maximales. Plus haut : confort prioritaire.")),
-        0.5, 20, 2.5, step = 0.5, post = " EUR/\u00b0C"),
-      shiny::sliderInput(ns("min_cycle_min"), shiny::tags$span("Dur\u00e9e min cycle (min)", tip("Dur\u00e9e minimale de fonctionnement et d'arret d'une PAC on/off. Protege le compresseur contre les cycles courts. 0 = pas de contrainte.")),
-        0, 120, 45, step = 15, post = " min"),
-      shiny::selectInput(ns("optim_bloc_h"), shiny::tags$span("Horizon bloc (h)", tip("Dur\u00e9e de chaque bloc d'optimisation. 24h = align\u00e9 sur le march\u00e9 day-ahead (EPEX). Plus court = plus rapide mais moins d'anticipation. Le lookahead ajoute un bloc suppl\u00e9mentaire.")),
-        choices = c("6h" = 6, "12h" = 12, "24h" = 24), selected = 24),
+      shiny::selectInput(ns("optim_approach"), shiny::tags$span("Approche", tip("Rule-based : r\u00e8gles simples et auditables (prix + PV + confort). MILP : optimisation math\u00e9matique (gains maximaux mais bo\u00eete noire).")),
+        choices = c("Rule-based (transparent)" = "rules", "MILP (optimal)" = "milp"),
+        selected = "rules"),
+      shiny::conditionalPanel(sprintf("input['%s']=='milp'", ns("optim_approach")),
+        shiny::sliderInput(ns("slack_penalty"), shiny::tags$span("P\u00e9nalit\u00e9 T_min (EUR/\u00b0C)", tip("Cout fictif par degre sous T_min. Plus bas : economies maximales. Plus haut : confort prioritaire.")),
+          0.5, 20, 2.5, step = 0.5, post = " EUR/\u00b0C"),
+        shiny::sliderInput(ns("min_cycle_min"), shiny::tags$span("Dur\u00e9e min cycle (min)", tip("Dur\u00e9e minimale de fonctionnement et d'arret d'une PAC on/off. Protege le compresseur contre les cycles courts. 0 = pas de contrainte.")),
+          0, 120, 45, step = 15, post = " min"),
+        shiny::selectInput(ns("optim_bloc_h"), shiny::tags$span("Horizon bloc (h)", tip("Dur\u00e9e de chaque bloc d'optimisation. 24h = align\u00e9 sur le march\u00e9 day-ahead (EPEX). Plus court = plus rapide mais moins d'anticipation.")),
+          choices = c("6h" = 6, "12h" = 12, "24h" = 24), selected = 24)),
+      shiny::conditionalPanel(sprintf("input['%s']=='rules'", ns("optim_approach")),
+        shiny::sliderInput(ns("rules_prix_percentile"), shiny::tags$span("Seuil prix (percentile)", tip("La PAC chauffe quand le prix est sous ce percentile du jour. 30 = heures les moins ch\u00e8res du jour.")),
+          10, 70, 30, step = 5, post = "e percentile")),
       shiny::tags$div(style = sprintf("border-top:1px solid %s;padding-top:8px;margin-top:8px;", cl$grid),
         shiny::tags$div(style = sprintf("font-size:.7rem;text-transform:uppercase;letter-spacing:.1em;color:%s;margin-bottom:6px;", cl$text_muted), "Strat\u00e9gies d'optimisation"),
         if (isTRUE(ui_cfg$strategies$tou)) shiny::tagList(
@@ -1261,17 +1268,18 @@ mod_sidebar_server <- function(id, sim_state) {
         df$prix_eur_kwh <- mean(df$prix_eur_kwh, na.rm = TRUE)
       }
 
-      # Map auto-selected approche to R6 optimization mode
-      r6_mode <- opt$mode
-      # Use user-selected block duration (from sidebar input)
-      p$optim_bloc_h <- if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24
-
-      # Set mode-specific params
-      if (approche == "optimiseur_lp") p$optim_bloc_h <- if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24
-      if (approche == "optimiseur_qp") {
+      # Map approach to R6 optimization mode
+      user_approach <- if (!is.null(input$optim_approach)) input$optim_approach else "milp"
+      if (user_approach == "rules") {
+        r6_mode <- "rules"
+        p$rules_prix_percentile <- if (!is.null(input$rules_prix_percentile)) input$rules_prix_percentile else 30
+      } else {
+        r6_mode <- opt$mode
         p$optim_bloc_h <- if (!is.null(input$optim_bloc_h)) as.numeric(input$optim_bloc_h) else 24
-        p$qp_w_comfort <- input$qp_w_comfort
-        p$qp_w_smooth <- input$qp_w_smooth
+        if (approche == "optimiseur_qp") {
+          p$qp_w_comfort <- input$qp_w_comfort
+          p$qp_w_smooth <- input$qp_w_smooth
+        }
       }
 
       has_cible <- isTRUE(input$switch_contrat == "autre")
@@ -1539,7 +1547,10 @@ mod_sidebar_server <- function(id, sim_state) {
           batt_soc_range = input$batt_soc_range,
           # Curtailment
           curtailment_active = input$curtailment_active,
-          curtail_kw = input$curtail_kw
+          curtail_kw = input$curtail_kw,
+          # Approach
+          optim_approach = input$optim_approach,
+          rules_prix_percentile = input$rules_prix_percentile
         )
 
         bundle <- list(
@@ -1704,6 +1715,8 @@ mod_sidebar_server <- function(id, sim_state) {
       if (!is.null(val("pv_kwc_ref"))) safe_update(shiny::updateNumericInput, "pv_kwc_ref", value = val("pv_kwc_ref"))
       # Optimisation
       if (!is.null(val("slack_penalty"))) safe_update(shiny::updateSliderInput, "slack_penalty", value = val("slack_penalty"))
+      if (!is.null(val("optim_approach"))) safe_update(shiny::updateSelectInput, "optim_approach", selected = val("optim_approach"))
+      if (!is.null(val("rules_prix_percentile"))) safe_update(shiny::updateSliderInput, "rules_prix_percentile", value = val("rules_prix_percentile"))
       if (!is.null(val("min_cycle_min"))) safe_update(shiny::updateSliderInput, "min_cycle_min", value = val("min_cycle_min"))
       if (!is.null(val("optim_bloc_h"))) safe_update(shiny::updateSelectInput, "optim_bloc_h", selected = val("optim_bloc_h"))
       if (!is.null(val("tou_active"))) safe_update(shiny::updateCheckboxInput, "tou_active", value = val("tou_active"))

@@ -123,6 +123,14 @@ Simulation <- R6::R6Class("Simulation",
 
       private$status <- "running_optimization"
 
+      # Rule-based mode: bypass R6 optimizer entirely
+      if (mode == "rules") {
+        private$optim_result <- run_optimization_rules(
+          private$baseline_result, private$params)
+        private$status <- "done"
+        return(invisible(self))
+      }
+
       # Force dual mode when PAC 2 is active
       if (isTRUE(private$params$pac2_active)) mode <- "dual"
 
